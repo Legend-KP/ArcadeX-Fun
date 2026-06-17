@@ -1,5 +1,22 @@
 import { defineChain } from "viem";
-import { arbitrum, base } from "viem/chains";
+
+export const base = defineChain({
+  id: 8453,
+  name: "Base",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://mainnet.base.org"] },
+  },
+});
+
+export const arbitrum = defineChain({
+  id: 42161,
+  name: "Arbitrum One",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://arb1.arbitrum.io/rpc"] },
+  },
+});
 
 export const megaeth = defineChain({
   id: 4326,

@@ -10,8 +10,13 @@ import {
 } from "react";
 import { useDisconnect } from "wagmi";
 import { disconnect as disconnectStarknet } from "starknetkit";
-import ConnectWalletModal from "@/components/ConnectWalletModal";
+import dynamic from "next/dynamic";
 import OnboardingModal from "@/components/OnboardingModal";
+
+const ConnectWalletModal = dynamic(
+  () => import("@/components/ConnectWalletModal"),
+  { ssr: false }
+);
 import {
   bootstrapPlayerProfile,
   fetchAuthSession,

@@ -5,6 +5,9 @@ import path from "path";
 const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(process.cwd()),
   serverExternalPackages: ["jose"],
+  experimental: {
+    optimizePackageImports: ["viem", "wagmi", "@tanstack/react-query"],
+  },
   images: {
     unoptimized: true,
   },

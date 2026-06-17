@@ -1,8 +1,12 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import WalletProvider from "@/components/WalletProvider";
 import PlayerProfileProvider from "@/components/PlayerProfileProvider";
+
+const WalletProvider = dynamic(() => import("@/components/WalletProvider"), {
+  ssr: false,
+});
 
 export default function AppProviders({
   children,
