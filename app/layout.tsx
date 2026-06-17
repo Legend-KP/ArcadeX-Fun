@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "ArcadeX",
-  description: "Play fun mini-games on ArcadeX",
+  description: "Play fun games on ArcadeX — multi-chain web arcade",
 };
 
 export default function RootLayout({

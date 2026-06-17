@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import MiniPayProvider from "@/components/MiniPayProvider";
+import WalletProvider from "@/components/WalletProvider";
 import PlayerProfileProvider from "@/components/PlayerProfileProvider";
 
 export default function AppProviders({
@@ -17,8 +17,8 @@ export default function AppProviders({
   }
 
   return (
-    <MiniPayProvider>
+    <WalletProvider>
       <PlayerProfileProvider>{children}</PlayerProfileProvider>
-    </MiniPayProvider>
+    </WalletProvider>
   );
 }

@@ -7,10 +7,12 @@ import {
 } from "@/types";
 import { getDatabaseUrl } from "./firebase-admin";
 import {
-  isWalletAddress,
-  normalizeWalletAddress,
-  tryNormalizeWalletAddress,
-} from "@/lib/wallet-address";
+  isValidAddress,
+  normalizeAddress,
+  parsePlayerId,
+  resolvePlayerId,
+  WalletEcosystem,
+} from "@/lib/player-identity";
 
 type StoredUser = Omit<PlayerProfile, "id">;
 type LeaderboardMap = Record<string, LeaderboardEntry>;
@@ -33,21 +35,39 @@ function encodeRtdbPath(path: string): string {
     .join("/");
 }
 
-function profilePath(walletAddress: string): string {
-  if (!isWalletAddress(walletAddress)) {
-    throw new Error("User profile requires a valid wallet address.");
+function profilePath(playerId: string): string {
+  const resolved = resolvePlayerId(playerId);
+  if (!resolved) {
+    throw new Error("User profile requires a valid player id.");
   }
-  return `users/${normalizeWalletAddress(walletAddress)}`;
+  return `users/${resolved}`;
 }
 
-function resolveWalletField(
+function resolvePlayerFields(
   id: string,
-  walletAddress?: string
-): string | undefined {
-  const fromBody = tryNormalizeWalletAddress(walletAddress);
-  if (fromBody) return fromBody;
-  if (isWalletAddress(id)) return normalizeWalletAddress(id);
-  return undefined;
+  walletAddress?: string,
+  ecosystem?: WalletEcosystem
+): { playerId: string; address: string; ecosystem: WalletEcosystem } | null {
+  const fromId = resolvePlayerId(id);
+  if (fromId) {
+    const parsed = parsePlayerId(fromId)!;
+    return {
+      playerId: fromId,
+      address: parsed.address,
+      ecosystem: parsed.ecosystem,
+    };
+  }
+
+  if (walletAddress && ecosystem && isValidAddress(ecosystem, walletAddress)) {
+    const address = normalizeAddress(ecosystem, walletAddress);
+    return {
+      playerId: `${ecosystem}:${address}`,
+      address,
+      ecosystem,
+    };
+  }
+
+  return null;
 }
 
 async function rtdbFetch(
@@ -115,15 +135,17 @@ function mapToLeaderboardEntries(map: LeaderboardMap | null): LeaderboardEntry[]
 
 /** Stable identity for deduping — wallet preferred, name fallback. */
 function leaderboardUserKey(entry: LeaderboardEntry): string {
-  const wallet = tryNormalizeWalletAddress(entry.walletAddress);
-  if (wallet) return `wallet:${wallet}`;
+  if (entry.walletAddress?.trim()) {
+    return `wallet:${entry.walletAddress.trim().toLowerCase()}`;
+  }
   return `name:${entry.name.trim().toLowerCase()}`;
 }
 
 /** RTDB-safe key for per-user storage (wallet or sanitized name). */
 function leaderboardStorageKey(entry: LeaderboardEntry): string {
-  const wallet = tryNormalizeWalletAddress(entry.walletAddress);
-  if (wallet) return wallet;
+  if (entry.walletAddress?.trim()) {
+    return entry.walletAddress.trim().replace(/[.#$[\]/]/g, "_");
+  }
   return `name_${entry.name.trim().toLowerCase().replace(/[.#$[\]/]/g, "_")}`;
 }
 
@@ -144,57 +166,71 @@ function deduplicateLeaderboardEntries(entries: LeaderboardEntry[]): Leaderboard
 export async function fetchUserFromServer(
   id: string
 ): Promise<PlayerProfile | null> {
-  const wallet = tryNormalizeWalletAddress(id);
-  if (!wallet) return null;
+  const resolved = resolvePlayerId(id);
+  if (!resolved) return null;
 
-  const data = await readPath<StoredUser>(profilePath(wallet));
+  const data = await readPath<StoredUser>(profilePath(resolved));
   if (!data) return null;
-  return toPlayerProfile(wallet, data);
+  return toPlayerProfile(resolved, data);
 }
 
 export async function upsertUserOnServer(
   id: string,
-  data: { name: string; walletAddress?: string }
+  data: {
+    name: string;
+    walletAddress?: string;
+    email?: string;
+    ecosystem?: WalletEcosystem;
+    chainId?: number;
+  }
 ): Promise<PlayerProfile> {
-  const wallet = resolveWalletField(id, data.walletAddress);
-  if (!wallet) {
-    throw new Error("A wallet address is required to save a player profile.");
+  const fields = resolvePlayerFields(id, data.walletAddress, data.ecosystem);
+  if (!fields) {
+    throw new Error("A valid player id or wallet address is required.");
   }
 
-  const existing = await fetchUserFromServer(wallet);
+  const existing = await fetchUserFromServer(fields.playerId);
   const now = Date.now();
+  const email = data.email?.trim() || existing?.email;
 
   const stored: StoredUser = {
     name: data.name.trim(),
-    walletAddress: wallet,
+    walletAddress: fields.address,
+    ecosystem: fields.ecosystem,
+    ...(email ? { email } : {}),
+    ...(typeof data.chainId === "number" ? { chainId: data.chainId } : {}),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
 
-  await writePath(profilePath(wallet), stored);
-  return toPlayerProfile(wallet, stored)!;
+  await writePath(profilePath(fields.playerId), stored);
+  return toPlayerProfile(fields.playerId, stored)!;
 }
 
 export async function bootstrapUserOnServer(
-  walletAddress: string
+  playerId: string,
+  opts?: { ecosystem?: WalletEcosystem; chainId?: number }
 ): Promise<PlayerProfile> {
-  if (!isWalletAddress(walletAddress)) {
-    throw new Error("bootstrap requires a valid wallet address.");
+  const resolved = resolvePlayerId(playerId);
+  if (!resolved) {
+    throw new Error("bootstrap requires a valid player id.");
   }
 
-  const wallet = normalizeWalletAddress(walletAddress);
-  const existing = await fetchUserFromServer(wallet);
+  const parsed = parsePlayerId(resolved)!;
+  const existing = await fetchUserFromServer(resolved);
 
   if (!existing) {
     const now = Date.now();
     const stored: StoredUser = {
       name: "",
-      walletAddress: wallet,
+      walletAddress: parsed.address,
+      ecosystem: opts?.ecosystem ?? parsed.ecosystem,
+      ...(typeof opts?.chainId === "number" ? { chainId: opts.chainId } : {}),
       createdAt: now,
       updatedAt: now,
     };
-    await writePath(`users/${wallet}`, stored);
-    return toPlayerProfile(wallet, stored)!;
+    await writePath(profilePath(resolved), stored);
+    return toPlayerProfile(resolved, stored)!;
   }
 
   return existing;
@@ -244,13 +280,13 @@ export async function fetchUserBestScoreFromServer(
   const map = await readPath<LeaderboardMap>(`leaderboards/${gameId}`);
   const entries = deduplicateLeaderboardEntries(mapToLeaderboardEntries(map));
 
-  const wallet = tryNormalizeWalletAddress(opts.walletAddress);
+  const wallet = opts.walletAddress?.trim().toLowerCase();
   const name = opts.playerName?.trim().toLowerCase();
   if (!wallet && !name) return 0;
 
   let best = 0;
   for (const entry of entries) {
-    const entryWallet = tryNormalizeWalletAddress(entry.walletAddress);
+    const entryWallet = entry.walletAddress?.trim().toLowerCase();
     const matchesWallet = Boolean(wallet && entryWallet === wallet);
     const matchesName = Boolean(
       name && entry.name.trim().toLowerCase() === name
@@ -267,7 +303,7 @@ export async function submitLeaderboardEntryOnServer(
   gameId: string,
   entry: LeaderboardEntry
 ): Promise<void> {
-  const wallet = tryNormalizeWalletAddress(entry.walletAddress);
+  const wallet = entry.walletAddress?.trim();
   const payload: LeaderboardEntry = {
     name: entry.name,
     score: entry.score,
@@ -290,8 +326,12 @@ export async function submitLeaderboardEntryOnServer(
 
 // ─── Per-user game progress ───────────────────────────────────────────────────
 
-function gameProgressPath(walletAddress: string, gameId: string): string {
-  return `users/${normalizeWalletAddress(walletAddress)}/games/${gameId}`;
+function gameProgressPath(playerId: string, gameId: string): string {
+  const resolved = resolvePlayerId(playerId);
+  if (!resolved) {
+    throw new Error("A valid player id is required.");
+  }
+  return `users/${resolved}/games/${gameId}`;
 }
 
 export function storedProgressToGameProgress(
@@ -306,11 +346,11 @@ export function storedProgressToGameProgress(
 }
 
 export async function fetchGameProgressFromServer(
-  walletAddress: string,
+  playerId: string,
   gameId: string
 ): Promise<StoredGameProgress | null> {
-  if (!isWalletAddress(walletAddress)) return null;
-  return readPath<StoredGameProgress>(gameProgressPath(walletAddress, gameId));
+  if (!resolvePlayerId(playerId)) return null;
+  return readPath<StoredGameProgress>(gameProgressPath(playerId, gameId));
 }
 
 /**
@@ -318,28 +358,30 @@ export async function fetchGameProgressFromServer(
  * and sync leaderboard → user node when the leaderboard is ahead.
  */
 export async function resolveGameProgressFromServer(
-  walletAddress: string,
+  playerId: string,
   gameId: string,
   hasLeaderboard: boolean,
   opts?: { playerName?: string }
 ): Promise<GameProgress> {
-  if (!isWalletAddress(walletAddress)) return {};
+  const resolved = resolvePlayerId(playerId);
+  if (!resolved) return {};
 
-  const stored = await fetchGameProgressFromServer(walletAddress, gameId);
+  const stored = await fetchGameProgressFromServer(resolved, gameId);
 
   if (!hasLeaderboard) {
     return storedProgressToGameProgress(stored, false);
   }
 
   const userScore = stored?.s ?? 0;
-  const wallet = normalizeWalletAddress(walletAddress);
+  const parsed = parsePlayerId(resolved);
+  const walletForLookup = parsed?.address ?? resolved;
   const leaderboardBest = await fetchUserBestScoreFromServer(gameId, {
-    walletAddress: wallet,
+    walletAddress: walletForLookup,
     playerName: opts?.playerName,
   });
 
   if (userScore > leaderboardBest) {
-    await syncLeaderboardFromScoreOnServer(gameId, wallet, userScore, {
+    await syncLeaderboardFromScoreOnServer(gameId, resolved, userScore, {
       playerName: opts?.playerName,
     });
   }
@@ -347,7 +389,7 @@ export async function resolveGameProgressFromServer(
   const score = Math.max(userScore, leaderboardBest);
 
   if (score > userScore) {
-    await saveGameProgressOnServer(wallet, gameId, score, true, {
+    await saveGameProgressOnServer(resolved, gameId, score, true, {
       playerName: opts?.playerName,
     });
   }
@@ -367,11 +409,13 @@ function resolveLeaderboardPlayerName(
 
 async function syncLeaderboardFromScoreOnServer(
   gameId: string,
-  wallet: string,
+  playerId: string,
   score: number,
   opts?: { playerName?: string }
 ): Promise<void> {
-  const profile = await fetchUserFromServer(wallet);
+  const profile = await fetchUserFromServer(playerId);
+  const parsed = parsePlayerId(resolvePlayerId(playerId) ?? playerId);
+  const wallet = parsed?.address ?? playerId;
   await submitLeaderboardEntryOnServer(gameId, {
     name: resolveLeaderboardPlayerName(
       wallet,
@@ -384,33 +428,33 @@ async function syncLeaderboardFromScoreOnServer(
 }
 
 export async function saveGameProgressOnServer(
-  walletAddress: string,
+  playerId: string,
   gameId: string,
   value: number,
   hasLeaderboard: boolean,
   opts?: { playerName?: string }
 ): Promise<GameProgress> {
-  if (!isWalletAddress(walletAddress)) {
-    throw new Error("A valid wallet address is required.");
+  const resolved = resolvePlayerId(playerId);
+  if (!resolved) {
+    throw new Error("A valid player id is required.");
   }
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     throw new Error("value must be a non-negative number.");
   }
 
-  const wallet = normalizeWalletAddress(walletAddress);
-  const current = await fetchGameProgressFromServer(wallet, gameId);
+  const current = await fetchGameProgressFromServer(resolved, gameId);
   const field: "s" | "l" = hasLeaderboard ? "s" : "l";
   const currentValue = hasLeaderboard ? (current?.s ?? 0) : (current?.l ?? 0);
 
   if (hasLeaderboard) {
-    await syncLeaderboardFromScoreOnServer(gameId, wallet, value, opts);
+    await syncLeaderboardFromScoreOnServer(gameId, resolved, value, opts);
   }
 
   if (value <= currentValue) {
     return storedProgressToGameProgress(current, hasLeaderboard);
   }
 
-  await patchPath(gameProgressPath(wallet, gameId), { [field]: value });
+  await patchPath(gameProgressPath(resolved, gameId), { [field]: value });
 
   const updated: StoredGameProgress = { ...current, [field]: value };
   return storedProgressToGameProgress(updated, hasLeaderboard);

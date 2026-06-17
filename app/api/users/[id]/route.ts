@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import { fetchUserFromServer, upsertUserOnServer } from "@/lib/rtdb-server";
-import {
-  isWalletAddress,
-  normalizeWalletAddress,
-  tryNormalizeWalletAddress,
-} from "@/lib/wallet-address";
+import { resolvePlayerId } from "@/lib/player-identity";
+import { WalletEcosystem } from "@/lib/player-identity";
 
 export const dynamic = "force-dynamic";
 
 const NAME_RE = /^[\w\s.-]{1,20}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function GET(
   _request: Request,
@@ -20,7 +18,12 @@ export async function GET(
       return NextResponse.json({ error: "User id required." }, { status: 400 });
     }
 
-    const user = await fetchUserFromServer(id);
+    const playerId = resolvePlayerId(decodeURIComponent(id));
+    if (!playerId) {
+      return NextResponse.json({ user: null });
+    }
+
+    const user = await fetchUserFromServer(playerId);
     return NextResponse.json({ user: user ?? null });
   } catch (err) {
     const message =
@@ -39,9 +42,20 @@ export async function PUT(
       return NextResponse.json({ error: "User id required." }, { status: 400 });
     }
 
+    const playerId = resolvePlayerId(decodeURIComponent(id));
+    if (!playerId) {
+      return NextResponse.json(
+        { error: "Invalid player id." },
+        { status: 400 }
+      );
+    }
+
     const body = (await request.json()) as {
       name?: string;
+      email?: string;
       walletAddress?: string;
+      ecosystem?: WalletEcosystem;
+      chainId?: number;
     };
 
     const name = body.name?.trim() ?? "";
@@ -52,20 +66,20 @@ export async function PUT(
       );
     }
 
-    const wallet =
-      tryNormalizeWalletAddress(body.walletAddress) ??
-      (isWalletAddress(id) ? normalizeWalletAddress(id) : null);
-
-    if (!wallet) {
+    const email = body.email?.trim();
+    if (email && !EMAIL_RE.test(email)) {
       return NextResponse.json(
-        { error: "Wallet address is required." },
+        { error: "Please enter a valid email address." },
         { status: 400 }
       );
     }
 
-    const user = await upsertUserOnServer(wallet, {
+    const user = await upsertUserOnServer(playerId, {
       name,
-      walletAddress: wallet,
+      email: email || undefined,
+      walletAddress: body.walletAddress,
+      ecosystem: body.ecosystem,
+      chainId: body.chainId,
     });
 
     return NextResponse.json({ user });

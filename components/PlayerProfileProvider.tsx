@@ -6,32 +6,25 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
-import PlayerNameModal from "@/components/PlayerNameModal";
+import { useDisconnect } from "wagmi";
+import { disconnect as disconnectStarknet } from "starknetkit";
+import ConnectWalletModal from "@/components/ConnectWalletModal";
+import OnboardingModal from "@/components/OnboardingModal";
 import {
   bootstrapPlayerProfile,
+  fetchAuthSession,
   fetchPlayerProfile,
+  logoutSession,
   savePlayerProfile,
 } from "@/lib/player-profile-client";
 import {
   clearCachedPlayerName,
-  clearInvalidCachedWallet,
-  clearStaleGuestId,
-  getCachedWallet,
-  setCachedWallet,
+  clearCachedSession,
+  setCachedSession,
 } from "@/lib/player-id";
-import {
-  readWalletImmediately,
-  resolveWalletForSave,
-  resolveWalletOnAppOpen,
-  retryResolveWallet,
-} from "@/lib/walletAuth";
-import {
-  isWalletAddress,
-  normalizeWalletAddress,
-} from "@/lib/wallet-address";
+import { WalletEcosystem } from "@/lib/player-identity";
 import { PlayerProfile } from "@/types";
 
 interface PlayerProfileContextValue {
@@ -39,8 +32,11 @@ interface PlayerProfileContextValue {
   profile: PlayerProfile | null;
   playerName: string;
   walletAddress: string;
+  ecosystem: WalletEcosystem | null;
   isReady: boolean;
-  updateWalletAddress: (walletAddress: string) => Promise<void>;
+  isAuthenticated: boolean;
+  openConnect: () => void;
+  logout: () => Promise<void>;
 }
 
 const PlayerProfileContext = createContext<PlayerProfileContextValue | null>(
@@ -59,161 +55,163 @@ function hasPlayerName(profile: PlayerProfile | null): boolean {
   return Boolean(profile?.name?.trim());
 }
 
-function shouldShowNameModal(profile: PlayerProfile | null): boolean {
-  return !hasPlayerName(profile);
-}
-
-function syncNameCompletion(profile: PlayerProfile | null): boolean {
-  const complete = hasPlayerName(profile);
-  if (!complete) clearCachedPlayerName();
-  return complete;
-}
-
 export default function PlayerProfileProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const { disconnectAsync } = useDisconnect();
   const [playerId, setPlayerId] = useState("");
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [walletAddress, setWalletAddress] = useState("");
+  const [ecosystem, setEcosystem] = useState<WalletEcosystem | null>(null);
+  const [chainId, setChainId] = useState<number | undefined>();
   const [isReady, setIsReady] = useState(false);
-  const [showModal, setShowModal] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showConnect, setShowConnect] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const nameCompleteRef = useRef(false);
+
+  const loadProfileForSession = useCallback(
+    async (session: {
+      playerId: string;
+      address: string;
+      ecosystem: WalletEcosystem;
+      chainId?: number;
+    }) => {
+      setPlayerId(session.playerId);
+      setWalletAddress(session.address);
+      setEcosystem(session.ecosystem);
+      setChainId(session.chainId);
+      setCachedSession(session.ecosystem, session.address, session.playerId);
+      setIsAuthenticated(true);
+
+      let user = await bootstrapPlayerProfile(session.playerId, {
+        walletAddress: session.address,
+        ecosystem: session.ecosystem,
+        chainId: session.chainId,
+      });
+
+      if (!hasPlayerName(user)) {
+        const fresh = await fetchPlayerProfile(session.playerId);
+        if (fresh) user = fresh;
+      }
+
+      setProfile(user);
+
+      if (!hasPlayerName(user)) {
+        clearCachedPlayerName();
+        setShowOnboarding(true);
+      } else {
+        setShowOnboarding(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;
 
-    async function resolveWallet(): Promise<string | null> {
-      const immediate = readWalletImmediately();
-      if (immediate) return immediate;
-
-      let wallet = await resolveWalletOnAppOpen();
-      if (!wallet) {
-        wallet = await retryResolveWallet();
-      }
-      return wallet;
-    }
-
-    async function loadProfile() {
-      clearInvalidCachedWallet();
-      clearStaleGuestId();
+    async function init() {
       setError("");
-
-      const wallet = await resolveWallet();
-      if (cancelled) return;
-
-      if (!wallet) {
-        setShowModal(true);
-        nameCompleteRef.current = false;
-        setIsReady(true);
-        return;
-      }
-
-      setCachedWallet(wallet);
-      setWalletAddress(wallet);
-      setPlayerId(wallet);
-
       try {
-        let user = await bootstrapPlayerProfile(wallet);
+        const session = await fetchAuthSession();
         if (cancelled) return;
 
-        if (!hasPlayerName(user)) {
-          clearCachedPlayerName();
-          const fresh = await fetchPlayerProfile(wallet);
-          if (fresh) user = fresh;
+        if (!session) {
+          setIsAuthenticated(false);
+          setShowConnect(true);
+          return;
         }
-        if (cancelled) return;
 
-        setProfile(user);
-
-        if (shouldShowNameModal(user)) {
-          nameCompleteRef.current = false;
-          setShowModal(true);
-        } else {
-          nameCompleteRef.current = syncNameCompletion(user);
-          setShowModal(false);
-        }
+        await loadProfileForSession(session);
       } catch (err) {
         if (cancelled) return;
-        nameCompleteRef.current = false;
-        setShowModal(true);
         setError(
           err instanceof Error
             ? err.message
             : "Could not load your profile. Please try again."
         );
+        setShowConnect(true);
       } finally {
         if (!cancelled) setIsReady(true);
       }
     }
 
-    loadProfile();
+    init();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadProfileForSession]);
 
-  const handleSubmit = useCallback(
-    async (name: string) => {
+  const handleSignedIn = useCallback(async () => {
+    setShowConnect(false);
+    setError("");
+    try {
+      const session = await fetchAuthSession();
+      if (!session) {
+        throw new Error("Sign-in did not complete.");
+      }
+      await loadProfileForSession(session);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not complete sign-in."
+      );
+      setShowConnect(true);
+    }
+  }, [loadProfileForSession]);
+
+  const handleOnboardingSubmit = useCallback(
+    async (data: { name: string; email?: string }) => {
+      if (!playerId || !walletAddress || !ecosystem) return;
+
       setSaving(true);
       setError("");
 
       try {
-        let wallet =
-          walletAddress ||
-          getCachedWallet() ||
-          profile?.walletAddress ||
-          readWalletImmediately();
+        const saved = await savePlayerProfile(playerId, data.name, {
+          email: data.email,
+          walletAddress,
+          ecosystem,
+          chainId,
+        });
 
-        if (!wallet) {
-          wallet = await resolveWalletForSave();
-        }
-
-        if (!isWalletAddress(wallet)) {
-          throw new Error(
-            "Could not connect your wallet. Open ArcadeX in MiniPay and try again."
-          );
-        }
-
-        wallet = normalizeWalletAddress(wallet);
-
-        const saved = await savePlayerProfile(wallet, name, wallet);
-
-        setCachedWallet(wallet);
-        setWalletAddress(saved.walletAddress ?? wallet);
-        setPlayerId(saved.id);
         setProfile(saved);
-        nameCompleteRef.current = true;
-        setShowModal(false);
+        setShowOnboarding(false);
       } catch (err) {
-        nameCompleteRef.current = false;
-        setShowModal(true);
         setError(
-          err instanceof Error ? err.message : "Could not save your name."
+          err instanceof Error ? err.message : "Could not save your profile."
         );
       } finally {
         setSaving(false);
       }
     },
-    [walletAddress, profile?.walletAddress]
+    [playerId, walletAddress, ecosystem, chainId]
   );
 
-  const updateWalletAddress = useCallback(
-    async (nextWallet: string) => {
-      if (!profile?.name) return;
-
-      const wallet = nextWallet.trim();
-      const saved = await savePlayerProfile(wallet, profile.name, wallet);
-      setProfile(saved);
-      setPlayerId(saved.id);
-      setWalletAddress(wallet);
-      setCachedWallet(wallet);
-    },
-    [profile?.name]
-  );
+  const logout = useCallback(async () => {
+    try {
+      await disconnectAsync();
+    } catch {
+      // ignore
+    }
+    try {
+      await disconnectStarknet();
+    } catch {
+      // ignore
+    }
+    await logoutSession();
+    clearCachedSession();
+    setPlayerId("");
+    setProfile(null);
+    setWalletAddress("");
+    setEcosystem(null);
+    setChainId(undefined);
+    setIsAuthenticated(false);
+    setShowOnboarding(false);
+    setShowConnect(true);
+  }, [disconnectAsync]);
 
   const value = useMemo(
     () => ({
@@ -221,21 +219,38 @@ export default function PlayerProfileProvider({
       profile,
       playerName: profile?.name ?? "",
       walletAddress,
+      ecosystem,
       isReady,
-      updateWalletAddress,
+      isAuthenticated,
+      openConnect: () => setShowConnect(true),
+      logout,
     }),
-    [playerId, profile, walletAddress, isReady, updateWalletAddress]
+    [
+      playerId,
+      profile,
+      walletAddress,
+      ecosystem,
+      isReady,
+      isAuthenticated,
+      logout,
+    ]
   );
 
   return (
     <PlayerProfileContext.Provider value={value}>
       {children}
-      <PlayerNameModal
-        open={showModal}
+      <ConnectWalletModal
+        open={showConnect}
+        error={error}
+        onSignedIn={handleSignedIn}
+      />
+      <OnboardingModal
+        open={showOnboarding}
         saving={saving}
         error={error}
-        defaultName=""
-        onSubmit={handleSubmit}
+        defaultName={profile?.name ?? ""}
+        defaultEmail={profile?.email ?? ""}
+        onSubmit={handleOnboardingSubmit}
       />
     </PlayerProfileContext.Provider>
   );

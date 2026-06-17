@@ -4,32 +4,31 @@ import { FormEvent, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Logo from "@/components/Logo";
 
-interface PlayerNameModalProps {
+interface OnboardingModalProps {
   open: boolean;
   saving: boolean;
   error?: string;
   defaultName?: string;
-  onSubmit: (name: string) => void;
+  defaultEmail?: string;
+  onSubmit: (data: { name: string; email?: string }) => void;
 }
 
-export default function PlayerNameModal({
+export default function OnboardingModal({
   open,
   saving,
   error,
   defaultName = "",
+  defaultEmail = "",
   onSubmit,
-}: PlayerNameModalProps) {
+}: OnboardingModalProps) {
   const [name, setName] = useState(defaultName);
+  const [email, setEmail] = useState(defaultEmail);
 
   useEffect(() => {
     if (!open) return;
     setName(defaultName);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open || !defaultName) return;
-    setName((prev) => prev.trim() || defaultName);
-  }, [open, defaultName]);
+    setEmail(defaultEmail);
+  }, [open, defaultName, defaultEmail]);
 
   if (!open) return null;
 
@@ -38,19 +37,27 @@ export default function PlayerNameModal({
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!isValid || saving) return;
-    onSubmit(name.trim());
+    onSubmit({
+      name: name.trim(),
+      email: email.trim() || undefined,
+    });
   }
 
   const modal = (
     <div className="player-modal-backdrop">
-      <div className="player-modal" role="dialog" aria-modal="true" aria-labelledby="player-modal-title">
+      <div
+        className="player-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="player-modal-title"
+      >
         <Logo variant="login" />
         <p className="player-modal-subtitle">Welcome to ArcadeX</p>
         <h2 id="player-modal-title" className="player-modal-title">
-          Choose your player name
+          Set up your profile
         </h2>
         <p className="player-modal-hint">
-          This name appears on leaderboards across all games.
+          Your name appears on leaderboards across all games.
         </p>
 
         <form onSubmit={handleSubmit} className="player-modal-form">
@@ -69,6 +76,21 @@ export default function PlayerNameModal({
             autoComplete="nickname"
             disabled={saving}
           />
+
+          <label className="form-label" htmlFor="player-email">
+            Email <span className="form-label-optional">(optional)</span>
+          </label>
+          <input
+            id="player-email"
+            className="form-input"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+            disabled={saving}
+          />
+
           {error && <p className="error-msg">{error}</p>}
 
           <button

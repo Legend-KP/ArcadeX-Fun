@@ -14,13 +14,22 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "dependencies": {
+    "@coinbase/wallet-sdk": "^4.3.7",
+    "@metamask/connect-evm": "^2.1.0",
+    "@metamask/sdk": "^0.34.0",
     "@opennextjs/cloudflare": "^1.6.0",
     "@tanstack/react-query": "^5.101.0",
+    "@wagmi/connectors": "^8.0.15",
+    "@walletconnect/ethereum-provider": "^2.23.9",
     "firebase": "^11.10.0",
+    "get-starknet-core": "^4.0.0",
     "jose": "^6.2.3",
     "next": "^15.3.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "siwe": "^3.0.0",
+    "starknet": "^10.0.2",
+    "starknetkit": "^3.4.3",
     "viem": "^2.52.2",
     "wagmi": "^3.6.16"
   },

@@ -1,0 +1,88 @@
+"use client";
+
+import { SiweMessage } from "siwe";
+import { buildSiweStatement } from "@/lib/auth-message";
+import { buildStarknetAuthTypedData } from "@/lib/starknet-auth";
+import { WalletEcosystem } from "@/lib/player-identity";
+import type { TypedData } from "starknet";
+
+export async function fetchAuthNonce(): Promise<string> {
+  const res = await fetch("/api/auth/nonce", { cache: "no-store" });
+  const data = (await res.json()) as { nonce?: string; error?: string };
+  if (!res.ok || !data.nonce) {
+    throw new Error(data.error ?? "Could not start sign-in.");
+  }
+  return data.nonce;
+}
+
+export async function signInWithEvm(params: {
+  address: string;
+  chainId: number;
+  signMessageAsync: (args: { message: string }) => Promise<string>;
+}): Promise<void> {
+  const nonce = await fetchAuthNonce();
+  const domain =
+    typeof window !== "undefined" ? window.location.host : "arcadex.fun";
+  const uri =
+    typeof window !== "undefined"
+      ? window.location.origin
+      : "https://arcadex.fun";
+
+  const siwe = new SiweMessage({
+    domain,
+    address: params.address,
+    statement: buildSiweStatement(),
+    uri,
+    version: "1",
+    chainId: params.chainId,
+    nonce,
+  });
+
+  const message = siwe.prepareMessage();
+  const signature = await params.signMessageAsync({ message });
+
+  const res = await fetch("/api/auth/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ecosystem: "evm" satisfies WalletEcosystem,
+      message,
+      signature,
+      nonce,
+      chainId: params.chainId,
+    }),
+  });
+
+  const data = (await res.json()) as { error?: string };
+  if (!res.ok) {
+    throw new Error(data.error ?? "Sign-in failed.");
+  }
+}
+
+export async function signInWithStarknet(params: {
+  address: string;
+  signTypedData: (typedData: TypedData) => Promise<string[] | readonly string[]>;
+}): Promise<void> {
+  const nonce = await fetchAuthNonce();
+  const typedData = buildStarknetAuthTypedData(nonce);
+  const signature = await params.signTypedData(typedData);
+  const sigArray = Array.isArray(signature)
+    ? signature.map(String)
+    : [String(signature)];
+
+  const res = await fetch("/api/auth/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ecosystem: "starknet" satisfies WalletEcosystem,
+      nonce,
+      address: params.address,
+      signature: JSON.stringify(signature),
+    }),
+  });
+
+  const data = (await res.json()) as { error?: string };
+  if (!res.ok) {
+    throw new Error(data.error ?? "Sign-in failed.");
+  }
+}

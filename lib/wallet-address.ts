@@ -1,30 +1,32 @@
-import { getAddress, isAddress } from "viem";
+import {
+  isEvmAddress,
+  normalizeEvmAddress,
+  resolvePlayerId,
+} from "@/lib/player-identity";
 
+/** @deprecated Use isEvmAddress or isValidAddress from player-identity */
 export function isWalletAddress(value: string | null | undefined): boolean {
-  if (!value?.trim()) return false;
-  return isAddress(value.trim());
+  return isEvmAddress(value);
 }
 
+/** @deprecated Use normalizeAddress from player-identity */
 export function normalizeWalletAddress(address: string): string {
-  const trimmed = address.trim();
-  if (!isAddress(trimmed)) {
-    throw new Error("Invalid wallet address");
-  }
-  return getAddress(trimmed);
+  return normalizeEvmAddress(address);
 }
 
 export function tryNormalizeWalletAddress(
   address: string | null | undefined
 ): string | null {
-  if (!isWalletAddress(address)) return null;
-  return normalizeWalletAddress(address!);
+  if (!isEvmAddress(address)) return null;
+  return normalizeEvmAddress(address!);
 }
 
-/** Firestore/API paths — wallet addresses must be encoded in URLs. */
 export function encodeUserId(userId: string): string {
   return encodeURIComponent(userId);
 }
 
 export function walletToFirestoreDocId(walletAddress: string): string {
-  return normalizeWalletAddress(walletAddress);
+  return normalizeEvmAddress(walletAddress);
 }
+
+export { resolvePlayerId };

@@ -8,7 +8,7 @@ import {
   handleCorsPreflightRequest,
 } from "@/lib/cors";
 import { gameHasLeaderboard } from "@/types";
-import { isWalletAddress } from "@/lib/wallet-address";
+import { resolvePlayerId } from "@/lib/player-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -32,20 +32,22 @@ export async function GET(
     }
 
     const { searchParams } = new URL(request.url);
-    const wallet = searchParams.get("wallet") ?? "";
+    const playerId =
+      resolvePlayerId(searchParams.get("playerId") ?? "") ??
+      resolvePlayerId(searchParams.get("wallet") ?? "");
     const name = searchParams.get("name") ?? undefined;
 
-    if (!isWalletAddress(wallet)) {
+    if (!playerId) {
       return corsJsonResponse(
         request,
-        { error: "A valid wallet query parameter is required." },
+        { error: "A valid playerId or wallet query parameter is required." },
         { status: 400 }
       );
     }
 
     const hasLeaderboard = gameHasLeaderboard(game);
     const progress = await resolveGameProgressFromServer(
-      wallet,
+      playerId,
       id,
       hasLeaderboard,
       { playerName: name }
@@ -75,6 +77,7 @@ export async function POST(
     }
 
     const body = (await request.json()) as {
+      playerId?: string;
       walletAddress?: string;
       value?: number;
       score?: number;
@@ -82,10 +85,14 @@ export async function POST(
       playerName?: string;
     };
 
-    if (!body.walletAddress || !isWalletAddress(body.walletAddress)) {
+    const playerId =
+      resolvePlayerId(body.playerId ?? "") ??
+      resolvePlayerId(body.walletAddress ?? "");
+
+    if (!playerId) {
       return corsJsonResponse(
         request,
-        { error: "walletAddress is required." },
+        { error: "playerId or walletAddress is required." },
         { status: 400 }
       );
     }
@@ -107,7 +114,7 @@ export async function POST(
 
     const hasLeaderboard = gameHasLeaderboard(game);
     const progress = await saveGameProgressOnServer(
-      body.walletAddress,
+      playerId,
       id,
       scoreValue,
       hasLeaderboard,

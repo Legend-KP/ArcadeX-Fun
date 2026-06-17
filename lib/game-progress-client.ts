@@ -7,10 +7,10 @@ export interface GameProgressResponse {
 
 export async function getGameProgress(
   gameId: string,
-  walletAddress: string,
+  playerId: string,
   opts?: { playerName?: string }
 ): Promise<GameProgressResponse> {
-  const params = new URLSearchParams({ wallet: walletAddress });
+  const params = new URLSearchParams({ playerId });
   if (opts?.playerName?.trim()) {
     params.set("name", opts.playerName.trim());
   }
@@ -31,7 +31,7 @@ export async function getGameProgress(
 
 export async function saveGameProgress(
   gameId: string,
-  walletAddress: string,
+  playerId: string,
   value: number,
   opts?: { playerName?: string }
 ): Promise<GameProgressResponse & { success: boolean }> {
@@ -39,7 +39,7 @@ export async function saveGameProgress(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      walletAddress,
+      playerId,
       value,
       score: value,
       ...(opts?.playerName?.trim()

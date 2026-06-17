@@ -8,6 +8,15 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      porto: false,
+      "porto/internal": false,
+      accounts: false,
+    };
+    return config;
+  },
 };
 
 export default nextConfig;

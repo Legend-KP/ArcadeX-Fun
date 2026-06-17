@@ -9,7 +9,6 @@ import { getLeaderboard, submitScore } from "@/lib/firebase";
 import { getGameProgress, saveGameProgress } from "@/lib/game-progress-client";
 import { buildGameIframeUrl, getShellOrigin } from "@/lib/game-iframe-url";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
-import { resolveWalletOnAppOpen } from "@/lib/walletAuth";
 import { getGameTheme } from "@/lib/game-themes";
 import { Game, gameHasLeaderboard } from "@/types";
 
@@ -33,13 +32,14 @@ export default function GameClient({ game }: GameClientProps) {
   const {
     playerName,
     profile,
+    playerId,
     walletAddress,
     isReady,
-    updateWalletAddress,
   } = usePlayerProfile();
 
   const resolvedName = playerName || profile?.name || "";
   const resolvedWallet = walletAddress || profile?.walletAddress || "";
+  const resolvedPlayerId = playerId || profile?.id || "";
 
   const iframeSrc = useMemo(() => {
     if (!isReady) return null;
@@ -113,22 +113,19 @@ export default function GameClient({ game }: GameClientProps) {
       switch (msg.type) {
         case "MINIPAY_BOOTSTRAP": {
           markGameReady();
-          const wallet =
-            walletAddress ||
-            profile?.walletAddress ||
-            (await resolveWalletOnAppOpen()) ||
-            "";
+          const wallet = resolvedWallet;
+          const activePlayerId = resolvedPlayerId;
 
           if (wallet) {
             sendToUnity(iframeRef, "OnWalletAddressResolved", wallet);
           }
 
-          const bootstrapName = playerName || profile?.name || "";
+          const bootstrapName = resolvedName;
           let highScore = 0;
           let level = 0;
-          if (wallet) {
+          if (activePlayerId) {
             try {
-              const { progress } = await getGameProgress(game.id, wallet, {
+              const { progress } = await getGameProgress(game.id, activePlayerId, {
                 playerName: bootstrapName || undefined,
               });
               highScore = progress.score ?? 0;
@@ -184,18 +181,14 @@ export default function GameClient({ game }: GameClientProps) {
           };
           const resolvedWallet =
             walletAddress || payloadWallet || profile?.walletAddress;
-          if (payloadWallet && payloadWallet !== profile?.walletAddress) {
-            updateWalletAddress(payloadWallet).catch(() => {
-              // Wallet sync is best-effort
-            });
-          }
+          const activePlayerId = resolvedPlayerId;
           const personalBest = await submitScore(game.id, {
             name: playerName || name,
             score,
             walletAddress: resolvedWallet,
           });
-          if (resolvedWallet) {
-            saveGameProgress(game.id, resolvedWallet, score, {
+          if (activePlayerId) {
+            saveGameProgress(game.id, activePlayerId, score, {
               playerName: playerName || name,
             }).catch(() => {
               // User-node sync is best-effort
@@ -209,19 +202,18 @@ export default function GameClient({ game }: GameClientProps) {
         }
 
         case "MINIPAY_GET_PROGRESS": {
-          const wallet =
-            walletAddress || profile?.walletAddress || "";
-          if (!wallet) {
+          const activePlayerId = resolvedPlayerId;
+          if (!activePlayerId) {
             sendToUnity(iframeRef, "OnProgressReceived", {
               success: false,
-              error: "No wallet address available.",
+              error: "No player session available.",
             });
             break;
           }
           try {
             const { progress, hasLeaderboard } = await getGameProgress(
               game.id,
-              wallet,
+              activePlayerId,
               { playerName: playerName || profile?.name || undefined }
             );
             const payload = {
@@ -264,17 +256,16 @@ export default function GameClient({ game }: GameClientProps) {
             });
             break;
           }
-          const wallet =
-            walletAddress || profile?.walletAddress || "";
-          if (!wallet) {
+          const activePlayerId = resolvedPlayerId;
+          if (!activePlayerId) {
             sendToUnity(iframeRef, "OnProgressSaved", {
               success: false,
-              error: "No wallet address available.",
+              error: "No player session available.",
             });
             break;
           }
           try {
-            const result = await saveGameProgress(game.id, wallet, progressValue, {
+            const result = await saveGameProgress(game.id, activePlayerId, progressValue, {
               playerName: playerName || profile?.name || undefined,
             });
             sendToUnity(iframeRef, "OnProgressSaved", {
@@ -308,7 +299,8 @@ export default function GameClient({ game }: GameClientProps) {
       profile?.walletAddress,
       walletAddress,
       shellOrigin,
-      updateWalletAddress,
+      playerId,
+      resolvedPlayerId,
       markGameReady,
       scheduleProgressRetries,
     ]

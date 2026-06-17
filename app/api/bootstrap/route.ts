@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { bootstrapUserOnServer } from "@/lib/rtdb-server";
-import { normalizeWalletAddress } from "@/lib/wallet-address";
+import { buildPlayerId, WalletEcosystem } from "@/lib/player-identity";
+import { isValidAddress } from "@/lib/player-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -8,18 +9,37 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
       walletAddress?: string;
+      playerId?: string;
+      ecosystem?: WalletEcosystem;
+      chainId?: number;
     };
 
+    const ecosystem = body.ecosystem;
     const rawWallet = body.walletAddress?.trim() ?? "";
-    if (!rawWallet) {
+    const explicitPlayerId = body.playerId?.trim() ?? "";
+
+    let playerId = explicitPlayerId;
+    if (!playerId && ecosystem && rawWallet) {
+      if (!isValidAddress(ecosystem, rawWallet)) {
+        return NextResponse.json(
+          { error: "Invalid wallet address." },
+          { status: 400 }
+        );
+      }
+      playerId = buildPlayerId(ecosystem, rawWallet);
+    }
+
+    if (!playerId) {
       return NextResponse.json(
-        { error: "walletAddress is required." },
+        { error: "playerId or walletAddress with ecosystem is required." },
         { status: 400 }
       );
     }
 
-    const wallet = normalizeWalletAddress(rawWallet);
-    const user = await bootstrapUserOnServer(wallet);
+    const user = await bootstrapUserOnServer(playerId, {
+      ecosystem,
+      chainId: body.chainId,
+    });
     return NextResponse.json({ user });
   } catch (err) {
     const message =
