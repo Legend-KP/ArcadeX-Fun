@@ -17,11 +17,15 @@ interface GameClientProps {
 }
 
 const GAME_LOAD_FALLBACK_MS = 12000;
+const SHELL_LAYOUT_FALLBACK_MS = 4500;
 const PROGRESS_RETRY_DELAYS_MS = [0, 600, 1500, 3000] as const;
 
 export default function GameClient({ game }: GameClientProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const loadFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shellLayoutFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unityBootstrapRef = useRef(false);
+  const shellLayoutSentRef = useRef(false);
   const router = useRouter();
   const [exitOpen, setExitOpen] = useState(false);
   const [gameReady, setGameReady] = useState(false);
@@ -92,15 +96,36 @@ export default function GameClient({ game }: GameClientProps) {
     setGameReady(true);
   }, []);
 
+  const notifyShellLayoutReady = useCallback(() => {
+    if (shellLayoutSentRef.current) return;
+    shellLayoutSentRef.current = true;
+    sendToUnity(iframeRef, "OnShellLayoutReady", "1");
+  }, []);
+
   const scheduleLoadFallback = useCallback(() => {
     if (loadFallbackRef.current) clearTimeout(loadFallbackRef.current);
     loadFallbackRef.current = setTimeout(markGameReady, GAME_LOAD_FALLBACK_MS);
-  }, [markGameReady]);
+
+    if (shellLayoutFallbackRef.current) {
+      clearTimeout(shellLayoutFallbackRef.current);
+    }
+    shellLayoutFallbackRef.current = setTimeout(() => {
+      if (!unityBootstrapRef.current) {
+        notifyShellLayoutReady();
+        markGameReady();
+      }
+    }, SHELL_LAYOUT_FALLBACK_MS);
+  }, [markGameReady, notifyShellLayoutReady]);
 
   useEffect(() => {
     setGameReady(false);
+    unityBootstrapRef.current = false;
+    shellLayoutSentRef.current = false;
     return () => {
       if (loadFallbackRef.current) clearTimeout(loadFallbackRef.current);
+      if (shellLayoutFallbackRef.current) {
+        clearTimeout(shellLayoutFallbackRef.current);
+      }
       clearProgressRetries();
     };
   }, [game.url, clearProgressRetries]);
@@ -112,6 +137,7 @@ export default function GameClient({ game }: GameClientProps) {
 
       switch (msg.type) {
         case "MINIPAY_BOOTSTRAP": {
+          unityBootstrapRef.current = true;
           markGameReady();
           const wallet = resolvedWallet;
           const activePlayerId = resolvedPlayerId;
