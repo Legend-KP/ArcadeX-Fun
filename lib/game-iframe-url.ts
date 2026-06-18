@@ -41,5 +41,8 @@ export function buildGameIframeUrl(
     config.hasLeaderboard ? "1" : "0"
   );
 
+  // Bust CDN cache for game index.html (Cloudflare often ignores query strings on HTML)
+  url.searchParams.set("shellLayout", "2");
+
   return url.toString();
 }
