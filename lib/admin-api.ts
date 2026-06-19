@@ -144,3 +144,19 @@ export async function deleteAdminGame(id: string): Promise<void> {
     );
   }
 }
+
+export async function reorderAdminGames(ids: string[]): Promise<void> {
+  const res = await fetch("/api/games/reorder", {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({ ids }),
+  });
+  const data = await parseJson<{ error?: string }>(res);
+  if (!res.ok) {
+    throw new Error(
+      res.status === 401
+        ? "Session expired. Lock and sign in again."
+        : (data.error ?? "Failed to save game order.")
+    );
+  }
+}

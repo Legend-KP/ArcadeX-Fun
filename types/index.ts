@@ -33,6 +33,8 @@ export interface Game {
   live?: boolean;
   /** When false, leaderboard UI, RTDB paths, and score APIs are disabled. Defaults to true. */
   hasLeaderboard?: boolean;
+  /** Lower numbers appear first on the home page. Set via admin drag-and-drop. */
+  order?: number;
   createdAt: number;
 }
 

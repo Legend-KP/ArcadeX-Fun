@@ -8,6 +8,7 @@ import {
   fetchAdminGames,
   hasAdminSession,
   loginAdmin,
+  reorderAdminGames,
   saveAdminSession,
   updateAdminGame,
 } from "@/lib/admin-api";
@@ -45,6 +46,10 @@ export default function AdminPortal() {
   const [editHasLeaderboard, setEditHasLeaderboard] = useState(true);
   const [editLive, setEditLive] = useState(true);
   const [editSaving, setEditSaving] = useState(false);
+
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [reordering, setReordering] = useState(false);
 
   async function handleLogin() {
     setPwLoading(true);
@@ -206,6 +211,68 @@ export default function AdminPortal() {
     }
   }
 
+  function moveGame(list: Game[], draggedId: string, targetId: string): Game[] {
+    const from = list.findIndex((game) => game.id === draggedId);
+    const to = list.findIndex((game) => game.id === targetId);
+    if (from < 0 || to < 0 || from === to) return list;
+
+    const next = [...list];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    return next;
+  }
+
+  async function persistOrder(nextGames: Game[]) {
+    const previous = games;
+    setGames(nextGames);
+    setReordering(true);
+
+    try {
+      await reorderAdminGames(nextGames.map((game) => game.id));
+      showToast("Order saved!");
+    } catch (err) {
+      setGames(previous);
+      showToast(
+        err instanceof Error ? err.message : "Failed to save game order."
+      );
+    } finally {
+      setReordering(false);
+    }
+  }
+
+  function handleDragStart(e: React.DragEvent, id: string) {
+    if (editingId || reordering) {
+      e.preventDefault();
+      return;
+    }
+
+    setDragId(id);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+  }
+
+  function handleDragOver(e: React.DragEvent, id: string) {
+    e.preventDefault();
+    if (!dragId || dragId === id || editingId || reordering) return;
+    setDragOverId(id);
+    e.dataTransfer.dropEffect = "move";
+  }
+
+  function handleDrop(e: React.DragEvent, targetId: string) {
+    e.preventDefault();
+    if (!dragId || dragId === targetId || editingId || reordering) return;
+
+    const next = moveGame(games, dragId, targetId);
+    setDragId(null);
+    setDragOverId(null);
+    void persistOrder(next);
+  }
+
+  function handleDragEnd() {
+    setDragId(null);
+    setDragOverId(null);
+  }
+
   if (!authed) {
     return (
       <div className="login-screen">
@@ -364,6 +431,12 @@ export default function AdminPortal() {
         </div>
 
         <h2 className="admin-section-title">Manage Games ({games.length})</h2>
+        {!loading && games.length > 1 && (
+          <p className="admin-game-list-hint">
+            Drag the ⠿ handle to reorder games on the home page.
+            {reordering ? " Saving…" : ""}
+          </p>
+        )}
         {loading ? (
           <p className="admin-loading">Loading...</p>
         ) : (
@@ -472,8 +545,27 @@ export default function AdminPortal() {
               ) : (
                 <div
                   key={g.id}
-                  className={`admin-game-row ${!g.active ? "inactive" : ""}`}
+                  className={`admin-game-row ${!g.active ? "inactive" : ""}${
+                    dragId === g.id ? " is-dragging" : ""
+                  }${dragOverId === g.id ? " is-drag-over" : ""}`}
+                  onDragOver={(e) => handleDragOver(e, g.id)}
+                  onDragLeave={() => {
+                    if (dragOverId === g.id) setDragOverId(null);
+                  }}
+                  onDrop={(e) => handleDrop(e, g.id)}
                 >
+                  <button
+                    className="admin-drag-handle"
+                    type="button"
+                    draggable={!editingId && !reordering}
+                    onDragStart={(e) => handleDragStart(e, g.id)}
+                    onDragEnd={handleDragEnd}
+                    disabled={!!editingId || reordering}
+                    aria-label={`Drag to reorder ${g.name}`}
+                    title="Drag to reorder"
+                  >
+                    ⠿
+                  </button>
                   <div className="admin-thumb">
                     {g.thumbnail ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -499,6 +591,7 @@ export default function AdminPortal() {
                       className="edit-btn"
                       type="button"
                       onClick={() => startEdit(g)}
+                      disabled={reordering}
                     >
                       Edit
                     </button>
@@ -506,6 +599,7 @@ export default function AdminPortal() {
                       className="toggle-btn"
                       type="button"
                       onClick={() => handleToggleLive(g)}
+                      disabled={reordering}
                     >
                       {gameIsLive(g) ? "Coming Soon" : "Go Live"}
                     </button>
@@ -513,6 +607,7 @@ export default function AdminPortal() {
                       className="toggle-btn"
                       type="button"
                       onClick={() => handleToggle(g)}
+                      disabled={reordering}
                     >
                       {g.active ? "Hide" : "Show"}
                     </button>
@@ -520,6 +615,7 @@ export default function AdminPortal() {
                       className="delete-btn"
                       type="button"
                       onClick={() => handleDelete(g.id)}
+                      disabled={reordering}
                     >
                       🗑
                     </button>

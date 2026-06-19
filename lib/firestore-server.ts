@@ -1,3 +1,4 @@
+import { sortGames } from "@/lib/games-sort";
 import { Game } from "@/types";
 import { getFirebaseAccessToken, getProjectId, getServiceAccount } from "@/lib/firebase-admin";
 
@@ -38,6 +39,10 @@ function docToGame(doc: FirestoreDocument): Game {
     active: parseField(fields.active) !== false,
     live: parseField(fields.live) !== false,
     hasLeaderboard: parseField(fields.hasLeaderboard) !== false,
+    order:
+      parseField(fields.order) !== undefined
+        ? Number(parseField(fields.order))
+        : undefined,
     createdAt: Number(parseField(fields.createdAt) ?? 0),
   };
 }
@@ -91,7 +96,7 @@ export function isGameVisible(game: Game): boolean {
 
 export async function fetchGamesFromServer(): Promise<Game[]> {
   const docs = await listDocuments("games");
-  return docs.map(docToGame).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  return sortGames(docs.map(docToGame));
 }
 
 export async function fetchGameFromServer(id: string): Promise<Game | null> {
@@ -108,10 +113,24 @@ export async function fetchGameFromServer(id: string): Promise<Game | null> {
 export async function createGameOnServer(
   data: Omit<Game, "id" | "createdAt">
 ): Promise<string> {
+  const existing = sortGames((await listDocuments("games")).map(docToGame));
+  const hasCustomOrder = existing.some((game) => game.order != null);
+  const payload: Record<string, string | number | boolean> = {
+    ...data,
+    createdAt: Date.now(),
+  };
+  if (hasCustomOrder) {
+    const maxOrder = existing.reduce(
+      (max, game) => Math.max(max, game.order ?? -1),
+      -1
+    );
+    payload.order = maxOrder + 1;
+  }
+
   const res = await firestoreFetch("games", {
     method: "POST",
     body: JSON.stringify({
-      fields: encodeFields({ ...data, createdAt: Date.now() }),
+      fields: encodeFields(payload),
     }),
   });
 
@@ -143,6 +162,12 @@ export async function updateGameOnServer(
     const text = await res.text();
     throw new Error(`Firestore update failed (${res.status}): ${text}`);
   }
+}
+
+export async function reorderGamesOnServer(ids: string[]): Promise<void> {
+  await Promise.all(
+    ids.map((id, index) => updateGameOnServer(id, { order: index }))
+  );
 }
 
 export async function deleteGameOnServer(id: string): Promise<void> {
