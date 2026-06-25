@@ -1,0 +1,65 @@
+import { SparkSnapshot, StoredSparkState } from "@/types";
+
+export interface SparkApiResponse {
+  state: StoredSparkState;
+  sparks: SparkSnapshot;
+  spent?: boolean;
+}
+
+export class SparkClientError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+    readonly status?: number
+  ) {
+    super(message);
+    this.name = "SparkClientError";
+  }
+}
+
+export async function fetchSparkData(
+  playerId: string
+): Promise<SparkApiResponse> {
+  const res = await fetch(
+    `/api/sparks?playerId=${encodeURIComponent(playerId)}`,
+    { cache: "no-store" }
+  );
+
+  const data = (await res.json()) as SparkApiResponse & {
+    error?: string;
+    code?: string;
+  };
+
+  if (!res.ok) {
+    throw new SparkClientError(
+      data.error ?? "Could not load Sparks.",
+      data.code,
+      res.status
+    );
+  }
+
+  return data;
+}
+
+export async function spendSpark(playerId: string): Promise<SparkApiResponse> {
+  const res = await fetch("/api/sparks/spend", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ playerId }),
+  });
+
+  const data = (await res.json()) as SparkApiResponse & {
+    error?: string;
+    code?: string;
+  };
+
+  if (!res.ok) {
+    throw new SparkClientError(
+      data.error ?? "Could not spend Spark.",
+      data.code,
+      res.status
+    );
+  }
+
+  return data;
+}

@@ -62,3 +62,29 @@ export interface GameProgress {
   score?: number;
   level?: number;
 }
+
+export interface StoredSparkState {
+  max: number;
+  regenMs: number;
+  slots: (number | null)[];
+  infiniteUntil?: number;
+}
+
+export interface SparkSlotView {
+  index: number;
+  status: "ready" | "regenerating";
+  fillPercent: number;
+  timeRemainingMs: number;
+}
+
+export interface SparkSnapshot {
+  max: number;
+  available: number;
+  fillPercent: number;
+  timeToFullMs: number;
+  timeToNextMs: number;
+  slots: SparkSlotView[];
+  regeneratingCount: number;
+  hasInfinite: boolean;
+  infiniteUntil?: number;
+}

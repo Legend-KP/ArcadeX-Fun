@@ -7,11 +7,19 @@ import { Game, gameHasLeaderboard } from "@/types";
 
 interface GameMenuProps {
   game: Game;
-  onStart: () => void;
+  onStart: () => void | Promise<void>;
   onLeaderboard: () => void;
+  sparkError?: string;
+  spending?: boolean;
 }
 
-export default function GameMenu({ game, onStart, onLeaderboard }: GameMenuProps) {
+export default function GameMenu({
+  game,
+  onStart,
+  onLeaderboard,
+  sparkError = "",
+  spending = false,
+}: GameMenuProps) {
   const router = useRouter();
 
   const thumbCandidates = useMemo(
@@ -85,9 +93,20 @@ export default function GameMenu({ game, onStart, onLeaderboard }: GameMenuProps
 
         <h1 className="game-menu-title">{game.name}</h1>
 
+        {sparkError ? (
+          <p className="game-menu-spark-error" role="alert">
+            {sparkError}
+          </p>
+        ) : null}
+
         <div className="game-menu-actions">
-          <button type="button" className="game-menu-btn game-menu-btn--start" onClick={onStart}>
-            START
+          <button
+            type="button"
+            className="game-menu-btn game-menu-btn--start"
+            onClick={() => void onStart()}
+            disabled={spending}
+          >
+            {spending ? "Starting…" : "START"}
           </button>
           {gameHasLeaderboard(game) && (
             <button

@@ -7,15 +7,23 @@ import GameClient from "@/components/GameClient";
 import GameMenu from "@/components/GameMenu";
 import Leaderboard from "@/components/Leaderboard";
 import LoadingScreen from "@/components/LoadingScreen";
+import { usePlayerProfile } from "@/components/PlayerProfileProvider";
+import { useSparks } from "@/components/SparkProvider";
+import { SparkClientError } from "@/lib/spark-client";
+import { formatSparkCountdown } from "@/lib/spark";
 
 export default function GamePageClient() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { walletAddress, isAuthenticated, openConnect } = usePlayerProfile();
+  const { sparks, spendForGame } = useSparks();
   const [game, setGame] = useState<Game | null>(null);
   const [started, setStarted] = useState(false);
   const [lbOpen, setLbOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [sparkError, setSparkError] = useState("");
+  const [spending, setSpending] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,13 +89,50 @@ export default function GamePageClient() {
     );
   }
 
+  const handleStart = async () => {
+    setSparkError("");
+
+    if (!walletAddress || !isAuthenticated) {
+      setSparkError("Connect your wallet to play.");
+      openConnect();
+      return;
+    }
+
+    if (!sparks.hasInfinite && sparks.available === 0) {
+      setSparkError(
+        `No Sparks available. Next Spark in ${formatSparkCountdown(sparks.timeToNextMs)}.`
+      );
+      return;
+    }
+
+    setSpending(true);
+    try {
+      await spendForGame();
+      setStarted(true);
+    } catch (err) {
+      if (err instanceof SparkClientError && err.code === "NO_SPARKS") {
+        setSparkError(
+          `No Sparks available. Next Spark in ${formatSparkCountdown(sparks.timeToNextMs)}.`
+        );
+      } else {
+        setSparkError(
+          err instanceof Error ? err.message : "Could not start game."
+        );
+      }
+    } finally {
+      setSpending(false);
+    }
+  };
+
   return (
     <>
       {!started ? (
         <GameMenu
           game={game}
-          onStart={() => setStarted(true)}
+          onStart={handleStart}
           onLeaderboard={() => setLbOpen(true)}
+          sparkError={sparkError}
+          spending={spending}
         />
       ) : (
         <GameClient game={game} />

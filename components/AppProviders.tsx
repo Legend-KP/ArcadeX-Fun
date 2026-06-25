@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import PlayerProfileProvider from "@/components/PlayerProfileProvider";
+import SparkProvider from "@/components/SparkProvider";
 
 const WalletProvider = dynamic(() => import("@/components/WalletProvider"), {
   ssr: false,
@@ -22,7 +23,9 @@ export default function AppProviders({
 
   return (
     <WalletProvider>
-      <PlayerProfileProvider>{children}</PlayerProfileProvider>
+      <PlayerProfileProvider>
+        <SparkProvider>{children}</SparkProvider>
+      </PlayerProfileProvider>
     </WalletProvider>
   );
 }

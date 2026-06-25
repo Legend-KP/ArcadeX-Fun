@@ -2,6 +2,7 @@
 
 import Logo from "@/components/Logo";
 import ProfileDropdown from "@/components/ProfileDropdown";
+import SparkBatteryBar from "@/components/SparkBatteryBar";
 
 interface WebHeaderProps {
   search: string;
@@ -30,7 +31,8 @@ export default function WebHeader({ search, onSearchChange }: WebHeaderProps) {
           />
         </div>
 
-        <div className="web-header__profile">
+        <div className="web-header__actions">
+          <SparkBatteryBar />
           <ProfileDropdown />
         </div>
       </div>

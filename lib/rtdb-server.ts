@@ -3,7 +3,9 @@ import {
   LEADERBOARD_MAX_ENTRIES,
   LeaderboardEntry,
   PlayerProfile,
+  SparkSnapshot,
   StoredGameProgress,
+  StoredSparkState,
 } from "@/types";
 import { getDatabaseUrl } from "./firebase-admin";
 import {
@@ -13,6 +15,12 @@ import {
   resolvePlayerId,
   WalletEcosystem,
 } from "@/lib/player-identity";
+import {
+  computeSparkSnapshot,
+  defaultSparkState,
+  coerceSparkState,
+  normalizeSparkState,
+} from "@/lib/spark";
 
 type StoredUser = Omit<PlayerProfile, "id">;
 type LeaderboardMap = Record<string, LeaderboardEntry>;
@@ -230,9 +238,11 @@ export async function bootstrapUserOnServer(
       updatedAt: now,
     };
     await writePath(profilePath(resolved), stored);
+    await writePath(sparksPath(resolved), defaultSparkState());
     return toPlayerProfile(resolved, stored)!;
   }
 
+  await ensureSparkStateOnServer(resolved);
   return existing;
 }
 
@@ -458,4 +468,109 @@ export async function saveGameProgressOnServer(
 
   const updated: StoredGameProgress = { ...current, [field]: value };
   return storedProgressToGameProgress(updated, hasLeaderboard);
+}
+
+// ─── Sparks ───────────────────────────────────────────────────────────────────
+
+function sparksPath(playerId: string): string {
+  const resolved = resolvePlayerId(playerId);
+  if (!resolved) {
+    throw new Error("A valid player id is required.");
+  }
+  return `users/${resolved}/sparks`;
+}
+
+export async function fetchSparkStateFromServer(
+  playerId: string
+): Promise<StoredSparkState | null> {
+  if (!resolvePlayerId(playerId)) return null;
+  return readPath<StoredSparkState>(sparksPath(playerId));
+}
+
+export async function ensureSparkStateOnServer(
+  playerId: string
+): Promise<StoredSparkState> {
+  const resolved = resolvePlayerId(playerId);
+  if (!resolved) {
+    throw new Error("A valid player id is required.");
+  }
+
+  const existing = await readPath<unknown>(sparksPath(resolved));
+  if (existing) {
+    return coerceSparkState(existing);
+  }
+
+  const initial = defaultSparkState();
+  await writePath(sparksPath(resolved), initial);
+  return initial;
+}
+
+export async function getSparkSnapshotOnServer(
+  playerId: string,
+  now = Date.now()
+): Promise<{ state: StoredSparkState; sparks: SparkSnapshot }> {
+  const state = await ensureSparkStateOnServer(playerId);
+  const normalized = normalizeSparkState(state, now);
+  return {
+    state: normalized,
+    sparks: computeSparkSnapshot(normalized, now),
+  };
+}
+
+export class NoSparksError extends Error {
+  readonly code = "NO_SPARKS";
+
+  constructor() {
+    super("No Sparks available.");
+    this.name = "NoSparksError";
+  }
+}
+
+export async function spendSparkOnServer(
+  playerId: string,
+  now = Date.now()
+): Promise<{
+  state: StoredSparkState;
+  sparks: SparkSnapshot;
+  spent: boolean;
+}> {
+  const resolved = resolvePlayerId(playerId);
+  if (!resolved) {
+    throw new Error("A valid player id is required.");
+  }
+
+  const raw = await ensureSparkStateOnServer(resolved);
+  const state = normalizeSparkState(raw, now);
+
+  if (typeof state.infiniteUntil === "number" && state.infiniteUntil > now) {
+    return {
+      state,
+      sparks: computeSparkSnapshot(state, now),
+      spent: false,
+    };
+  }
+
+  const readyIndex = state.slots.findIndex(
+    (slot) => slot === null || slot <= now
+  );
+
+  if (readyIndex < 0) {
+    throw new NoSparksError();
+  }
+
+  const nextSlots = [...state.slots];
+  nextSlots[readyIndex] = now + state.regenMs;
+
+  const nextState: StoredSparkState = {
+    ...state,
+    slots: nextSlots,
+  };
+
+  await writePath(sparksPath(resolved), nextState);
+
+  return {
+    state: nextState,
+    sparks: computeSparkSnapshot(nextState, now),
+    spent: true,
+  };
 }
