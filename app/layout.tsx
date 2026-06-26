@@ -15,6 +15,11 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "ArcadeX",
   description: "Play fun games on ArcadeX — multi-chain web arcade",
+  icons: {
+    icon: "/thumbnails/arcadeX.webp",
+    shortcut: "/thumbnails/arcadeX.webp",
+    apple: "/thumbnails/arcadeX.webp",
+  },
 };
 
 export default function RootLayout({
