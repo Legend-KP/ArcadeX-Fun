@@ -16,9 +16,9 @@ export const metadata: Metadata = {
   title: "ArcadeX",
   description: "Play fun games on ArcadeX — multi-chain web arcade",
   icons: {
-    icon: "/thumbnails/arcadeX.webp",
-    shortcut: "/thumbnails/arcadeX.webp",
-    apple: "/thumbnails/arcadeX.webp",
+    icon: "/thumbnails/arcadex-favicon.webp",
+    shortcut: "/thumbnails/arcadex-favicon.webp",
+    apple: "/thumbnails/arcadex-favicon.webp",
   },
 };
 
