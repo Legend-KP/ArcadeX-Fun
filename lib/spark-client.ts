@@ -63,3 +63,31 @@ export async function spendSpark(playerId: string): Promise<SparkApiResponse> {
 
   return data;
 }
+
+export async function purchaseSparkItem(params: {
+  playerId: string;
+  productId: string;
+  txHash: string;
+  tokenAddress: string;
+}): Promise<SparkApiResponse> {
+  const res = await fetch("/api/sparks/purchase", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+
+  const data = (await res.json()) as SparkApiResponse & {
+    error?: string;
+    code?: string;
+  };
+
+  if (!res.ok) {
+    throw new SparkClientError(
+      data.error ?? "Could not complete purchase.",
+      data.code,
+      res.status
+    );
+  }
+
+  return data;
+}

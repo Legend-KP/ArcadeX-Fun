@@ -4,16 +4,22 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSparks } from "@/components/SparkProvider";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
+import SparkShopPaymentModal from "@/components/SparkShopPaymentModal";
 import {
-  formatSparkCountdown,
-  formatSparkDuration,
-} from "@/lib/spark";
+  formatShopPrice,
+  SHOP_PRODUCTS,
+  type ShopProductId,
+} from "@/lib/shop";
+import { formatSparkCountdown } from "@/lib/spark";
 
 export default function SparkBatteryBar() {
-  const { sparks, loading } = useSparks();
-  const { isAuthenticated } = usePlayerProfile();
+  const { sparks, loading, refresh } = useSparks();
+  const { isAuthenticated, playerId, ecosystem, openConnect } =
+    usePlayerProfile();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [paymentProductId, setPaymentProductId] =
+    useState<ShopProductId | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -38,6 +44,20 @@ export default function SparkBatteryBar() {
 
   const displayAvailable = isAuthenticated ? sparks.available : sparks.max;
   const showInfinite = isAuthenticated && sparks.hasInfinite;
+  const shopEnabled = isAuthenticated && ecosystem === "evm";
+
+  function handleBuy(productId: ShopProductId) {
+    if (!isAuthenticated) {
+      openConnect();
+      return;
+    }
+
+    if (ecosystem !== "evm") {
+      return;
+    }
+
+    setPaymentProductId(productId);
+  }
 
   const panel = open ? (
     <div
@@ -81,6 +101,12 @@ export default function SparkBatteryBar() {
           </p>
         )}
 
+        {isAuthenticated && ecosystem !== "evm" && (
+          <p className="spark-panel__hint">
+            Shop purchases are available with an EVM wallet on MegaETH.
+          </p>
+        )}
+
         <div className="spark-panel__slots">
           {sparks.slots.map((slot) => (
             <div key={slot.index} className="spark-panel__slot">
@@ -103,30 +129,6 @@ export default function SparkBatteryBar() {
           ))}
         </div>
 
-        {!showInfinite && sparks.regeneratingCount > 0 && (
-          <div className="spark-panel__timers">
-            {sparks.regeneratingCount === 1 ? (
-              <p>
-                Refills in{" "}
-                <strong>{formatSparkCountdown(sparks.timeToNextMs)}</strong>
-              </p>
-            ) : (
-              <>
-                <p>
-                  Next Spark in{" "}
-                  <strong>
-                    {formatSparkCountdown(sparks.timeToNextMs)}
-                  </strong>
-                </p>
-                <p>
-                  All Sparks ready in{" "}
-                  <strong>{formatSparkDuration(sparks.timeToFullMs)}</strong>
-                </p>
-              </>
-            )}
-          </div>
-        )}
-
         {loading && (
           <p className="spark-panel__loading">Syncing Sparks…</p>
         )}
@@ -136,26 +138,44 @@ export default function SparkBatteryBar() {
           <div className="spark-shop-cards">
             <div className="spark-shop-card">
               <div className="spark-shop-card__info">
-                <span className="spark-shop-card__name">Spark Refill</span>
-                <span className="spark-shop-card__price">$0.04</span>
+                <span className="spark-shop-card__name">
+                  {SHOP_PRODUCTS["spark-refill"].name}
+                </span>
+                <span className="spark-shop-card__price">
+                  {formatShopPrice(SHOP_PRODUCTS["spark-refill"].priceUsd)}
+                </span>
               </div>
               <p className="spark-shop-card__desc">
-                Instantly refill all Sparks
+                {SHOP_PRODUCTS["spark-refill"].description}
               </p>
-              <button type="button" className="spark-shop-card__btn" disabled>
-                Coming soon
+              <button
+                type="button"
+                className="spark-shop-card__btn"
+                disabled={!shopEnabled}
+                onClick={() => handleBuy("spark-refill")}
+              >
+                {shopEnabled ? "Buy" : "Connect EVM wallet"}
               </button>
             </div>
             <div className="spark-shop-card">
               <div className="spark-shop-card__info">
-                <span className="spark-shop-card__name">Infinite 24h</span>
-                <span className="spark-shop-card__price">$0.10</span>
+                <span className="spark-shop-card__name">
+                  {SHOP_PRODUCTS["infinite-24h"].name}
+                </span>
+                <span className="spark-shop-card__price">
+                  {formatShopPrice(SHOP_PRODUCTS["infinite-24h"].priceUsd)}
+                </span>
               </div>
               <p className="spark-shop-card__desc">
-                Unlimited game entries for 24 hours
+                {SHOP_PRODUCTS["infinite-24h"].description}
               </p>
-              <button type="button" className="spark-shop-card__btn" disabled>
-                Coming soon
+              <button
+                type="button"
+                className="spark-shop-card__btn"
+                disabled={!shopEnabled}
+                onClick={() => handleBuy("infinite-24h")}
+              >
+                {shopEnabled ? "Buy" : "Connect EVM wallet"}
               </button>
             </div>
           </div>
@@ -195,6 +215,14 @@ export default function SparkBatteryBar() {
       </button>
 
       {mounted && panel ? createPortal(panel, document.body) : null}
+
+      <SparkShopPaymentModal
+        open={paymentProductId !== null}
+        productId={paymentProductId}
+        playerId={playerId}
+        onClose={() => setPaymentProductId(null)}
+        onSuccess={() => void refresh()}
+      />
     </>
   );
 }

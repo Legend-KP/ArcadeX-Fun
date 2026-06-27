@@ -21,6 +21,7 @@ import {
   coerceSparkState,
   normalizeSparkState,
 } from "@/lib/spark";
+import { INFINITE_SPARKS_MS, type ShopProductId } from "@/lib/shop";
 
 type StoredUser = Omit<PlayerProfile, "id">;
 type LeaderboardMap = Record<string, LeaderboardEntry>;
@@ -572,5 +573,87 @@ export async function spendSparkOnServer(
     state: nextState,
     sparks: computeSparkSnapshot(nextState, now),
     spent: true,
+  };
+}
+
+function processedShopTxPath(txHash: string): string {
+  return `shop/processedTxs/${txHash.trim().toLowerCase()}`;
+}
+
+export class ShopPurchaseError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string
+  ) {
+    super(message);
+    this.name = "ShopPurchaseError";
+  }
+}
+
+export async function applyShopPurchaseOnServer(
+  playerId: string,
+  productId: ShopProductId,
+  txHash: string,
+  now = Date.now()
+): Promise<{ state: StoredSparkState; sparks: SparkSnapshot }> {
+  const resolved = resolvePlayerId(playerId);
+  if (!resolved) {
+    throw new Error("A valid player id is required.");
+  }
+
+  const txKey = txHash.trim().toLowerCase();
+  if (!/^0x[0-9a-f]{64}$/.test(txKey)) {
+    throw new ShopPurchaseError("Invalid transaction hash.", "INVALID_TX");
+  }
+
+  const processedPath = processedShopTxPath(txKey);
+  const existing = await readPath<{
+    playerId: string;
+    productId: ShopProductId;
+  }>(processedPath);
+
+  if (existing) {
+    if (existing.playerId !== resolved || existing.productId !== productId) {
+      throw new ShopPurchaseError(
+        "This transaction was already used.",
+        "TX_ALREADY_USED"
+      );
+    }
+
+    return getSparkSnapshotOnServer(resolved, now);
+  }
+
+  const raw = await ensureSparkStateOnServer(resolved);
+  const state = normalizeSparkState(raw, now);
+
+  let nextState: StoredSparkState;
+
+  if (productId === "spark-refill") {
+    nextState = {
+      ...state,
+      slots: Array.from({ length: state.max }, () => null),
+    };
+  } else {
+    const base =
+      typeof state.infiniteUntil === "number" && state.infiniteUntil > now
+        ? state.infiniteUntil
+        : now;
+
+    nextState = {
+      ...state,
+      infiniteUntil: base + INFINITE_SPARKS_MS,
+    };
+  }
+
+  await writePath(sparksPath(resolved), nextState);
+  await writePath(processedPath, {
+    playerId: resolved,
+    productId,
+    processedAt: now,
+  });
+
+  return {
+    state: nextState,
+    sparks: computeSparkSnapshot(nextState, now),
   };
 }
