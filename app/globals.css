@@ -2069,15 +2069,54 @@ a { color: inherit; text-decoration: none; }
   opacity: 0.7;
 }
 
+.spark-shop-payment-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: lb-backdrop-in 0.25s ease-out;
+  overscroll-behavior: contain;
+}
+
 .spark-shop-payment {
   position: relative;
+  display: flex;
+  flex-direction: column;
   width: min(420px, calc(100vw - 32px));
   max-height: min(88dvh, 560px);
-  overflow-y: auto;
-  padding: 24px 20px 20px;
+  margin: auto;
+  flex-shrink: 0;
+  overflow: hidden;
   border-radius: 24px;
   background: #fff;
+  border: 1px solid var(--border);
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.18);
+  animation: lb-sheet-in 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.spark-shop-payment__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 24px 20px 16px;
+}
+
+.spark-shop-payment__footer {
+  flex-shrink: 0;
+  padding: 12px 20px max(20px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: #fff;
 }
 
 .spark-shop-payment__price {

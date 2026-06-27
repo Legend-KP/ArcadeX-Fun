@@ -56,6 +56,7 @@ export default function SparkBatteryBar() {
       return;
     }
 
+    setOpen(false);
     setPaymentProductId(productId);
   }
 

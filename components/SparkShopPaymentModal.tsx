@@ -138,15 +138,6 @@ export default function SparkShopPaymentModal({
   }, [open, onMegaEth]);
 
   useEffect(() => {
-    if (!open || !product || selectedToken || balancesLoading) return;
-
-    const affordable = tokenOptions.filter((option) => option.sufficient);
-    if (affordable.length === 1) {
-      setSelectedToken(affordable[0]!.token);
-    }
-  }, [open, product, selectedToken, balancesLoading, tokenOptions]);
-
-  useEffect(() => {
     if (!txHash || !txConfirmed || !product || !selectedToken) return;
 
     let cancelled = false;
@@ -214,55 +205,70 @@ export default function SparkShopPaymentModal({
     }
   }, [switchChainAsync]);
 
-  const handlePay = useCallback(async () => {
-    if (!product || !selectedToken || !address) return;
+  const handlePay = useCallback(
+    async (token?: ShopPaymentToken) => {
+      const payToken = token ?? selectedToken;
+      if (!product || !payToken || !address) return;
 
-    const option = tokenOptions.find(
-      (entry) => entry.token.id === selectedToken.id
-    );
-    if (!option?.sufficient) {
-      setError(`Not enough ${selectedToken.symbol} for this purchase.`);
-      return;
-    }
-
-    setBusy(true);
-    setError("");
-    setStep("paying");
-
-    try {
-      const hash = await writeContractAsync({
-        address: selectedToken.address,
-        abi: erc20Abi,
-        functionName: "transfer",
-        args: [SHOP_RECIPIENT_ADDRESS, option.requiredAmount],
-        chainId: PRIMARY_EVM_CHAIN_ID,
-      });
-
-      setTxHash(hash);
-    } catch (err) {
-      setStep("token");
-      setError(
-        err instanceof Error ? err.message : "Payment was cancelled or failed."
+      const option = tokenOptions.find(
+        (entry) => entry.token.id === payToken.id
       );
-    } finally {
-      setBusy(false);
-    }
-  }, [
-    product,
-    selectedToken,
-    address,
-    tokenOptions,
-    writeContractAsync,
-  ]);
+      if (!option?.sufficient) {
+        setError(`Not enough ${payToken.symbol} for this purchase.`);
+        return;
+      }
+
+      setSelectedToken(payToken);
+      setBusy(true);
+      setError("");
+      setStep("paying");
+
+      try {
+        const hash = await writeContractAsync({
+          address: payToken.address,
+          abi: erc20Abi,
+          functionName: "transfer",
+          args: [SHOP_RECIPIENT_ADDRESS, option.requiredAmount],
+          chainId: PRIMARY_EVM_CHAIN_ID,
+        });
+
+        setTxHash(hash);
+      } catch (err) {
+        setStep("token");
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Payment was cancelled or failed."
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [product, selectedToken, address, tokenOptions, writeContractAsync]
+  );
+
+  const handleTokenSelect = useCallback(
+    (token: ShopPaymentToken, sufficient: boolean) => {
+      if (!sufficient || busy) return;
+
+      setSelectedToken(token);
+      setError("");
+      void handlePay(token);
+    },
+    [busy, handlePay]
+  );
 
   if (!open || !product || !mounted) return null;
 
   const affordableCount = tokenOptions.filter((option) => option.sufficient)
     .length;
+  const showTokenStep = step === "token" && onMegaEth;
+  const showPayFooter =
+    showTokenStep && !balancesLoading && affordableCount > 0;
 
   const modal = (
     <div
-      className="spark-panel-backdrop"
+      className="spark-shop-payment-backdrop"
       role="presentation"
       onClick={busy || confirmingTx ? undefined : onClose}
     >
@@ -273,125 +279,127 @@ export default function SparkShopPaymentModal({
         aria-labelledby="spark-shop-payment-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <button
-          type="button"
-          className="spark-panel__close"
-          onClick={onClose}
-          disabled={busy || confirmingTx}
-          aria-label="Close"
-        >
-          ×
-        </button>
+        <div className="spark-shop-payment__body">
+          <button
+            type="button"
+            className="spark-panel__close"
+            onClick={onClose}
+            disabled={busy || confirmingTx}
+            aria-label="Close"
+          >
+            ×
+          </button>
 
-        <h2 id="spark-shop-payment-title" className="spark-panel__title">
-          {product.name}
-        </h2>
-        <p className="spark-shop-payment__price">
-          {formatShopPrice(product.priceUsd)} on MegaETH
-        </p>
-        <p className="spark-shop-payment__desc">{product.description}</p>
-
-        {!isConnected && (
-          <p className="spark-shop-payment__error" role="alert">
-            Connect your wallet to continue.
+          <h2 id="spark-shop-payment-title" className="spark-panel__title">
+            {product.name}
+          </h2>
+          <p className="spark-shop-payment__price">
+            {formatShopPrice(product.priceUsd)} on MegaETH
           </p>
-        )}
+          <p className="spark-shop-payment__desc">{product.description}</p>
 
-        {step === "network" && (
-          <div className="spark-shop-payment__section">
-            <p className="spark-shop-payment__hint">
-              Switch to {primaryEvmChain.name} to pay with USDm or USDT0.
+          {!isConnected && (
+            <p className="spark-shop-payment__error" role="alert">
+              Connect your wallet to continue.
             </p>
-            <button
-              type="button"
-              className="spark-shop-payment__primary"
-              onClick={() => void handleSwitchNetwork()}
-              disabled={busy}
-            >
-              {busy ? "Switching…" : `Switch to ${primaryEvmChain.name}`}
-            </button>
-          </div>
-        )}
+          )}
 
-        {step === "token" && onMegaEth && (
-          <div className="spark-shop-payment__section">
-            <p className="spark-shop-payment__hint">
-              Choose a payment token. We will send the exact amount to complete
-              your purchase.
-            </p>
-
-            {balancesLoading ? (
-              <p className="spark-panel__loading">Loading balances…</p>
-            ) : (
-              <div className="spark-shop-payment__tokens">
-                {tokenOptions.map((option) => (
-                  <button
-                    key={option.token.id}
-                    type="button"
-                    className={`spark-shop-payment__token${
-                      selectedToken?.id === option.token.id ? " is-selected" : ""
-                    }${option.sufficient ? "" : " is-disabled"}`}
-                    onClick={() => {
-                      if (!option.sufficient) return;
-                      setSelectedToken(option.token);
-                      setError("");
-                    }}
-                    disabled={!option.sufficient || busy}
-                  >
-                    <span className="spark-shop-payment__token-name">
-                      {option.token.symbol}
-                    </span>
-                    <span className="spark-shop-payment__token-balance">
-                      Balance: {option.balanceLabel}
-                    </span>
-                    {!option.sufficient && (
-                      <span className="spark-shop-payment__token-note">
-                        Insufficient balance
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {affordableCount === 0 && !balancesLoading && (
-              <p className="spark-shop-payment__error" role="alert">
-                You need at least {formatShopPrice(product.priceUsd)} in USDm or
-                USDT0 on MegaETH.
+          {step === "network" && (
+            <div className="spark-shop-payment__section">
+              <p className="spark-shop-payment__hint">
+                Switch to {primaryEvmChain.name} to pay with USDm or USDT0.
               </p>
-            )}
+              <button
+                type="button"
+                className="spark-shop-payment__primary"
+                onClick={() => void handleSwitchNetwork()}
+                disabled={busy}
+              >
+                {busy ? "Switching…" : `Switch to ${primaryEvmChain.name}`}
+              </button>
+            </div>
+          )}
 
+          {showTokenStep && (
+            <div className="spark-shop-payment__section">
+              <p className="spark-shop-payment__hint">
+                Tap a token to pay. Your wallet will open to approve the
+                transfer.
+              </p>
+
+              {balancesLoading ? (
+                <p className="spark-panel__loading">Loading balances…</p>
+              ) : (
+                <div className="spark-shop-payment__tokens">
+                  {tokenOptions.map((option) => (
+                    <button
+                      key={option.token.id}
+                      type="button"
+                      className={`spark-shop-payment__token${
+                        selectedToken?.id === option.token.id
+                          ? " is-selected"
+                          : ""
+                      }${option.sufficient ? "" : " is-disabled"}`}
+                      onClick={() =>
+                        handleTokenSelect(option.token, option.sufficient)
+                      }
+                      disabled={!option.sufficient || busy}
+                    >
+                      <span className="spark-shop-payment__token-name">
+                        {option.token.symbol}
+                      </span>
+                      <span className="spark-shop-payment__token-balance">
+                        Balance: {option.balanceLabel}
+                      </span>
+                      {!option.sufficient && (
+                        <span className="spark-shop-payment__token-note">
+                          Insufficient balance
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {affordableCount === 0 && !balancesLoading && (
+                <p className="spark-shop-payment__error" role="alert">
+                  You need at least {formatShopPrice(product.priceUsd)} in USDm
+                  or USDT0 on MegaETH.
+                </p>
+              )}
+            </div>
+          )}
+
+          {(step === "paying" || step === "confirming" || confirmingTx) && (
+            <div className="spark-shop-payment__section">
+              <p className="spark-panel__loading">
+                {step === "confirming" || confirmingTx
+                  ? "Confirming payment and unlocking your purchase…"
+                  : "Approve the transfer in your wallet…"}
+              </p>
+            </div>
+          )}
+
+          {error ? (
+            <p className="spark-shop-payment__error" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </div>
+
+        {showPayFooter && selectedToken && !busy && (
+          <div className="spark-shop-payment__footer">
             <button
               type="button"
               className="spark-shop-payment__primary"
               onClick={() => void handlePay()}
-              disabled={
-                busy ||
-                balancesLoading ||
-                !selectedToken ||
-                affordableCount === 0
-              }
+              disabled={busy}
             >
-              Pay {formatShopPrice(product.priceUsd)}
+              Pay {formatShopPrice(product.priceUsd)} with{" "}
+              {selectedToken.symbol}
             </button>
           </div>
         )}
-
-        {(step === "paying" || step === "confirming" || confirmingTx) && (
-          <div className="spark-shop-payment__section">
-            <p className="spark-panel__loading">
-              {step === "confirming" || confirmingTx
-                ? "Confirming payment and unlocking your purchase…"
-                : "Approve the transfer in your wallet…"}
-            </p>
-          </div>
-        )}
-
-        {error ? (
-          <p className="spark-shop-payment__error" role="alert">
-            {error}
-          </p>
-        ) : null}
       </div>
     </div>
   );
