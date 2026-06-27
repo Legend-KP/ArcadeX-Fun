@@ -24,6 +24,8 @@ export interface ShopPurchaseSuccess {
   tokenSymbol: string;
 }
 
+export const SHOP_TOKEN_DECIMALS = 6;
+
 export const SHOP_PRODUCTS: Record<ShopProductId, ShopProduct> = {
   "spark-refill": {
     id: "spark-refill",
@@ -31,7 +33,8 @@ export const SHOP_PRODUCTS: Record<ShopProductId, ShopProduct> = {
     description: "Instantly refill all Sparks",
     priceUsd: 0.2,
     successTitle: "Sparks refilled!",
-    successMessage: "Payment received. All Sparks are ready — jump back in and play.",
+    successMessage:
+      "Payment received. All Sparks are ready — jump back in and play.",
   },
   "infinite-24h": {
     id: "infinite-24h",

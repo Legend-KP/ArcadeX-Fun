@@ -3,7 +3,9 @@ import {
   decodeEventLog,
   getAddress,
   http,
+  TransactionReceiptNotFoundError,
   type Hash,
+  type TransactionReceipt,
 } from "viem";
 import { megaeth } from "@/lib/chains";
 import {
@@ -11,14 +13,39 @@ import {
   findShopPaymentToken,
   SHOP_PRODUCTS,
   SHOP_RECIPIENT_ADDRESS,
+  SHOP_TOKEN_DECIMALS,
   shopPriceToAmount,
   type ShopProductId,
 } from "@/lib/shop";
 
+const RECEIPT_POLL_MS = 250;
+const RECEIPT_MAX_WAIT_MS = 60_000;
+
 const publicClient = createPublicClient({
   chain: megaeth,
-  transport: http(),
+  transport: http(megaeth.rpcUrls.default.http[0], {
+    timeout: 12_000,
+  }),
 });
+
+async function waitForReceipt(hash: Hash): Promise<TransactionReceipt> {
+  const deadline = Date.now() + RECEIPT_MAX_WAIT_MS;
+
+  while (Date.now() < deadline) {
+    try {
+      const receipt = await publicClient.getTransactionReceipt({ hash });
+      return receipt;
+    } catch (err) {
+      if (!(err instanceof TransactionReceiptNotFoundError)) {
+        throw err;
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, RECEIPT_POLL_MS));
+  }
+
+  throw new Error("Timed out waiting for transaction confirmation.");
+}
 
 export async function verifyShopPaymentTx(params: {
   txHash: Hash;
@@ -31,22 +58,17 @@ export async function verifyShopPaymentTx(params: {
     throw new Error("Unsupported payment token.");
   }
 
-  const receipt = await publicClient.waitForTransactionReceipt({
-    hash: params.txHash,
-    confirmations: 1,
-  });
+  const receipt = await waitForReceipt(params.txHash);
 
   if (receipt.status !== "success") {
     throw new Error("Transaction failed on chain.");
   }
 
   const product = SHOP_PRODUCTS[params.productId];
-  const decimals = await publicClient.readContract({
-    address: token.address,
-    abi: erc20Abi,
-    functionName: "decimals",
-  });
-  const requiredAmount = shopPriceToAmount(product.priceUsd, decimals);
+  const requiredAmount = shopPriceToAmount(
+    product.priceUsd,
+    SHOP_TOKEN_DECIMALS
+  );
   const recipient = getAddress(SHOP_RECIPIENT_ADDRESS);
   const from = getAddress(params.expectedFrom);
   const tokenAddress = getAddress(token.address);

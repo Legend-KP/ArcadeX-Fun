@@ -7,7 +7,6 @@ import {
   useChainId,
   useReadContracts,
   useSwitchChain,
-  useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
 import { formatUnits } from "viem";
@@ -19,6 +18,7 @@ import {
   SHOP_PRODUCTS,
   SHOP_PAYMENT_TOKENS,
   SHOP_RECIPIENT_ADDRESS,
+  SHOP_TOKEN_DECIMALS,
   shopPriceToAmount,
   type ShopPaymentToken,
   type ShopProductId,
@@ -98,7 +98,9 @@ export default function SparkShopPaymentModal({
           ? BigInt(balanceResult.result)
           : BigInt(0);
       const decimals =
-        decimalsResult?.status === "success" ? Number(decimalsResult.result) : 6;
+        decimalsResult?.status === "success"
+          ? Number(decimalsResult.result)
+          : SHOP_TOKEN_DECIMALS;
       const requiredAmount = shopPriceToAmount(product.priceUsd, decimals);
       const sufficient = balance >= requiredAmount;
 
@@ -113,11 +115,42 @@ export default function SparkShopPaymentModal({
     });
   }, [contractData, product]);
 
-  const { isLoading: confirmingTx, isSuccess: txConfirmed } =
-    useWaitForTransactionReceipt({
-      hash: txHash,
-      chainId: PRIMARY_EVM_CHAIN_ID,
-    });
+  const confirmPurchase = useCallback(
+    async (
+      hash: `0x${string}`,
+      token: ShopPaymentToken,
+      purchasedProduct: NonNullable<typeof product>
+    ) => {
+      setStep("confirming");
+      setBusy(true);
+      setError("");
+
+      try {
+        await purchaseSparkItem({
+          playerId,
+          productId: purchasedProduct.id,
+          txHash: hash,
+          tokenAddress: token.address,
+        });
+
+        onSuccess({
+          productId: purchasedProduct.id,
+          txHash: hash,
+          tokenSymbol: token.symbol,
+        });
+        onClose();
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Could not confirm purchase."
+        );
+        setStep("token");
+        setTxHash(undefined);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [playerId, onSuccess, onClose]
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -137,60 +170,6 @@ export default function SparkShopPaymentModal({
     if (!open) return;
     setStep(onMegaEth ? "token" : "network");
   }, [open, onMegaEth]);
-
-  useEffect(() => {
-    if (!txHash || !txConfirmed || !product || !selectedToken) return;
-
-    let cancelled = false;
-
-    async function confirmPurchase() {
-      setStep("confirming");
-      setBusy(true);
-      setError("");
-
-      try {
-        await purchaseSparkItem({
-          playerId,
-          productId: product!.id,
-          txHash: txHash!,
-          tokenAddress: selectedToken!.address,
-        });
-
-        if (cancelled) return;
-        onSuccess({
-          productId: product!.id,
-          txHash: txHash!,
-          tokenSymbol: selectedToken!.symbol,
-        });
-        onClose();
-      } catch (err) {
-        if (cancelled) return;
-        setError(
-          err instanceof Error ? err.message : "Could not confirm purchase."
-        );
-        setStep("token");
-      } finally {
-        if (!cancelled) {
-          setBusy(false);
-          setTxHash(undefined);
-        }
-      }
-    }
-
-    void confirmPurchase();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    txHash,
-    txConfirmed,
-    product,
-    selectedToken,
-    playerId,
-    onSuccess,
-    onClose,
-  ]);
 
   const handleSwitchNetwork = useCallback(async () => {
     setBusy(true);
@@ -238,6 +217,7 @@ export default function SparkShopPaymentModal({
         });
 
         setTxHash(hash);
+        await confirmPurchase(hash, payToken, product);
       } catch (err) {
         setStep("token");
         setError(
@@ -249,7 +229,7 @@ export default function SparkShopPaymentModal({
         setBusy(false);
       }
     },
-    [product, selectedToken, address, tokenOptions, writeContractAsync]
+    [product, selectedToken, address, tokenOptions, writeContractAsync, confirmPurchase]
   );
 
   const handleTokenSelect = useCallback(
@@ -275,7 +255,7 @@ export default function SparkShopPaymentModal({
     <div
       className="spark-shop-payment-backdrop"
       role="presentation"
-      onClick={busy || confirmingTx ? undefined : onClose}
+      onClick={busy ? undefined : onClose}
     >
       <div
         className="spark-shop-payment"
@@ -289,7 +269,7 @@ export default function SparkShopPaymentModal({
             type="button"
             className="spark-panel__close"
             onClick={onClose}
-            disabled={busy || confirmingTx}
+            disabled={busy}
             aria-label="Close"
           >
             ×
@@ -375,11 +355,11 @@ export default function SparkShopPaymentModal({
             </div>
           )}
 
-          {(step === "paying" || step === "confirming" || confirmingTx) && (
+          {(step === "paying" || step === "confirming") && (
             <div className="spark-shop-payment__section">
               <p className="spark-panel__loading">
-                {step === "confirming" || confirmingTx
-                  ? "Confirming payment and unlocking your purchase…"
+                {step === "confirming"
+                  ? "Confirming payment on MegaETH…"
                   : "Approve the transfer in your wallet…"}
               </p>
             </div>
