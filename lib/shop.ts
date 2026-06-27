@@ -14,6 +14,14 @@ export interface ShopProduct {
   name: string;
   description: string;
   priceUsd: number;
+  successTitle: string;
+  successMessage: string;
+}
+
+export interface ShopPurchaseSuccess {
+  productId: ShopProductId;
+  txHash: string;
+  tokenSymbol: string;
 }
 
 export const SHOP_PRODUCTS: Record<ShopProductId, ShopProduct> = {
@@ -22,12 +30,17 @@ export const SHOP_PRODUCTS: Record<ShopProductId, ShopProduct> = {
     name: "Spark Refill",
     description: "Instantly refill all Sparks",
     priceUsd: 0.2,
+    successTitle: "Sparks refilled!",
+    successMessage: "Payment received. All Sparks are ready — jump back in and play.",
   },
   "infinite-24h": {
     id: "infinite-24h",
     name: "Infinite 24h",
     description: "Unlimited game entries for 24 hours",
     priceUsd: 0.5,
+    successTitle: "Infinite Sparks unlocked!",
+    successMessage:
+      "Payment received. Unlimited game entries are active for the next 24 hours.",
   },
 };
 

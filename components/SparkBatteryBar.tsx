@@ -5,10 +5,12 @@ import { createPortal } from "react-dom";
 import { useSparks } from "@/components/SparkProvider";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import SparkShopPaymentModal from "@/components/SparkShopPaymentModal";
+import SparkShopSuccessModal from "@/components/SparkShopSuccessModal";
 import {
   formatShopPrice,
   SHOP_PRODUCTS,
   type ShopProductId,
+  type ShopPurchaseSuccess,
 } from "@/lib/shop";
 import { formatSparkCountdown } from "@/lib/spark";
 
@@ -20,6 +22,8 @@ export default function SparkBatteryBar() {
   const [mounted, setMounted] = useState(false);
   const [paymentProductId, setPaymentProductId] =
     useState<ShopProductId | null>(null);
+  const [successPurchase, setSuccessPurchase] =
+    useState<ShopPurchaseSuccess | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -222,7 +226,16 @@ export default function SparkBatteryBar() {
         productId={paymentProductId}
         playerId={playerId}
         onClose={() => setPaymentProductId(null)}
-        onSuccess={() => void refresh()}
+        onSuccess={(purchase) => {
+          void refresh();
+          setSuccessPurchase(purchase);
+        }}
+      />
+
+      <SparkShopSuccessModal
+        open={successPurchase !== null}
+        purchase={successPurchase}
+        onClose={() => setSuccessPurchase(null)}
       />
     </>
   );

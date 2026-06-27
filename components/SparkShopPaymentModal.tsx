@@ -22,6 +22,7 @@ import {
   shopPriceToAmount,
   type ShopPaymentToken,
   type ShopProductId,
+  type ShopPurchaseSuccess,
 } from "@/lib/shop";
 
 interface SparkShopPaymentModalProps {
@@ -29,7 +30,7 @@ interface SparkShopPaymentModalProps {
   productId: ShopProductId | null;
   playerId: string;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (purchase: ShopPurchaseSuccess) => void;
 }
 
 type PaymentStep = "network" | "token" | "paying" | "confirming";
@@ -156,7 +157,11 @@ export default function SparkShopPaymentModal({
         });
 
         if (cancelled) return;
-        onSuccess();
+        onSuccess({
+          productId: product!.id,
+          txHash: txHash!,
+          tokenSymbol: selectedToken!.symbol,
+        });
         onClose();
       } catch (err) {
         if (cancelled) return;
