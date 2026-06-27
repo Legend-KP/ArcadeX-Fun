@@ -7,7 +7,9 @@ import {
   useDisconnect,
   useSignMessage,
   useChainId,
+  useSwitchChain,
 } from "wagmi";
+import { PRIMARY_EVM_CHAIN_ID, primaryEvmChain } from "@/lib/chains";
 import { connect as connectStarknet, disconnect as disconnectStarknet } from "starknetkit";
 import { InjectedConnector } from "starknetkit/injected";
 import type { Connector } from "starknetkit";
@@ -46,15 +48,20 @@ export default function ConnectWalletModal({
   const { connectAsync, connectors } = useConnect();
   const { disconnectAsync } = useDisconnect();
   const chainId = useChainId();
+  const { switchChainAsync } = useSwitchChain();
   const { signMessageAsync } = useSignMessage();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [step, setStep] = useState<"wallet" | "network">("wallet");
+  const [pendingEvmAddress, setPendingEvmAddress] = useState("");
   const starknetConnectorRef = useRef<Connector | null>(null);
 
   useEffect(() => {
     if (!open) {
       setError("");
       setBusy(false);
+      setStep("wallet");
+      setPendingEvmAddress("");
     }
   }, [open]);
 
@@ -68,6 +75,38 @@ export default function ConnectWalletModal({
       chainId: activeChainId,
       signMessageAsync,
     });
+  }
+
+  async function completeEvmSignIn(connectedAddress: string, activeChainId: number) {
+    if (activeChainId !== PRIMARY_EVM_CHAIN_ID) {
+      setPendingEvmAddress(connectedAddress);
+      setStep("network");
+      return;
+    }
+
+    await handleEvmSignIn(connectedAddress, activeChainId);
+    onSignedIn();
+  }
+
+  async function handleSwitchToMegaEth() {
+    if (!pendingEvmAddress) return;
+
+    setBusy(true);
+    setError("");
+
+    try {
+      await switchChainAsync({ chainId: PRIMARY_EVM_CHAIN_ID });
+      await handleEvmSignIn(pendingEvmAddress, PRIMARY_EVM_CHAIN_ID);
+      onSignedIn();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not switch to MegaETH. Approve the network switch in your wallet."
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleStarknetSignIn(
@@ -116,15 +155,17 @@ export default function ConnectWalletModal({
           throw new Error(`${option.label} is not available.`);
         }
 
-        const result = await connectAsync({ connector });
+        const result = await connectAsync({
+          connector,
+          chainId: PRIMARY_EVM_CHAIN_ID,
+        });
         const connectedAddress = result.accounts[0];
         if (!connectedAddress) {
           throw new Error("Could not read wallet address.");
         }
-        await handleEvmSignIn(
-          connectedAddress,
-          result.chainId ?? chainId ?? 8453
-        );
+        const activeChainId = result.chainId ?? chainId ?? PRIMARY_EVM_CHAIN_ID;
+        await completeEvmSignIn(connectedAddress, activeChainId);
+        return;
       } else {
         try {
           await disconnectAsync();
@@ -173,33 +214,81 @@ export default function ConnectWalletModal({
         aria-labelledby="connect-modal-title"
       >
         <Logo variant="login" />
-        <h2 id="connect-modal-title" className="player-modal-title">
-          Connect your wallet
-        </h2>
-        <p className="player-modal-hint">
-          Choose a wallet to sign in. Supports Base, Arbitrum, MegaETH, Abstract,
-          and Starknet.
-        </p>
+        {step === "wallet" ? (
+          <>
+            <h2 id="connect-modal-title" className="player-modal-title">
+              Connect your wallet
+            </h2>
+            <p className="player-modal-hint">
+              ArcadeX runs on MegaETH. Connect your wallet, then switch to the
+              MegaETH network to play.
+            </p>
 
-        <div className="wallet-list">
-          {WALLET_OPTIONS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              className="wallet-option"
-              disabled={busy}
-              onClick={() => handleSelect(option)}
-            >
-              <span className="wallet-option__label">{option.label}</span>
-              <span className="wallet-option__chain">
-                {option.ecosystem === "evm" ? "EVM" : "Starknet"}
+            <div className="wallet-list">
+              {WALLET_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className="wallet-option"
+                  disabled={busy}
+                  onClick={() => handleSelect(option)}
+                >
+                  <span className="wallet-option__label">{option.label}</span>
+                  <span className="wallet-option__chain">
+                    {option.ecosystem === "evm" ? "EVM" : "Starknet"}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {busy && (
+              <p className="connect-modal-status">Connecting and signing in…</p>
+            )}
+          </>
+        ) : (
+          <>
+            <h2 id="connect-modal-title" className="player-modal-title">
+              Switch to MegaETH
+            </h2>
+            <p className="player-modal-hint">
+              Your wallet is connected, but you&apos;re not on{" "}
+              <strong>{primaryEvmChain.name}</strong> yet. Switch networks in
+              your wallet to continue.
+            </p>
+
+            <div className="network-switch-card">
+              <span className="network-switch-card__label">Required network</span>
+              <span className="network-switch-card__name">{primaryEvmChain.name}</span>
+              <span className="network-switch-card__id">
+                Chain ID {PRIMARY_EVM_CHAIN_ID}
               </span>
+            </div>
+
+            <button
+              type="button"
+              className="player-modal-submit network-switch-btn"
+              disabled={busy}
+              onClick={handleSwitchToMegaEth}
+            >
+              {busy ? "Switching…" : "Switch to MegaETH"}
             </button>
-          ))}
-        </div>
+
+            <button
+              type="button"
+              className="network-switch-back"
+              disabled={busy}
+              onClick={() => {
+                setStep("wallet");
+                setPendingEvmAddress("");
+                setError("");
+              }}
+            >
+              Choose a different wallet
+            </button>
+          </>
+        )}
 
         {error && <p className="error-msg">{error}</p>}
-        {busy && <p className="connect-modal-status">Connecting and signing in…</p>}
       </div>
     </div>
   );

@@ -42,4 +42,7 @@ export const abstract = defineChain({
   },
 });
 
-export const supportedEvmChains = [base, arbitrum, megaeth, abstract] as const;
+export const primaryEvmChain = megaeth;
+export const PRIMARY_EVM_CHAIN_ID = megaeth.id;
+
+export const supportedEvmChains = [megaeth, base, arbitrum, abstract] as const;

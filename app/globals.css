@@ -1757,6 +1757,63 @@ a { color: inherit; text-decoration: none; }
   margin-top: 4px;
 }
 
+.network-switch-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 12px 0 4px;
+  padding: 18px 16px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.08), rgba(59, 130, 246, 0.02));
+}
+
+.network-switch-card__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.network-switch-card__name {
+  font-family: var(--font-head);
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.network-switch-card__id {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.network-switch-btn {
+  margin-top: 8px;
+}
+
+.network-switch-back {
+  margin-top: 8px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.network-switch-back:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.network-switch-back:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 /* ── Spark battery & panel ─────────────────────────────── */
 .spark-battery {
   display: inline-flex;
