@@ -44,10 +44,10 @@ function getEcosystemLabel(ecosystem: WalletOption["ecosystem"]): string {
 }
 
 const WALLET_OPTIONS: WalletOption[] = [
+  { id: "slush", label: "Slush", ecosystem: "sui" },
   { id: "metamask", label: "MetaMask", ecosystem: "evm", connectorId: "metaMaskSDK" },
   { id: "coinbase", label: "Coinbase Wallet", ecosystem: "evm", connectorId: "coinbaseWalletSDK" },
   { id: "walletconnect", label: "WalletConnect", ecosystem: "evm", connectorId: "walletConnect" },
-  { id: "slush", label: "Slush", ecosystem: "sui" },
   { id: "braavos", label: "Braavos", ecosystem: "starknet", starknetId: "braavos" },
   { id: "argent", label: "Ready Wallet", ecosystem: "starknet", starknetId: "argentX" },
 ];
@@ -269,10 +269,6 @@ export default function ConnectWalletModal({
             <h2 id="connect-modal-title" className="player-modal-title">
               Connect your wallet
             </h2>
-            <p className="player-modal-hint">
-              Connect your wallet to play. EVM users run on MegaETH for shop
-              payments; Slush connects on Sui.
-            </p>
 
             <div className="wallet-list">
               {WALLET_OPTIONS.map((option) => (
