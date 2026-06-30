@@ -30,7 +30,12 @@ export default function ProfileDropdown() {
 
   const displayName = playerName || "Player";
   const shortWallet = walletAddress ? truncateAddress(walletAddress) : "";
-  const chainLabel = ecosystem === "starknet" ? "Starknet" : "EVM";
+  const chainLabel =
+    ecosystem === "starknet"
+      ? "Starknet"
+      : ecosystem === "sui"
+        ? "Sui"
+        : "EVM";
 
   return (
     <div className="profile-dropdown" ref={ref}>

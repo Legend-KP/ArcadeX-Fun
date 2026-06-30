@@ -40,7 +40,9 @@ export function clearStaleGuestId(): void {
 export function getCachedEcosystem(): WalletEcosystem | null {
   if (typeof window === "undefined") return null;
   const value = localStorage.getItem(ECOSYSTEM_KEY);
-  return value === "evm" || value === "starknet" ? value : null;
+  return value === "evm" || value === "starknet" || value === "sui"
+    ? value
+    : null;
 }
 
 export function getCachedWallet(): string | null {

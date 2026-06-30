@@ -7,6 +7,8 @@ import {
   sessionCookieOptions,
 } from "@/lib/auth-session";
 import { buildStarknetAuthTypedData } from "@/lib/starknet-auth";
+import { isSuiAuthMessageValid } from "@/lib/sui-auth";
+import { isValidPersonalMessageSignature } from "@mysten/sui/verify";
 import {
   buildPlayerId,
   normalizeAddress,
@@ -111,15 +113,47 @@ async function verifyStarknetAuth(
   return { address: signer };
 }
 
+async function verifySuiAuth(body: VerifyBody): Promise<{ address: string }> {
+  const { signature, nonce, address, message } = body;
+  if (!signature || !nonce || !address || !message) {
+    throw new Error("signature, nonce, address, and message are required.");
+  }
+
+  const consumed = await consumeAuthNonce(nonce);
+  if (!consumed) {
+    throw new Error("Invalid or expired nonce.");
+  }
+
+  if (!isSuiAuthMessageValid(message, nonce)) {
+    throw new Error("Invalid sign-in message.");
+  }
+
+  const signer = normalizeAddress("sui", address);
+  const messageBytes = new TextEncoder().encode(message);
+  const valid = await isValidPersonalMessageSignature(messageBytes, signature, {
+    address: signer,
+  });
+
+  if (!valid) {
+    throw new Error("Invalid Sui signature.");
+  }
+
+  return { address: signer };
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as VerifyBody;
     const ecosystem = body.ecosystem;
     const origin = getAppOrigin(request);
 
-    if (ecosystem !== "evm" && ecosystem !== "starknet") {
+    if (
+      ecosystem !== "evm" &&
+      ecosystem !== "starknet" &&
+      ecosystem !== "sui"
+    ) {
       return NextResponse.json(
-        { error: "ecosystem must be evm or starknet." },
+        { error: "ecosystem must be evm, starknet, or sui." },
         { status: 400 }
       );
     }
@@ -127,7 +161,9 @@ export async function POST(request: Request) {
     const verified =
       ecosystem === "evm"
         ? await verifyEvmSiwe(body, origin)
-        : await verifyStarknetAuth(body);
+        : ecosystem === "starknet"
+          ? await verifyStarknetAuth(body)
+          : await verifySuiAuth(body);
 
     const playerId = buildPlayerId(ecosystem, verified.address);
     const token = await createSessionToken({

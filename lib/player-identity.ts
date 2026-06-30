@@ -1,6 +1,7 @@
 import { getAddress, isAddress } from "viem";
+import { isValidSuiAddress, normalizeSuiAddress } from "@mysten/sui/utils";
 
-export type WalletEcosystem = "evm" | "starknet";
+export type WalletEcosystem = "evm" | "starknet" | "sui";
 
 const STARKNET_ADDRESS_RE = /^0x[0-9a-fA-F]{1,64}$/;
 
@@ -12,6 +13,11 @@ export function isEvmAddress(value: string | null | undefined): boolean {
 export function isStarknetAddress(value: string | null | undefined): boolean {
   if (!value?.trim()) return false;
   return STARKNET_ADDRESS_RE.test(value.trim());
+}
+
+export function isSuiAddress(value: string | null | undefined): boolean {
+  if (!value?.trim()) return false;
+  return isValidSuiAddress(value.trim());
 }
 
 export function normalizeEvmAddress(address: string): string {
@@ -30,22 +36,40 @@ export function normalizeStarknetAddress(address: string): string {
   return trimmed.toLowerCase();
 }
 
+export function normalizeSuiWalletAddress(address: string): string {
+  const trimmed = address.trim();
+  if (!isValidSuiAddress(trimmed)) {
+    throw new Error("Invalid Sui wallet address");
+  }
+  return normalizeSuiAddress(trimmed);
+}
+
 export function normalizeAddress(
   ecosystem: WalletEcosystem,
   address: string
 ): string {
-  return ecosystem === "evm"
-    ? normalizeEvmAddress(address)
-    : normalizeStarknetAddress(address);
+  switch (ecosystem) {
+    case "evm":
+      return normalizeEvmAddress(address);
+    case "starknet":
+      return normalizeStarknetAddress(address);
+    case "sui":
+      return normalizeSuiWalletAddress(address);
+  }
 }
 
 export function isValidAddress(
   ecosystem: WalletEcosystem,
   address: string | null | undefined
 ): boolean {
-  return ecosystem === "evm"
-    ? isEvmAddress(address)
-    : isStarknetAddress(address);
+  switch (ecosystem) {
+    case "evm":
+      return isEvmAddress(address);
+    case "starknet":
+      return isStarknetAddress(address);
+    case "sui":
+      return isSuiAddress(address);
+  }
 }
 
 export function buildPlayerId(
@@ -65,7 +89,9 @@ export function parsePlayerId(
   const ecosystem = trimmed.slice(0, colon) as WalletEcosystem;
   const address = trimmed.slice(colon + 1);
 
-  if (ecosystem !== "evm" && ecosystem !== "starknet") return null;
+  if (ecosystem !== "evm" && ecosystem !== "starknet" && ecosystem !== "sui") {
+    return null;
+  }
   if (!isValidAddress(ecosystem, address)) return null;
 
   return {

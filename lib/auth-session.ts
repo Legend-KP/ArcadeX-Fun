@@ -48,7 +48,9 @@ export async function verifySessionToken(
     if (
       typeof playerId !== "string" ||
       typeof address !== "string" ||
-      (ecosystem !== "evm" && ecosystem !== "starknet")
+      (ecosystem !== "evm" &&
+        ecosystem !== "starknet" &&
+        ecosystem !== "sui")
     ) {
       return null;
     }

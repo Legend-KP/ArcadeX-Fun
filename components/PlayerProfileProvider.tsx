@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useDisconnect } from "wagmi";
 import { disconnect as disconnectStarknet } from "starknetkit";
+import { disconnectSlushWallet } from "@/lib/sui-wallet-client";
 import dynamic from "next/dynamic";
 import OnboardingModal from "@/components/OnboardingModal";
 
@@ -203,6 +204,11 @@ export default function PlayerProfileProvider({
     }
     try {
       await disconnectStarknet();
+    } catch {
+      // ignore
+    }
+    try {
+      await disconnectSlushWallet();
     } catch {
       // ignore
     }

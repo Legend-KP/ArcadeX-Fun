@@ -7,7 +7,7 @@ export interface LeaderboardEntry {
   createdAt?: number;
 }
 
-export type WalletEcosystem = "evm" | "starknet";
+export type WalletEcosystem = "evm" | "starknet" | "sui";
 
 export interface PlayerProfile {
   id: string;

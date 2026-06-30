@@ -3,6 +3,7 @@
 import { SiweMessage } from "siwe";
 import { buildSiweStatement } from "@/lib/auth-message";
 import { buildStarknetAuthTypedData } from "@/lib/starknet-auth";
+import { buildSuiAuthMessage } from "@/lib/sui-auth";
 import { WalletEcosystem } from "@/lib/player-identity";
 import type { TypedData } from "starknet";
 
@@ -78,6 +79,33 @@ export async function signInWithStarknet(params: {
       nonce,
       address: params.address,
       signature: JSON.stringify(signature),
+    }),
+  });
+
+  const data = (await res.json()) as { error?: string };
+  if (!res.ok) {
+    throw new Error(data.error ?? "Sign-in failed.");
+  }
+}
+
+export async function signInWithSui(params: {
+  address: string;
+  signPersonalMessage: (message: Uint8Array) => Promise<string>;
+}): Promise<void> {
+  const nonce = await fetchAuthNonce();
+  const message = buildSuiAuthMessage(nonce);
+  const messageBytes = new TextEncoder().encode(message);
+  const signature = await params.signPersonalMessage(messageBytes);
+
+  const res = await fetch("/api/auth/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ecosystem: "sui" satisfies WalletEcosystem,
+      nonce,
+      address: params.address,
+      message,
+      signature,
     }),
   });
 

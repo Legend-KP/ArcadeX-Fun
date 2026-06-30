@@ -15,20 +15,39 @@ import { InjectedConnector } from "starknetkit/injected";
 import type { Connector } from "starknetkit";
 import { RpcProvider } from "starknet";
 import Logo from "@/components/Logo";
-import { signInWithEvm, signInWithStarknet } from "@/lib/wallet-auth-client";
+import { signInWithEvm, signInWithStarknet, signInWithSui } from "@/lib/wallet-auth-client";
+import {
+  connectSlushWallet,
+  disconnectSlushWallet,
+  ensureSlushWalletRegistered,
+  signSlushPersonalMessage,
+} from "@/lib/sui-wallet-client";
+import type { Wallet } from "@mysten/wallet-standard";
 
 export type WalletOption = {
   id: string;
   label: string;
-  ecosystem: "evm" | "starknet";
+  ecosystem: "evm" | "starknet" | "sui";
   connectorId?: string;
   starknetId?: "braavos" | "argentX";
 };
+
+function getEcosystemLabel(ecosystem: WalletOption["ecosystem"]): string {
+  switch (ecosystem) {
+    case "evm":
+      return "EVM";
+    case "starknet":
+      return "Starknet";
+    case "sui":
+      return "Sui";
+  }
+}
 
 const WALLET_OPTIONS: WalletOption[] = [
   { id: "metamask", label: "MetaMask", ecosystem: "evm", connectorId: "metaMaskSDK" },
   { id: "coinbase", label: "Coinbase Wallet", ecosystem: "evm", connectorId: "coinbaseWalletSDK" },
   { id: "walletconnect", label: "WalletConnect", ecosystem: "evm", connectorId: "walletConnect" },
+  { id: "slush", label: "Slush", ecosystem: "sui" },
   { id: "braavos", label: "Braavos", ecosystem: "starknet", starknetId: "braavos" },
   { id: "argent", label: "Ready Wallet", ecosystem: "starknet", starknetId: "argentX" },
 ];
@@ -55,6 +74,11 @@ export default function ConnectWalletModal({
   const [step, setStep] = useState<"wallet" | "network">("wallet");
   const [pendingEvmAddress, setPendingEvmAddress] = useState("");
   const starknetConnectorRef = useRef<Connector | null>(null);
+  const suiWalletRef = useRef<Wallet | null>(null);
+
+  useEffect(() => {
+    ensureSlushWalletRegistered();
+  }, []);
 
   useEffect(() => {
     if (!open) {
@@ -144,7 +168,9 @@ export default function ConnectWalletModal({
           // ignore
         }
         await disconnectStarknet();
+        await disconnectSlushWallet();
         starknetConnectorRef.current = null;
+        suiWalletRef.current = null;
 
         const connector =
           connectors.find((c) => c.id === option.connectorId) ??
@@ -166,6 +192,27 @@ export default function ConnectWalletModal({
         const activeChainId = result.chainId ?? chainId ?? PRIMARY_EVM_CHAIN_ID;
         await completeEvmSignIn(connectedAddress, activeChainId);
         return;
+      }
+
+      if (option.ecosystem === "sui") {
+        try {
+          await disconnectAsync();
+        } catch {
+          // ignore
+        }
+        await disconnectStarknet();
+        await disconnectSlushWallet();
+        starknetConnectorRef.current = null;
+        suiWalletRef.current = null;
+
+        const { wallet, account } = await connectSlushWallet();
+        suiWalletRef.current = wallet;
+
+        await signInWithSui({
+          address: account.address,
+          signPersonalMessage: async (message) =>
+            signSlushPersonalMessage(wallet, account, message),
+        });
       } else {
         try {
           await disconnectAsync();
@@ -173,6 +220,9 @@ export default function ConnectWalletModal({
           // ignore
         }
         await disconnectStarknet();
+        await disconnectSlushWallet();
+        starknetConnectorRef.current = null;
+        suiWalletRef.current = null;
 
         const { connector, connectorData } = await connectStarknet({
           modalMode: "neverAsk",
@@ -220,8 +270,8 @@ export default function ConnectWalletModal({
               Connect your wallet
             </h2>
             <p className="player-modal-hint">
-              ArcadeX runs on MegaETH. Connect your wallet, then switch to the
-              MegaETH network to play.
+              Connect your wallet to play. EVM users run on MegaETH for shop
+              payments; Slush connects on Sui.
             </p>
 
             <div className="wallet-list">
@@ -235,7 +285,7 @@ export default function ConnectWalletModal({
                 >
                   <span className="wallet-option__label">{option.label}</span>
                   <span className="wallet-option__chain">
-                    {option.ecosystem === "evm" ? "EVM" : "Starknet"}
+                    {getEcosystemLabel(option.ecosystem)}
                   </span>
                 </button>
               ))}
