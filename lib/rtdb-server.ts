@@ -590,10 +590,31 @@ export class ShopPurchaseError extends Error {
   }
 }
 
+function normalizeShopTxKey(
+  ecosystem: "evm" | "sui",
+  txHash: string
+): string {
+  const trimmed = txHash.trim();
+  if (ecosystem === "evm") {
+    const key = trimmed.toLowerCase();
+    if (!/^0x[0-9a-f]{64}$/.test(key)) {
+      throw new ShopPurchaseError("Invalid transaction hash.", "INVALID_TX");
+    }
+    return key;
+  }
+
+  if (!/^[1-9A-HJ-NP-Za-km-z]{43,90}$/.test(trimmed)) {
+    throw new ShopPurchaseError("Invalid transaction digest.", "INVALID_TX");
+  }
+
+  return trimmed;
+}
+
 export async function applyShopPurchaseOnServer(
   playerId: string,
   productId: ShopProductId,
   txHash: string,
+  ecosystem: "evm" | "sui" = "evm",
   now = Date.now()
 ): Promise<{ state: StoredSparkState; sparks: SparkSnapshot }> {
   const resolved = resolvePlayerId(playerId);
@@ -601,10 +622,7 @@ export async function applyShopPurchaseOnServer(
     throw new Error("A valid player id is required.");
   }
 
-  const txKey = txHash.trim().toLowerCase();
-  if (!/^0x[0-9a-f]{64}$/.test(txKey)) {
-    throw new ShopPurchaseError("Invalid transaction hash.", "INVALID_TX");
-  }
+  const txKey = normalizeShopTxKey(ecosystem, txHash);
 
   const processedPath = processedShopTxPath(txKey);
   const existing = await readPath<{

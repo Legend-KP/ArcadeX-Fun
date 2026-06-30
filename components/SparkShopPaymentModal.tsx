@@ -137,6 +137,7 @@ export default function SparkShopPaymentModal({
           productId: purchasedProduct.id,
           txHash: hash,
           tokenSymbol: token.symbol,
+          network: "megaeth",
         });
         onClose();
       } catch (err) {

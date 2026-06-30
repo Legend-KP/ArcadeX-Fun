@@ -2,11 +2,15 @@
 
 import {
   getWallets,
+  signAndExecuteTransaction,
   SuiSignPersonalMessage,
+  SUI_MAINNET_CHAIN,
   type SuiSignPersonalMessageFeature,
   type Wallet,
   type WalletAccount,
 } from "@mysten/wallet-standard";
+import { coinWithBalance, Transaction } from "@mysten/sui/transactions";
+import { getSuiRpcClient } from "@/lib/sui-rpc";
 import {
   StandardConnect,
   StandardDisconnect,
@@ -98,4 +102,73 @@ export async function signSlushPersonalMessage(
   });
 
   return signature;
+}
+
+export async function reconnectSlushWallet(): Promise<{
+  wallet: Wallet;
+  account: WalletAccount;
+}> {
+  ensureSlushWalletRegistered();
+
+  const wallet = findSlushWallet();
+  if (!wallet) {
+    throw new Error(
+      "Slush wallet not found. Install the Slush browser extension or approve the web wallet."
+    );
+  }
+
+  const connectFeature = wallet.features[StandardConnect] as
+    | StandardConnectFeature[typeof StandardConnect]
+    | undefined;
+  if (!connectFeature) {
+    throw new Error("Slush wallet does not support connect.");
+  }
+
+  let accounts = (
+    await connectFeature.connect({ silent: true })
+  ).accounts;
+
+  if (!accounts[0]) {
+    accounts = (await connectFeature.connect()).accounts;
+  }
+
+  const account = accounts[0];
+  if (!account) {
+    throw new Error("Could not connect Slush wallet.");
+  }
+
+  activeSuiWallet = wallet;
+  return { wallet, account };
+}
+
+export async function fetchSuiCoinBalance(
+  owner: string,
+  coinType: string
+): Promise<bigint> {
+  const client = getSuiRpcClient();
+  const balance = await client.getBalance({ owner, coinType });
+  return BigInt(balance.totalBalance);
+}
+
+export async function transferSlushUsdc(params: {
+  wallet: Wallet;
+  account: WalletAccount;
+  recipient: string;
+  amount: bigint;
+  coinType: string;
+}): Promise<string> {
+  const tx = new Transaction();
+  tx.setSender(params.account.address);
+  tx.transferObjects(
+    [coinWithBalance({ balance: params.amount, type: params.coinType })],
+    params.recipient
+  );
+
+  const result = await signAndExecuteTransaction(params.wallet, {
+    transaction: tx,
+    account: params.account,
+    chain: SUI_MAINNET_CHAIN,
+  });
+
+  return result.digest;
 }

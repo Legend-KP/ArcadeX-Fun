@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useSparks } from "@/components/SparkProvider";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import SparkShopPaymentModal from "@/components/SparkShopPaymentModal";
+import SparkShopSuiPaymentModal from "@/components/SparkShopSuiPaymentModal";
 import SparkShopSuccessModal from "@/components/SparkShopSuccessModal";
 import {
   formatShopPrice,
@@ -16,7 +17,7 @@ import { formatSparkCountdown } from "@/lib/spark";
 
 export default function SparkBatteryBar() {
   const { sparks, loading, refresh } = useSparks();
-  const { isAuthenticated, playerId, ecosystem, openConnect } =
+  const { isAuthenticated, playerId, ecosystem, walletAddress, openConnect } =
     usePlayerProfile();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -48,7 +49,8 @@ export default function SparkBatteryBar() {
 
   const displayAvailable = isAuthenticated ? sparks.available : sparks.max;
   const showInfinite = isAuthenticated && sparks.hasInfinite;
-  const shopEnabled = isAuthenticated && ecosystem === "evm";
+  const shopEnabled =
+    isAuthenticated && (ecosystem === "evm" || ecosystem === "sui");
 
   function handleBuy(productId: ShopProductId) {
     if (!isAuthenticated) {
@@ -56,7 +58,7 @@ export default function SparkBatteryBar() {
       return;
     }
 
-    if (ecosystem !== "evm") {
+    if (ecosystem !== "evm" && ecosystem !== "sui") {
       return;
     }
 
@@ -106,9 +108,10 @@ export default function SparkBatteryBar() {
           </p>
         )}
 
-        {isAuthenticated && ecosystem !== "evm" && (
+        {isAuthenticated && ecosystem === "starknet" && (
           <p className="spark-panel__hint">
-            Shop purchases are available with an EVM wallet on MegaETH.
+            Shop purchases are available with an EVM wallet on MegaETH or a Sui
+            wallet.
           </p>
         )}
 
@@ -159,7 +162,11 @@ export default function SparkBatteryBar() {
                 disabled={!shopEnabled}
                 onClick={() => handleBuy("spark-refill")}
               >
-                {shopEnabled ? "Buy" : "Connect EVM wallet"}
+                {shopEnabled
+                  ? "Buy"
+                  : ecosystem === "starknet"
+                    ? "EVM or Sui wallet required"
+                    : "Connect wallet"}
               </button>
             </div>
             <div className="spark-shop-card">
@@ -180,7 +187,11 @@ export default function SparkBatteryBar() {
                 disabled={!shopEnabled}
                 onClick={() => handleBuy("infinite-24h")}
               >
-                {shopEnabled ? "Buy" : "Connect EVM wallet"}
+                {shopEnabled
+                  ? "Buy"
+                  : ecosystem === "starknet"
+                    ? "EVM or Sui wallet required"
+                    : "Connect wallet"}
               </button>
             </div>
           </div>
@@ -222,9 +233,21 @@ export default function SparkBatteryBar() {
       {mounted && panel ? createPortal(panel, document.body) : null}
 
       <SparkShopPaymentModal
-        open={paymentProductId !== null}
+        open={paymentProductId !== null && ecosystem === "evm"}
         productId={paymentProductId}
         playerId={playerId}
+        onClose={() => setPaymentProductId(null)}
+        onSuccess={(purchase) => {
+          void refresh();
+          setSuccessPurchase(purchase);
+        }}
+      />
+
+      <SparkShopSuiPaymentModal
+        open={paymentProductId !== null && ecosystem === "sui"}
+        productId={paymentProductId}
+        playerId={playerId}
+        walletAddress={walletAddress}
         onClose={() => setPaymentProductId(null)}
         onSuccess={(purchase) => {
           void refresh();

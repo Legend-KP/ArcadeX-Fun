@@ -68,7 +68,7 @@ export async function purchaseSparkItem(params: {
   playerId: string;
   productId: string;
   txHash: string;
-  tokenAddress: string;
+  tokenAddress?: string;
 }): Promise<SparkApiResponse> {
   const res = await fetch("/api/sparks/purchase", {
     method: "POST",

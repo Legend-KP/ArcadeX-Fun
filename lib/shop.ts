@@ -22,6 +22,7 @@ export interface ShopPurchaseSuccess {
   productId: ShopProductId;
   txHash: string;
   tokenSymbol: string;
+  network: "megaeth" | "sui";
 }
 
 export const SHOP_TOKEN_DECIMALS = 6;

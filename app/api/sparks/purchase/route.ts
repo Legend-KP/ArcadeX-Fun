@@ -12,6 +12,8 @@ import {
   type ShopProductId,
 } from "@/lib/shop";
 import { verifyShopPaymentTx } from "@/lib/shop-server";
+import { isValidSuiTxDigest } from "@/lib/shop-sui";
+import { verifySuiShopPaymentTx } from "@/lib/shop-sui-server";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +27,10 @@ export async function POST(request: Request) {
       );
     }
 
-    if (session.ecosystem !== "evm") {
+    if (session.ecosystem !== "evm" && session.ecosystem !== "sui") {
       return NextResponse.json(
         {
-          error: "Shop purchases require an EVM wallet on MegaETH.",
+          error: "Shop purchases require an EVM wallet on MegaETH or a Sui wallet.",
           code: "UNSUPPORTED_WALLET",
         },
         { status: 400 }
@@ -58,33 +60,62 @@ export async function POST(request: Request) {
       );
     }
 
-    const txHash = body.txHash?.trim() ?? "";
-    if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+    const txId = body.txHash?.trim() ?? "";
+
+    if (session.ecosystem === "evm") {
+      if (!/^0x[0-9a-fA-F]{64}$/.test(txId)) {
+        return NextResponse.json(
+          { error: "A valid transaction hash is required.", code: "INVALID_TX" },
+          { status: 400 }
+        );
+      }
+
+      const token = findShopPaymentToken(body.tokenAddress ?? "");
+      if (!token) {
+        return NextResponse.json(
+          { error: "Unsupported payment token.", code: "INVALID_TOKEN" },
+          { status: 400 }
+        );
+      }
+
+      await verifyShopPaymentTx({
+        txHash: txId as Hash,
+        productId: productId as ShopProductId,
+        tokenAddress: getAddress(token.address),
+        expectedFrom: session.address,
+      });
+
+      const result = await applyShopPurchaseOnServer(
+        playerId,
+        productId as ShopProductId,
+        txId,
+        "evm"
+      );
+
+      return NextResponse.json(result);
+    }
+
+    if (!isValidSuiTxDigest(txId)) {
       return NextResponse.json(
-        { error: "A valid transaction hash is required.", code: "INVALID_TX" },
+        {
+          error: "A valid Sui transaction digest is required.",
+          code: "INVALID_TX",
+        },
         { status: 400 }
       );
     }
 
-    const token = findShopPaymentToken(body.tokenAddress ?? "");
-    if (!token) {
-      return NextResponse.json(
-        { error: "Unsupported payment token.", code: "INVALID_TOKEN" },
-        { status: 400 }
-      );
-    }
-
-    await verifyShopPaymentTx({
-      txHash: txHash as Hash,
+    await verifySuiShopPaymentTx({
+      txDigest: txId,
       productId: productId as ShopProductId,
-      tokenAddress: getAddress(token.address),
       expectedFrom: session.address,
     });
 
     const result = await applyShopPurchaseOnServer(
       playerId,
       productId as ShopProductId,
-      txHash
+      txId,
+      "sui"
     );
 
     return NextResponse.json(result);
