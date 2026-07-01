@@ -4,6 +4,7 @@ import { SiweMessage } from "siwe";
 import { buildSiweStatement } from "@/lib/auth-message";
 import { buildStarknetAuthTypedData } from "@/lib/starknet-auth";
 import { buildSuiAuthMessage } from "@/lib/sui-auth";
+import type { AptosSignMessageOutput } from "@/lib/aptos-auth";
 import { WalletEcosystem } from "@/lib/player-identity";
 import type { TypedData } from "starknet";
 
@@ -113,4 +114,83 @@ export async function signInWithSui(params: {
   if (!res.ok) {
     throw new Error(data.error ?? "Sign-in failed.");
   }
+}
+
+async function postAuthVerify(body: Record<string, unknown>): Promise<void> {
+  const res = await fetch("/api/auth/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json()) as { error?: string };
+  if (!res.ok) {
+    throw new Error(data.error ?? "Sign-in failed.");
+  }
+}
+
+export async function signInWithAptos(params: {
+  address: string;
+  publicKey?: string;
+  signMessage: (nonce: string) => Promise<AptosSignMessageOutput>;
+}): Promise<void> {
+  const nonce = await fetchAuthNonce();
+  const signed = await params.signMessage(nonce);
+
+  await postAuthVerify({
+    ecosystem: "aptos" satisfies WalletEcosystem,
+    nonce,
+    address: params.address,
+    signedMessage: { ...signed, publicKey: signed.publicKey ?? params.publicKey },
+  });
+}
+
+export async function signInWithMovement(params: {
+  address: string;
+  publicKey?: string;
+  signMessage: (nonce: string) => Promise<AptosSignMessageOutput>;
+}): Promise<void> {
+  const nonce = await fetchAuthNonce();
+  const signed = await params.signMessage(nonce);
+
+  await postAuthVerify({
+    ecosystem: "movement" satisfies WalletEcosystem,
+    nonce,
+    address: params.address,
+    signedMessage: { ...signed, publicKey: signed.publicKey ?? params.publicKey },
+  });
+}
+
+export async function signInWithStellar(params: {
+  signMessage: (
+    nonce: string
+  ) => Promise<{ address: string; message: string; signedMessage: string }>;
+}): Promise<void> {
+  const nonce = await fetchAuthNonce();
+  const result = await params.signMessage(nonce);
+
+  await postAuthVerify({
+    ecosystem: "stellar" satisfies WalletEcosystem,
+    nonce,
+    address: result.address,
+    message: result.message,
+    signature: result.signedMessage,
+  });
+}
+
+export async function signInWithVara(params: {
+  address: string;
+  signMessage: (
+    nonce: string
+  ) => Promise<{ address: string; message: string; signature: string }>;
+}): Promise<void> {
+  const nonce = await fetchAuthNonce();
+  const result = await params.signMessage(nonce);
+
+  await postAuthVerify({
+    ecosystem: "vara" satisfies WalletEcosystem,
+    nonce,
+    address: result.address,
+    message: result.message,
+    signature: result.signature,
+  });
 }

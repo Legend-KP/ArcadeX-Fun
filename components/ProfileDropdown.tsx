@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { truncateAddress } from "@/lib/player-identity";
+import { getEcosystemLabel } from "@/lib/wallet-ecosystems";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 
 export default function ProfileDropdown() {
@@ -30,12 +31,7 @@ export default function ProfileDropdown() {
 
   const displayName = playerName || "Player";
   const shortWallet = walletAddress ? truncateAddress(walletAddress) : "";
-  const chainLabel =
-    ecosystem === "starknet"
-      ? "Starknet"
-      : ecosystem === "sui"
-        ? "Sui"
-        : "EVM";
+  const chainLabel = ecosystem ? getEcosystemLabel(ecosystem) : "EVM";
 
   return (
     <div className="profile-dropdown" ref={ref}>

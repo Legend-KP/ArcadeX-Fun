@@ -16,12 +16,18 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "dependencies": {
+    "@aptos-labs/ts-sdk": "^7.1.3",
     "@coinbase/wallet-sdk": "^4.3.7",
     "@metamask/connect-evm": "^1.4.0",
     "@mysten/slush-wallet": "^1.1.3",
     "@mysten/sui": "^2.20.1",
     "@mysten/wallet-standard": "^0.21.3",
     "@opennextjs/cloudflare": "^1.6.0",
+    "@polkadot/extension-dapp": "^0.63.1",
+    "@polkadot/util": "^14.0.3",
+    "@polkadot/util-crypto": "^14.0.3",
+    "@stellar/freighter-api": "^6.0.1",
+    "@stellar/stellar-sdk": "^16.0.1",
     "@tanstack/react-query": "^5.101.0",
     "@wagmi/connectors": "^8.0.15",
     "@walletconnect/ethereum-provider": "^2.23.9",

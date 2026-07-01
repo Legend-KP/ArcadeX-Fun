@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { WalletEcosystem } from "@/lib/player-identity";
+import { isWalletEcosystem } from "@/lib/wallet-ecosystems";
 
 export const SESSION_COOKIE = "arcadex_session";
 const SESSION_TTL = "7d";
@@ -48,9 +49,8 @@ export async function verifySessionToken(
     if (
       typeof playerId !== "string" ||
       typeof address !== "string" ||
-      (ecosystem !== "evm" &&
-        ecosystem !== "starknet" &&
-        ecosystem !== "sui")
+      typeof ecosystem !== "string" ||
+      !isWalletEcosystem(ecosystem)
     ) {
       return null;
     }

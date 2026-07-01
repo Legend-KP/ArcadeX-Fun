@@ -108,7 +108,7 @@ export default function SparkBatteryBar() {
           </p>
         )}
 
-        {isAuthenticated && ecosystem === "starknet" && (
+        {isAuthenticated && !shopEnabled && (
           <p className="spark-panel__hint">
             Shop purchases are available with an EVM wallet on MegaETH or a Sui
             wallet.
@@ -164,7 +164,7 @@ export default function SparkBatteryBar() {
               >
                 {shopEnabled
                   ? "Buy"
-                  : ecosystem === "starknet"
+                  : isAuthenticated
                     ? "EVM or Sui wallet required"
                     : "Connect wallet"}
               </button>
@@ -189,7 +189,7 @@ export default function SparkBatteryBar() {
               >
                 {shopEnabled
                   ? "Buy"
-                  : ecosystem === "starknet"
+                  : isAuthenticated
                     ? "EVM or Sui wallet required"
                     : "Connect wallet"}
               </button>

@@ -11,6 +11,8 @@ import {
 import { useDisconnect } from "wagmi";
 import { disconnect as disconnectStarknet } from "starknetkit";
 import { disconnectSlushWallet } from "@/lib/sui-wallet-client";
+import { disconnectPetraWallet } from "@/lib/aptos-wallet-client";
+import { disconnectMovementWallet } from "@/lib/movement-wallet-client";
 import dynamic from "next/dynamic";
 import OnboardingModal from "@/components/OnboardingModal";
 
@@ -209,6 +211,16 @@ export default function PlayerProfileProvider({
     }
     try {
       await disconnectSlushWallet();
+    } catch {
+      // ignore
+    }
+    try {
+      await disconnectPetraWallet();
+    } catch {
+      // ignore
+    }
+    try {
+      await disconnectMovementWallet();
     } catch {
       // ignore
     }

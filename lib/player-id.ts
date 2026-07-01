@@ -5,6 +5,7 @@ import {
   parsePlayerId,
   WalletEcosystem,
 } from "@/lib/player-identity";
+import { isWalletEcosystem } from "@/lib/wallet-ecosystems";
 
 const PLAYER_ID_KEY = "arcadex_player_id";
 const PLAYER_NAME_KEY = "arcadex_player_name";
@@ -40,9 +41,7 @@ export function clearStaleGuestId(): void {
 export function getCachedEcosystem(): WalletEcosystem | null {
   if (typeof window === "undefined") return null;
   const value = localStorage.getItem(ECOSYSTEM_KEY);
-  return value === "evm" || value === "starknet" || value === "sui"
-    ? value
-    : null;
+  return value && isWalletEcosystem(value) ? value : null;
 }
 
 export function getCachedWallet(): string | null {

@@ -1,9 +1,19 @@
 import { getAddress, isAddress } from "viem";
 import { isValidSuiAddress, normalizeSuiAddress } from "@mysten/sui/utils";
 
-export type WalletEcosystem = "evm" | "starknet" | "sui";
+export type WalletEcosystem =
+  | "evm"
+  | "starknet"
+  | "sui"
+  | "aptos"
+  | "movement"
+  | "stellar"
+  | "vara";
 
 const STARKNET_ADDRESS_RE = /^0x[0-9a-fA-F]{1,64}$/;
+const APTOS_ADDRESS_RE = /^0x[0-9a-fA-F]{1,64}$/;
+const STELLAR_ADDRESS_RE = /^G[A-Z2-7]{55}$/;
+const VARA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{47,48}$/;
 
 export function isEvmAddress(value: string | null | undefined): boolean {
   if (!value?.trim()) return false;
@@ -18,6 +28,25 @@ export function isStarknetAddress(value: string | null | undefined): boolean {
 export function isSuiAddress(value: string | null | undefined): boolean {
   if (!value?.trim()) return false;
   return isValidSuiAddress(value.trim());
+}
+
+export function isAptosAddress(value: string | null | undefined): boolean {
+  if (!value?.trim()) return false;
+  return APTOS_ADDRESS_RE.test(value.trim());
+}
+
+export function isMovementAddress(value: string | null | undefined): boolean {
+  return isAptosAddress(value);
+}
+
+export function isStellarAddress(value: string | null | undefined): boolean {
+  if (!value?.trim()) return false;
+  return STELLAR_ADDRESS_RE.test(value.trim());
+}
+
+export function isVaraAddress(value: string | null | undefined): boolean {
+  if (!value?.trim()) return false;
+  return VARA_ADDRESS_RE.test(value.trim());
 }
 
 export function normalizeEvmAddress(address: string): string {
@@ -44,6 +73,38 @@ export function normalizeSuiWalletAddress(address: string): string {
   return normalizeSuiAddress(trimmed);
 }
 
+export function normalizeAptosAddress(address: string): string {
+  const trimmed = address.trim();
+  if (!isAptosAddress(trimmed)) {
+    throw new Error("Invalid Aptos wallet address");
+  }
+  return trimmed.toLowerCase();
+}
+
+export function normalizeMovementAddress(address: string): string {
+  const trimmed = address.trim();
+  if (!isMovementAddress(trimmed)) {
+    throw new Error("Invalid Movement wallet address");
+  }
+  return trimmed.toLowerCase();
+}
+
+export function normalizeStellarAddress(address: string): string {
+  const trimmed = address.trim();
+  if (!isStellarAddress(trimmed)) {
+    throw new Error("Invalid Stellar wallet address");
+  }
+  return trimmed;
+}
+
+export function normalizeVaraAddress(address: string): string {
+  const trimmed = address.trim();
+  if (!isVaraAddress(trimmed)) {
+    throw new Error("Invalid Vara wallet address");
+  }
+  return trimmed;
+}
+
 export function normalizeAddress(
   ecosystem: WalletEcosystem,
   address: string
@@ -55,6 +116,14 @@ export function normalizeAddress(
       return normalizeStarknetAddress(address);
     case "sui":
       return normalizeSuiWalletAddress(address);
+    case "aptos":
+      return normalizeAptosAddress(address);
+    case "movement":
+      return normalizeMovementAddress(address);
+    case "stellar":
+      return normalizeStellarAddress(address);
+    case "vara":
+      return normalizeVaraAddress(address);
   }
 }
 
@@ -69,6 +138,14 @@ export function isValidAddress(
       return isStarknetAddress(address);
     case "sui":
       return isSuiAddress(address);
+    case "aptos":
+      return isAptosAddress(address);
+    case "movement":
+      return isMovementAddress(address);
+    case "stellar":
+      return isStellarAddress(address);
+    case "vara":
+      return isVaraAddress(address);
   }
 }
 
@@ -89,9 +166,6 @@ export function parsePlayerId(
   const ecosystem = trimmed.slice(0, colon) as WalletEcosystem;
   const address = trimmed.slice(colon + 1);
 
-  if (ecosystem !== "evm" && ecosystem !== "starknet" && ecosystem !== "sui") {
-    return null;
-  }
   if (!isValidAddress(ecosystem, address)) return null;
 
   return {

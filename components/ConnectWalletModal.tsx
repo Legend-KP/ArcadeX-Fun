@@ -9,45 +9,73 @@ import {
   useChainId,
   useSwitchChain,
 } from "wagmi";
-import { PRIMARY_EVM_CHAIN_ID, primaryEvmChain } from "@/lib/chains";
+import {
+  PRIMARY_EVM_CHAIN_ID,
+  getEvmChainById,
+  primaryEvmChain,
+} from "@/lib/chains";
 import { connect as connectStarknet, disconnect as disconnectStarknet } from "starknetkit";
 import { InjectedConnector } from "starknetkit/injected";
 import type { Connector } from "starknetkit";
 import { RpcProvider } from "starknet";
 import Logo from "@/components/Logo";
-import { signInWithEvm, signInWithStarknet, signInWithSui } from "@/lib/wallet-auth-client";
+import {
+  signInWithAptos,
+  signInWithEvm,
+  signInWithMovement,
+  signInWithStarknet,
+  signInWithStellar,
+  signInWithSui,
+  signInWithVara,
+} from "@/lib/wallet-auth-client";
 import {
   connectSlushWallet,
   disconnectSlushWallet,
   ensureSlushWalletRegistered,
   signSlushPersonalMessage,
 } from "@/lib/sui-wallet-client";
+import {
+  connectPetraWallet,
+  disconnectPetraWallet,
+  signPetraMessage,
+} from "@/lib/aptos-wallet-client";
+import {
+  connectMovementWallet,
+  disconnectMovementWallet,
+  signMovementMessage,
+} from "@/lib/movement-wallet-client";
+import {
+  connectFreighterWallet,
+  signFreighterMessage,
+} from "@/lib/stellar-wallet-client";
+import { connectVaraWallet, signVaraMessage } from "@/lib/vara-wallet-client";
+import { getEcosystemLabel } from "@/lib/wallet-ecosystems";
+import type { WalletEcosystem } from "@/lib/player-identity";
 import type { Wallet } from "@mysten/wallet-standard";
 
 export type WalletOption = {
   id: string;
   label: string;
-  ecosystem: "evm" | "starknet" | "sui";
+  ecosystem: WalletEcosystem;
   connectorId?: string;
   starknetId?: "braavos" | "argentX";
+  chainId?: number;
+  networkLabel?: string;
 };
-
-function getEcosystemLabel(ecosystem: WalletOption["ecosystem"]): string {
-  switch (ecosystem) {
-    case "evm":
-      return "EVM";
-    case "starknet":
-      return "Starknet";
-    case "sui":
-      return "Sui";
-  }
-}
 
 const WALLET_OPTIONS: WalletOption[] = [
   { id: "slush", label: "Slush", ecosystem: "sui" },
-  { id: "metamask", label: "MetaMask", ecosystem: "evm", connectorId: "metaMaskSDK" },
-  { id: "coinbase", label: "Coinbase Wallet", ecosystem: "evm", connectorId: "coinbaseWalletSDK" },
-  { id: "walletconnect", label: "WalletConnect", ecosystem: "evm", connectorId: "walletConnect" },
+  { id: "metamask-megaeth", label: "MetaMask", ecosystem: "evm", connectorId: "metaMaskSDK", chainId: PRIMARY_EVM_CHAIN_ID, networkLabel: "MegaETH" },
+  { id: "metamask-bnb", label: "MetaMask", ecosystem: "evm", connectorId: "metaMaskSDK", chainId: 56, networkLabel: "BNB Chain" },
+  { id: "metamask-berachain", label: "MetaMask", ecosystem: "evm", connectorId: "metaMaskSDK", chainId: 80094, networkLabel: "Berachain" },
+  { id: "metamask-cronos", label: "MetaMask", ecosystem: "evm", connectorId: "metaMaskSDK", chainId: 25, networkLabel: "Cronos" },
+  { id: "metamask-beam", label: "MetaMask", ecosystem: "evm", connectorId: "metaMaskSDK", chainId: 4337, networkLabel: "Beam" },
+  { id: "coinbase-megaeth", label: "Coinbase Wallet", ecosystem: "evm", connectorId: "coinbaseWalletSDK", chainId: PRIMARY_EVM_CHAIN_ID, networkLabel: "MegaETH" },
+  { id: "walletconnect-megaeth", label: "WalletConnect", ecosystem: "evm", connectorId: "walletConnect", chainId: PRIMARY_EVM_CHAIN_ID, networkLabel: "MegaETH" },
+  { id: "petra", label: "Petra", ecosystem: "aptos" },
+  { id: "nightly", label: "Nightly", ecosystem: "movement" },
+  { id: "freighter", label: "Freighter", ecosystem: "stellar" },
+  { id: "polkadot", label: "Polkadot.js", ecosystem: "vara" },
   { id: "braavos", label: "Braavos", ecosystem: "starknet", starknetId: "braavos" },
   { id: "argent", label: "Ready Wallet", ecosystem: "starknet", starknetId: "argentX" },
 ];
@@ -73,6 +101,7 @@ export default function ConnectWalletModal({
   const [error, setError] = useState("");
   const [step, setStep] = useState<"wallet" | "network">("wallet");
   const [pendingEvmAddress, setPendingEvmAddress] = useState("");
+  const [pendingChainId, setPendingChainId] = useState<number>(PRIMARY_EVM_CHAIN_ID);
   const starknetConnectorRef = useRef<Connector | null>(null);
   const suiWalletRef = useRef<Wallet | null>(null);
 
@@ -86,12 +115,43 @@ export default function ConnectWalletModal({
       setBusy(false);
       setStep("wallet");
       setPendingEvmAddress("");
+      setPendingChainId(PRIMARY_EVM_CHAIN_ID);
     }
   }, [open]);
 
   useEffect(() => {
     if (externalError) setError(externalError);
   }, [externalError]);
+
+  async function disconnectAllWallets() {
+    try {
+      await disconnectAsync();
+    } catch {
+      // ignore
+    }
+    try {
+      await disconnectStarknet();
+    } catch {
+      // ignore
+    }
+    try {
+      await disconnectSlushWallet();
+    } catch {
+      // ignore
+    }
+    try {
+      await disconnectPetraWallet();
+    } catch {
+      // ignore
+    }
+    try {
+      await disconnectMovementWallet();
+    } catch {
+      // ignore
+    }
+    starknetConnectorRef.current = null;
+    suiWalletRef.current = null;
+  }
 
   async function handleEvmSignIn(connectedAddress: string, activeChainId: number) {
     await signInWithEvm({
@@ -101,9 +161,14 @@ export default function ConnectWalletModal({
     });
   }
 
-  async function completeEvmSignIn(connectedAddress: string, activeChainId: number) {
-    if (activeChainId !== PRIMARY_EVM_CHAIN_ID) {
+  async function completeEvmSignIn(
+    connectedAddress: string,
+    activeChainId: number,
+    targetChainId: number
+  ) {
+    if (activeChainId !== targetChainId) {
       setPendingEvmAddress(connectedAddress);
+      setPendingChainId(targetChainId);
       setStep("network");
       return;
     }
@@ -112,21 +177,22 @@ export default function ConnectWalletModal({
     onSignedIn();
   }
 
-  async function handleSwitchToMegaEth() {
+  async function handleSwitchEvmChain() {
     if (!pendingEvmAddress) return;
 
     setBusy(true);
     setError("");
 
     try {
-      await switchChainAsync({ chainId: PRIMARY_EVM_CHAIN_ID });
-      await handleEvmSignIn(pendingEvmAddress, PRIMARY_EVM_CHAIN_ID);
+      await switchChainAsync({ chainId: pendingChainId });
+      await handleEvmSignIn(pendingEvmAddress, pendingChainId);
       onSignedIn();
     } catch (err) {
+      const chain = getEvmChainById(pendingChainId);
       setError(
         err instanceof Error
           ? err.message
-          : "Could not switch to MegaETH. Approve the network switch in your wallet."
+          : `Could not switch to ${chain?.name ?? "the required network"}. Approve the network switch in your wallet.`
       );
     } finally {
       setBusy(false);
@@ -161,17 +227,10 @@ export default function ConnectWalletModal({
     setError("");
 
     try {
-      if (option.ecosystem === "evm") {
-        try {
-          await disconnectAsync();
-        } catch {
-          // ignore
-        }
-        await disconnectStarknet();
-        await disconnectSlushWallet();
-        starknetConnectorRef.current = null;
-        suiWalletRef.current = null;
+      await disconnectAllWallets();
 
+      if (option.ecosystem === "evm") {
+        const targetChainId = option.chainId ?? PRIMARY_EVM_CHAIN_ID;
         const connector =
           connectors.find((c) => c.id === option.connectorId) ??
           connectors.find((c) =>
@@ -183,28 +242,18 @@ export default function ConnectWalletModal({
 
         const result = await connectAsync({
           connector,
-          chainId: PRIMARY_EVM_CHAIN_ID,
+          chainId: targetChainId,
         });
         const connectedAddress = result.accounts[0];
         if (!connectedAddress) {
           throw new Error("Could not read wallet address.");
         }
-        const activeChainId = result.chainId ?? chainId ?? PRIMARY_EVM_CHAIN_ID;
-        await completeEvmSignIn(connectedAddress, activeChainId);
+        const activeChainId = result.chainId ?? chainId ?? targetChainId;
+        await completeEvmSignIn(connectedAddress, activeChainId, targetChainId);
         return;
       }
 
       if (option.ecosystem === "sui") {
-        try {
-          await disconnectAsync();
-        } catch {
-          // ignore
-        }
-        await disconnectStarknet();
-        await disconnectSlushWallet();
-        starknetConnectorRef.current = null;
-        suiWalletRef.current = null;
-
         const { wallet, account } = await connectSlushWallet();
         suiWalletRef.current = wallet;
 
@@ -213,17 +262,32 @@ export default function ConnectWalletModal({
           signPersonalMessage: async (message) =>
             signSlushPersonalMessage(wallet, account, message),
         });
+      } else if (option.ecosystem === "aptos") {
+        const { address, publicKey } = await connectPetraWallet();
+        await signInWithAptos({
+          address,
+          publicKey,
+          signMessage: (nonce) => signPetraMessage(nonce, publicKey),
+        });
+      } else if (option.ecosystem === "movement") {
+        const { address, publicKey } = await connectMovementWallet();
+        await signInWithMovement({
+          address,
+          publicKey,
+          signMessage: (nonce) => signMovementMessage(nonce, publicKey),
+        });
+      } else if (option.ecosystem === "stellar") {
+        await connectFreighterWallet();
+        await signInWithStellar({
+          signMessage: signFreighterMessage,
+        });
+      } else if (option.ecosystem === "vara") {
+        const address = await connectVaraWallet();
+        await signInWithVara({
+          address,
+          signMessage: (nonce) => signVaraMessage(address, nonce),
+        });
       } else {
-        try {
-          await disconnectAsync();
-        } catch {
-          // ignore
-        }
-        await disconnectStarknet();
-        await disconnectSlushWallet();
-        starknetConnectorRef.current = null;
-        suiWalletRef.current = null;
-
         const { connector, connectorData } = await connectStarknet({
           modalMode: "neverAsk",
           connectors: [
@@ -255,6 +319,8 @@ export default function ConnectWalletModal({
 
   if (!open) return null;
 
+  const requiredChain = getEvmChainById(pendingChainId) ?? primaryEvmChain;
+
   const modal = (
     <div className="player-modal-backdrop">
       <div
@@ -281,7 +347,7 @@ export default function ConnectWalletModal({
                 >
                   <span className="wallet-option__label">{option.label}</span>
                   <span className="wallet-option__chain">
-                    {getEcosystemLabel(option.ecosystem)}
+                    {option.networkLabel ?? getEcosystemLabel(option.ecosystem)}
                   </span>
                 </button>
               ))}
@@ -294,19 +360,19 @@ export default function ConnectWalletModal({
         ) : (
           <>
             <h2 id="connect-modal-title" className="player-modal-title">
-              Switch to MegaETH
+              Switch network
             </h2>
             <p className="player-modal-hint">
               Your wallet is connected, but you&apos;re not on{" "}
-              <strong>{primaryEvmChain.name}</strong> yet. Switch networks in
+              <strong>{requiredChain.name}</strong> yet. Switch networks in
               your wallet to continue.
             </p>
 
             <div className="network-switch-card">
               <span className="network-switch-card__label">Required network</span>
-              <span className="network-switch-card__name">{primaryEvmChain.name}</span>
+              <span className="network-switch-card__name">{requiredChain.name}</span>
               <span className="network-switch-card__id">
-                Chain ID {PRIMARY_EVM_CHAIN_ID}
+                Chain ID {pendingChainId}
               </span>
             </div>
 
@@ -314,9 +380,9 @@ export default function ConnectWalletModal({
               type="button"
               className="player-modal-submit network-switch-btn"
               disabled={busy}
-              onClick={handleSwitchToMegaEth}
+              onClick={handleSwitchEvmChain}
             >
-              {busy ? "Switching…" : "Switch to MegaETH"}
+              {busy ? "Switching…" : `Switch to ${requiredChain.name}`}
             </button>
 
             <button
@@ -326,6 +392,7 @@ export default function ConnectWalletModal({
               onClick={() => {
                 setStep("wallet");
                 setPendingEvmAddress("");
+                setPendingChainId(PRIMARY_EVM_CHAIN_ID);
                 setError("");
               }}
             >
