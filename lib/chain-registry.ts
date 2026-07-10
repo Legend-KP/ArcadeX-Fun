@@ -262,6 +262,16 @@ export function getChainKeyForEvmChainId(
   )?.key;
 }
 
+export function chainSupportsShopPaymentsConfig(
+  entry: ChainSettingsEntry
+): boolean {
+  return (
+    entry.ecosystem === "evm" ||
+    entry.ecosystem === "sui" ||
+    entry.ecosystem === "vara"
+  );
+}
+
 export function isShopPaymentsEnabled(
   settings: Record<ChainKey, ChainFeatures>,
   ecosystem: WalletEcosystem,

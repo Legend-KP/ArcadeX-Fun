@@ -14,6 +14,7 @@ import {
   updateAdminChainSettings,
   updateAdminGame,
 } from "@/lib/admin-api";
+import { chainSupportsShopPaymentsConfig } from "@/lib/chain-registry";
 import { Game, ChainFeatures, ChainKey, ChainSettingsEntry, gameHasLeaderboard, gameIsLive } from "@/types";
 import Logo from "@/components/Logo";
 
@@ -698,8 +699,7 @@ export default function AdminPortal() {
               <tbody>
                 {chains.map((chain) => {
                   const features = chainSettings[chain.key];
-                  const paymentsSupported =
-                    chain.ecosystem === "evm" || chain.ecosystem === "sui";
+                  const paymentsSupported = chainSupportsShopPaymentsConfig(chain);
                   const saving = chainSaving === chain.key;
 
                   return (
