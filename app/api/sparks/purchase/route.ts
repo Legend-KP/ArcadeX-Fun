@@ -14,6 +14,8 @@ import {
 import { verifyShopPaymentTx } from "@/lib/shop-server";
 import { isValidSuiTxDigest } from "@/lib/shop-sui";
 import { verifySuiShopPaymentTx } from "@/lib/shop-sui-server";
+import { fetchChainSettingsFromServer } from "@/lib/chain-settings-server";
+import { isShopPaymentsEnabled } from "@/lib/chain-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,23 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Sign in to complete your purchase.", code: "NO_SESSION" },
         { status: 401 }
+      );
+    }
+
+    const chainSettings = await fetchChainSettingsFromServer();
+    if (
+      !isShopPaymentsEnabled(
+        chainSettings,
+        session.ecosystem,
+        session.chainId
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: "Shop purchases are not available for your connected wallet.",
+          code: "UNSUPPORTED_WALLET",
+        },
+        { status: 400 }
       );
     }
 

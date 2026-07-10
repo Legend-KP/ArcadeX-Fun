@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSparks } from "@/components/SparkProvider";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
+import { useChainSettings } from "@/components/ChainSettingsProvider";
 import SparkShopPaymentModal from "@/components/SparkShopPaymentModal";
 import SparkShopSuiPaymentModal from "@/components/SparkShopSuiPaymentModal";
 import SparkShopSuccessModal from "@/components/SparkShopSuccessModal";
@@ -17,8 +18,9 @@ import { formatSparkCountdown } from "@/lib/spark";
 
 export default function SparkBatteryBar() {
   const { sparks, loading, refresh } = useSparks();
-  const { isAuthenticated, playerId, ecosystem, walletAddress, openConnect } =
+  const { isAuthenticated, playerId, ecosystem, chainId, walletAddress, openConnect } =
     usePlayerProfile();
+  const { isShopPaymentsEnabled } = useChainSettings();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [paymentProductId, setPaymentProductId] =
@@ -50,7 +52,9 @@ export default function SparkBatteryBar() {
   const displayAvailable = isAuthenticated ? sparks.available : sparks.max;
   const showInfinite = isAuthenticated && sparks.hasInfinite;
   const shopEnabled =
-    isAuthenticated && (ecosystem === "evm" || ecosystem === "sui");
+    isAuthenticated &&
+    ecosystem !== null &&
+    isShopPaymentsEnabled(ecosystem, chainId);
 
   function handleBuy(productId: ShopProductId) {
     if (!isAuthenticated) {
@@ -58,7 +62,7 @@ export default function SparkBatteryBar() {
       return;
     }
 
-    if (ecosystem !== "evm" && ecosystem !== "sui") {
+    if (!ecosystem || !isShopPaymentsEnabled(ecosystem, chainId)) {
       return;
     }
 

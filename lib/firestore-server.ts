@@ -9,7 +9,7 @@ type FirestoreValue = {
   doubleValue?: number;
 };
 
-type FirestoreDocument = {
+export type FirestoreDocument = {
   name: string;
   fields: Record<string, FirestoreValue>;
 };
@@ -47,7 +47,7 @@ function docToGame(doc: FirestoreDocument): Game {
   };
 }
 
-async function firestoreFetch(
+export async function firestoreFetch(
   path: string,
   init?: RequestInit
 ): Promise<Response> {

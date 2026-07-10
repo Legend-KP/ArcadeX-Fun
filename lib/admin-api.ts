@@ -1,6 +1,6 @@
 "use client";
 
-import { Game } from "@/types";
+import { Game, ChainFeatures, ChainKey, ChainSettingsResponse } from "@/types";
 
 const SESSION_KEY = "arcadex_admin_authed";
 const PASSWORD_KEY = "arcadex_admin_password";
@@ -159,4 +159,40 @@ export async function reorderAdminGames(ids: string[]): Promise<void> {
         : (data.error ?? "Failed to save game order.")
     );
   }
+}
+
+export async function fetchAdminChainSettings(): Promise<ChainSettingsResponse> {
+  const res = await fetch("/api/chains", {
+    headers: adminHeaders(),
+    cache: "no-store",
+  });
+  const data = await parseJson<ChainSettingsResponse & { error?: string }>(res);
+  if (!res.ok) {
+    throw new Error(
+      res.status === 401
+        ? "Session expired. Lock and sign in again."
+        : (data.error ?? "Could not load chain settings.")
+    );
+  }
+  return data;
+}
+
+export async function updateAdminChainSettings(
+  key: ChainKey,
+  patch: Partial<ChainFeatures>
+): Promise<ChainSettingsResponse> {
+  const res = await fetch("/api/chains", {
+    method: "PATCH",
+    headers: adminHeaders(),
+    body: JSON.stringify({ key, ...patch }),
+  });
+  const data = await parseJson<ChainSettingsResponse & { error?: string }>(res);
+  if (!res.ok) {
+    throw new Error(
+      res.status === 401
+        ? "Session expired. Lock and sign in again."
+        : (data.error ?? "Failed to update chain settings.")
+    );
+  }
+  return data;
 }

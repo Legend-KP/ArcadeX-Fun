@@ -14,6 +14,8 @@ import {
   getEvmChainById,
   primaryEvmChain,
 } from "@/lib/chains";
+import { WALLET_OPTIONS, type WalletOption } from "@/lib/chain-registry";
+import { useChainSettings } from "@/components/ChainSettingsProvider";
 import { connect as connectStarknet, disconnect as disconnectStarknet } from "starknetkit";
 import { InjectedConnector } from "starknetkit/injected";
 import type { Connector } from "starknetkit";
@@ -53,32 +55,7 @@ import { getEcosystemLabel } from "@/lib/wallet-ecosystems";
 import type { WalletEcosystem } from "@/lib/player-identity";
 import type { Wallet } from "@mysten/wallet-standard";
 
-export type WalletOption = {
-  id: string;
-  label: string;
-  ecosystem: WalletEcosystem;
-  connectorId?: string;
-  starknetId?: "braavos" | "argentX";
-  chainId?: number;
-  networkLabel?: string;
-};
-
-const WALLET_OPTIONS: WalletOption[] = [
-  { id: "slush", label: "Slush", ecosystem: "sui" },
-  { id: "metamask-megaeth", label: "MetaMask", ecosystem: "evm", connectorId: "metaMaskSDK", chainId: PRIMARY_EVM_CHAIN_ID, networkLabel: "MegaETH" },
-  { id: "metamask-bnb", label: "MetaMask", ecosystem: "evm", connectorId: "metaMaskSDK", chainId: 56, networkLabel: "BNB Chain" },
-  { id: "metamask-berachain", label: "MetaMask", ecosystem: "evm", connectorId: "metaMaskSDK", chainId: 80094, networkLabel: "Berachain" },
-  { id: "metamask-cronos", label: "MetaMask", ecosystem: "evm", connectorId: "metaMaskSDK", chainId: 25, networkLabel: "Cronos" },
-  { id: "metamask-beam", label: "MetaMask", ecosystem: "evm", connectorId: "metaMaskSDK", chainId: 4337, networkLabel: "Beam" },
-  { id: "coinbase-megaeth", label: "Coinbase Wallet", ecosystem: "evm", connectorId: "coinbaseWalletSDK", chainId: PRIMARY_EVM_CHAIN_ID, networkLabel: "MegaETH" },
-  { id: "walletconnect-megaeth", label: "WalletConnect", ecosystem: "evm", connectorId: "walletConnect", chainId: PRIMARY_EVM_CHAIN_ID, networkLabel: "MegaETH" },
-  { id: "petra", label: "Petra", ecosystem: "aptos" },
-  { id: "nightly", label: "Nightly", ecosystem: "movement" },
-  { id: "freighter", label: "Freighter", ecosystem: "stellar" },
-  { id: "polkadot", label: "Polkadot.js", ecosystem: "vara" },
-  { id: "braavos", label: "Braavos", ecosystem: "starknet", starknetId: "braavos" },
-  { id: "argent", label: "Ready Wallet", ecosystem: "starknet", starknetId: "argentX" },
-];
+export type { WalletOption };
 
 interface ConnectWalletModalProps {
   open: boolean;
@@ -97,6 +74,7 @@ export default function ConnectWalletModal({
   const chainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
   const { signMessageAsync } = useSignMessage();
+  const { isWalletOptionEnabled } = useChainSettings();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [step, setStep] = useState<"wallet" | "network">("wallet");
@@ -320,6 +298,7 @@ export default function ConnectWalletModal({
   if (!open) return null;
 
   const requiredChain = getEvmChainById(pendingChainId) ?? primaryEvmChain;
+  const visibleWalletOptions = WALLET_OPTIONS.filter(isWalletOptionEnabled);
 
   const modal = (
     <div className="player-modal-backdrop">
@@ -337,20 +316,27 @@ export default function ConnectWalletModal({
             </h2>
 
             <div className="wallet-list">
-              {WALLET_OPTIONS.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  className="wallet-option"
-                  disabled={busy}
-                  onClick={() => handleSelect(option)}
-                >
-                  <span className="wallet-option__label">{option.label}</span>
-                  <span className="wallet-option__chain">
-                    {option.networkLabel ?? getEcosystemLabel(option.ecosystem)}
-                  </span>
-                </button>
-              ))}
+              {visibleWalletOptions.length === 0 ? (
+                <p className="player-modal-hint">
+                  No wallet connections are available right now. Please check
+                  back later.
+                </p>
+              ) : (
+                visibleWalletOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className="wallet-option"
+                    disabled={busy}
+                    onClick={() => handleSelect(option)}
+                  >
+                    <span className="wallet-option__label">{option.label}</span>
+                    <span className="wallet-option__chain">
+                      {option.networkLabel ?? getEcosystemLabel(option.ecosystem)}
+                    </span>
+                  </button>
+                ))
+              )}
             </div>
 
             {busy && (

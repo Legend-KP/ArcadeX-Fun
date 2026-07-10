@@ -53,6 +53,37 @@ export function gameIsLive(game: Pick<Game, "live">): boolean {
   return game.live !== false;
 }
 
+export type ChainKey =
+  | "megaeth"
+  | "bnb"
+  | "berachain"
+  | "cronos"
+  | "beam"
+  | "sui"
+  | "aptos"
+  | "movement"
+  | "stellar"
+  | "vara"
+  | "starknet";
+
+export interface ChainFeatures {
+  walletConnect: boolean;
+  shopPayments: boolean;
+}
+
+export interface ChainSettingsEntry {
+  key: ChainKey;
+  name: string;
+  ecosystem: WalletEcosystem;
+  chainId?: number;
+  defaultShopPayments: boolean;
+}
+
+export interface ChainSettingsResponse {
+  chains: ChainSettingsEntry[];
+  settings: Record<ChainKey, ChainFeatures>;
+}
+
 /**
  * Raw RTDB shape at `users/{wallet}/games/{gameId}`.
  * Score games store `s`; level games store `l`. No timestamp field.

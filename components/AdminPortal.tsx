@@ -5,14 +5,16 @@ import {
   clearAdminSession,
   createAdminGame,
   deleteAdminGame,
+  fetchAdminChainSettings,
   fetchAdminGames,
   hasAdminSession,
   loginAdmin,
   reorderAdminGames,
   saveAdminSession,
+  updateAdminChainSettings,
   updateAdminGame,
 } from "@/lib/admin-api";
-import { Game, gameHasLeaderboard, gameIsLive } from "@/types";
+import { Game, ChainFeatures, ChainKey, ChainSettingsEntry, gameHasLeaderboard, gameIsLive } from "@/types";
 import Logo from "@/components/Logo";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "/";
@@ -50,6 +52,13 @@ export default function AdminPortal() {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [reordering, setReordering] = useState(false);
+
+  const [chains, setChains] = useState<ChainSettingsEntry[]>([]);
+  const [chainSettings, setChainSettings] = useState<
+    Record<ChainKey, ChainFeatures>
+  >({} as Record<ChainKey, ChainFeatures>);
+  const [chainsLoading, setChainsLoading] = useState(true);
+  const [chainSaving, setChainSaving] = useState<ChainKey | null>(null);
 
   async function handleLogin() {
     setPwLoading(true);
@@ -91,8 +100,26 @@ export default function AdminPortal() {
     }
   }
 
+  async function refreshChains() {
+    setChainsLoading(true);
+    try {
+      const data = await fetchAdminChainSettings();
+      setChains(data.chains);
+      setChainSettings(data.settings);
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Could not load chain settings."
+      );
+    } finally {
+      setChainsLoading(false);
+    }
+  }
+
   useEffect(() => {
-    if (authed) refresh();
+    if (authed) {
+      void refresh();
+      void refreshChains();
+    }
   }, [authed]);
 
   async function handleAdd() {
@@ -271,6 +298,30 @@ export default function AdminPortal() {
   function handleDragEnd() {
     setDragId(null);
     setDragOverId(null);
+  }
+
+  async function handleToggleChainFeature(
+    key: ChainKey,
+    field: keyof ChainFeatures
+  ) {
+    const current = chainSettings[key];
+    if (!current) return;
+
+    setChainSaving(key);
+    try {
+      const data = await updateAdminChainSettings(key, {
+        [field]: !current[field],
+      });
+      setChains(data.chains);
+      setChainSettings(data.settings);
+      showToast("Chain settings updated.");
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Failed to update chain settings."
+      );
+    } finally {
+      setChainSaving(null);
+    }
   }
 
   if (!authed) {
@@ -623,6 +674,86 @@ export default function AdminPortal() {
                 </div>
               )
             )}
+          </div>
+        )}
+
+        <h2 className="admin-section-title">Chain Settings</h2>
+        <p className="admin-chain-hint">
+          Control which chains appear in wallet connect and which support shop
+          payments. Changes apply immediately across the app.
+        </p>
+        {chainsLoading ? (
+          <p className="admin-loading">Loading chain settings...</p>
+        ) : (
+          <div className="admin-chain-table-wrap">
+            <table className="admin-chain-table">
+              <thead>
+                <tr>
+                  <th>Chain</th>
+                  <th>Ecosystem</th>
+                  <th>Wallet Connect</th>
+                  <th>Shop Payments</th>
+                </tr>
+              </thead>
+              <tbody>
+                {chains.map((chain) => {
+                  const features = chainSettings[chain.key];
+                  const paymentsSupported =
+                    chain.ecosystem === "evm" || chain.ecosystem === "sui";
+                  const saving = chainSaving === chain.key;
+
+                  return (
+                    <tr key={chain.key}>
+                      <td>
+                        <span className="admin-chain-name">{chain.name}</span>
+                        {chain.chainId != null && (
+                          <span className="admin-chain-meta">
+                            Chain ID {chain.chainId}
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span className="admin-chain-ecosystem">
+                          {chain.ecosystem.toUpperCase()}
+                        </span>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className={`chain-toggle-btn${
+                            features?.walletConnect ? " is-on" : ""
+                          }`}
+                          disabled={saving}
+                          onClick={() =>
+                            handleToggleChainFeature(chain.key, "walletConnect")
+                          }
+                        >
+                          {features?.walletConnect ? "On" : "Off"}
+                        </button>
+                      </td>
+                      <td>
+                        {paymentsSupported ? (
+                          <button
+                            type="button"
+                            className={`chain-toggle-btn${
+                              features?.shopPayments ? " is-on" : ""
+                            }`}
+                            disabled={saving}
+                            onClick={() =>
+                              handleToggleChainFeature(chain.key, "shopPayments")
+                            }
+                          >
+                            {features?.shopPayments ? "On" : "Off"}
+                          </button>
+                        ) : (
+                          <span className="admin-chain-na">Not supported</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

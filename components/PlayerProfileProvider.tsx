@@ -41,6 +41,7 @@ interface PlayerProfileContextValue {
   playerName: string;
   walletAddress: string;
   ecosystem: WalletEcosystem | null;
+  chainId?: number;
   isReady: boolean;
   isAuthenticated: boolean;
   openConnect: () => void;
@@ -243,6 +244,7 @@ export default function PlayerProfileProvider({
       playerName: profile?.name ?? "",
       walletAddress,
       ecosystem,
+      chainId,
       isReady,
       isAuthenticated,
       openConnect: () => setShowConnect(true),
@@ -253,6 +255,7 @@ export default function PlayerProfileProvider({
       profile,
       walletAddress,
       ecosystem,
+      chainId,
       isReady,
       isAuthenticated,
       logout,
