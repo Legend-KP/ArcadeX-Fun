@@ -14,6 +14,8 @@ import {
 import { verifyShopPaymentTx } from "@/lib/shop-server";
 import { isValidSuiTxDigest } from "@/lib/shop-sui";
 import { verifySuiShopPaymentTx } from "@/lib/shop-sui-server";
+import { findVaraShopPaymentToken, isValidVaraExtrinsicHash } from "@/lib/shop-vara";
+import { verifyVaraShopPaymentTx } from "@/lib/shop-vara-server";
 import { fetchChainSettingsFromServer } from "@/lib/chain-settings-server";
 import { isShopPaymentsEnabled } from "@/lib/chain-registry";
 
@@ -46,10 +48,15 @@ export async function POST(request: Request) {
       );
     }
 
-    if (session.ecosystem !== "evm" && session.ecosystem !== "sui") {
+    if (
+      session.ecosystem !== "evm" &&
+      session.ecosystem !== "sui" &&
+      session.ecosystem !== "vara"
+    ) {
       return NextResponse.json(
         {
-          error: "Shop purchases require an EVM wallet on MegaETH or a Sui wallet.",
+          error:
+            "Shop purchases require an EVM wallet on MegaETH, a Sui wallet, or a Vara wallet.",
           code: "UNSUPPORTED_WALLET",
         },
         { status: 400 }
@@ -109,6 +116,39 @@ export async function POST(request: Request) {
         productId as ShopProductId,
         txId,
         "evm"
+      );
+
+      return NextResponse.json(result);
+    }
+
+    if (session.ecosystem === "vara") {
+      if (!isValidVaraExtrinsicHash(txId)) {
+        return NextResponse.json(
+          { error: "A valid transaction hash is required.", code: "INVALID_TX" },
+          { status: 400 }
+        );
+      }
+
+      const token = findVaraShopPaymentToken(body.tokenAddress ?? "");
+      if (!token) {
+        return NextResponse.json(
+          { error: "Unsupported payment token.", code: "INVALID_TOKEN" },
+          { status: 400 }
+        );
+      }
+
+      await verifyVaraShopPaymentTx({
+        txHash: txId as Hash,
+        productId: productId as ShopProductId,
+        tokenProgramId: token.programId,
+        expectedFrom: session.address,
+      });
+
+      const result = await applyShopPurchaseOnServer(
+        playerId,
+        productId as ShopProductId,
+        txId,
+        "vara"
       );
 
       return NextResponse.json(result);

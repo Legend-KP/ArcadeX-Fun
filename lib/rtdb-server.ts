@@ -576,9 +576,15 @@ export async function spendSparkOnServer(
   };
 }
 
-function processedShopTxPath(txHash: string): string {
-  return `shop/processedTxs/${txHash.trim().toLowerCase()}`;
+function processedShopTxPath(ecosystem: ShopPurchaseEcosystem, txKey: string): string {
+  if (ecosystem === "evm") {
+    return `shop/processedTxs/${txKey}`;
+  }
+
+  return `shop/processedTxs/${ecosystem}/${txKey}`;
 }
+
+type ShopPurchaseEcosystem = "evm" | "sui" | "vara";
 
 export class ShopPurchaseError extends Error {
   constructor(
@@ -591,11 +597,11 @@ export class ShopPurchaseError extends Error {
 }
 
 function normalizeShopTxKey(
-  ecosystem: "evm" | "sui",
+  ecosystem: ShopPurchaseEcosystem,
   txHash: string
 ): string {
   const trimmed = txHash.trim();
-  if (ecosystem === "evm") {
+  if (ecosystem === "evm" || ecosystem === "vara") {
     const key = trimmed.toLowerCase();
     if (!/^0x[0-9a-f]{64}$/.test(key)) {
       throw new ShopPurchaseError("Invalid transaction hash.", "INVALID_TX");
@@ -614,7 +620,7 @@ export async function applyShopPurchaseOnServer(
   playerId: string,
   productId: ShopProductId,
   txHash: string,
-  ecosystem: "evm" | "sui" = "evm",
+  ecosystem: ShopPurchaseEcosystem = "evm",
   now = Date.now()
 ): Promise<{ state: StoredSparkState; sparks: SparkSnapshot }> {
   const resolved = resolvePlayerId(playerId);
@@ -624,7 +630,7 @@ export async function applyShopPurchaseOnServer(
 
   const txKey = normalizeShopTxKey(ecosystem, txHash);
 
-  const processedPath = processedShopTxPath(txKey);
+  const processedPath = processedShopTxPath(ecosystem, txKey);
   const existing = await readPath<{
     playerId: string;
     productId: ShopProductId;

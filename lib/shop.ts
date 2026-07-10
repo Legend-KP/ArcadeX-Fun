@@ -22,7 +22,7 @@ export interface ShopPurchaseSuccess {
   productId: ShopProductId;
   txHash: string;
   tokenSymbol: string;
-  network: "megaeth" | "sui";
+  network: "megaeth" | "sui" | "vara";
 }
 
 export const SHOP_TOKEN_DECIMALS = 6;

@@ -77,7 +77,7 @@ export const CHAIN_REGISTRY: ChainSettingsEntry[] = [
     key: "vara",
     name: "Vara",
     ecosystem: "vara",
-    defaultShopPayments: false,
+    defaultShopPayments: true,
   },
   {
     key: "starknet",
@@ -275,6 +275,10 @@ export function isShopPaymentsEnabled(
     const key = chainId ? getChainKeyForEvmChainId(chainId) : "megaeth";
     if (!key) return false;
     return settings[key]?.shopPayments !== false;
+  }
+
+  if (ecosystem === "vara") {
+    return settings.vara?.shopPayments !== false;
   }
 
   return false;

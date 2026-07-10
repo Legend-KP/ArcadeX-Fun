@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { megaeth } from "@/lib/chains";
 import { SUI_SHOP_EXPLORER_TX_URL } from "@/lib/shop-sui";
+import { VARA_SHOP_EXPLORER_TX_URL } from "@/lib/shop-vara";
 import {
   formatShopPrice,
   SHOP_PRODUCTS,
@@ -38,6 +39,8 @@ export default function SparkShopSuccessModal({
   const explorerUrl =
     purchase.network === "sui"
       ? `${SUI_SHOP_EXPLORER_TX_URL}/${purchase.txHash}`
+      : purchase.network === "vara"
+        ? `${VARA_SHOP_EXPLORER_TX_URL}/${purchase.txHash}`
       : megaeth.blockExplorers?.default.url
         ? `${megaeth.blockExplorers.default.url}/tx/${purchase.txHash}`
         : null;

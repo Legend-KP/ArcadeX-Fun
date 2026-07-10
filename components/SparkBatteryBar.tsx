@@ -7,6 +7,7 @@ import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import { useChainSettings } from "@/components/ChainSettingsProvider";
 import SparkShopPaymentModal from "@/components/SparkShopPaymentModal";
 import SparkShopSuiPaymentModal from "@/components/SparkShopSuiPaymentModal";
+import SparkShopVaraPaymentModal from "@/components/SparkShopVaraPaymentModal";
 import SparkShopSuccessModal from "@/components/SparkShopSuccessModal";
 import {
   formatShopPrice,
@@ -114,8 +115,8 @@ export default function SparkBatteryBar() {
 
         {isAuthenticated && !shopEnabled && (
           <p className="spark-panel__hint">
-            Shop purchases are available with an EVM wallet on MegaETH or a Sui
-            wallet.
+            Shop purchases are available with an EVM wallet on MegaETH, a Sui
+            wallet, or a Vara wallet.
           </p>
         )}
 
@@ -169,7 +170,7 @@ export default function SparkBatteryBar() {
                 {shopEnabled
                   ? "Buy"
                   : isAuthenticated
-                    ? "EVM or Sui wallet required"
+                    ? "MegaETH, Sui, or Vara wallet required"
                     : "Connect wallet"}
               </button>
             </div>
@@ -194,7 +195,7 @@ export default function SparkBatteryBar() {
                 {shopEnabled
                   ? "Buy"
                   : isAuthenticated
-                    ? "EVM or Sui wallet required"
+                    ? "MegaETH, Sui, or Vara wallet required"
                     : "Connect wallet"}
               </button>
             </div>
@@ -249,6 +250,18 @@ export default function SparkBatteryBar() {
 
       <SparkShopSuiPaymentModal
         open={paymentProductId !== null && ecosystem === "sui"}
+        productId={paymentProductId}
+        playerId={playerId}
+        walletAddress={walletAddress}
+        onClose={() => setPaymentProductId(null)}
+        onSuccess={(purchase) => {
+          void refresh();
+          setSuccessPurchase(purchase);
+        }}
+      />
+
+      <SparkShopVaraPaymentModal
+        open={paymentProductId !== null && ecosystem === "vara"}
         productId={paymentProductId}
         playerId={playerId}
         walletAddress={walletAddress}
