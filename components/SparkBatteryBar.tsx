@@ -10,11 +10,15 @@ import SparkShopSuiPaymentModal from "@/components/SparkShopSuiPaymentModal";
 import SparkShopVaraPaymentModal from "@/components/SparkShopVaraPaymentModal";
 import SparkShopSuccessModal from "@/components/SparkShopSuccessModal";
 import {
-  formatShopPrice,
   SHOP_PRODUCTS,
   type ShopProductId,
   type ShopPurchaseSuccess,
 } from "@/lib/shop";
+import {
+  formatShopPriceForNetwork,
+  getShopPanelCopy,
+  isShopPaymentEcosystem,
+} from "@/lib/shop-ui";
 import { formatSparkCountdown } from "@/lib/spark";
 
 export default function SparkBatteryBar() {
@@ -56,6 +60,14 @@ export default function SparkBatteryBar() {
     isAuthenticated &&
     ecosystem !== null &&
     isShopPaymentsEnabled(ecosystem, chainId);
+
+  const shopCopy = getShopPanelCopy(ecosystem, chainId);
+
+  const buyButtonLabel = shopCopy
+    ? shopCopy.getBuyButtonLabel({ isAuthenticated, shopEnabled })
+    : isAuthenticated
+      ? "Connect supported wallet"
+      : "Connect wallet";
 
   function handleBuy(productId: ShopProductId) {
     if (!isAuthenticated) {
@@ -113,10 +125,17 @@ export default function SparkBatteryBar() {
           </p>
         )}
 
-        {isAuthenticated && !shopEnabled && (
+        {isAuthenticated && shopEnabled && shopCopy && (
+          <p className="spark-panel__hint">{shopCopy.paymentHint}</p>
+        )}
+
+        {isAuthenticated && !shopEnabled && isShopPaymentEcosystem(ecosystem) && shopCopy && (
+          <p className="spark-panel__hint">{shopCopy.disabledHint}</p>
+        )}
+
+        {isAuthenticated && !isShopPaymentEcosystem(ecosystem) && (
           <p className="spark-panel__hint">
-            Shop purchases are available with an EVM wallet on MegaETH, a Sui
-            wallet, or a Vara wallet.
+            Shop purchases are available with MegaETH, Sui, or Vara.
           </p>
         )}
 
@@ -155,7 +174,10 @@ export default function SparkBatteryBar() {
                   {SHOP_PRODUCTS["spark-refill"].name}
                 </span>
                 <span className="spark-shop-card__price">
-                  {formatShopPrice(SHOP_PRODUCTS["spark-refill"].priceUsd)}
+                  {formatShopPriceForNetwork(
+                    SHOP_PRODUCTS["spark-refill"].priceUsd,
+                    shopCopy
+                  )}
                 </span>
               </div>
               <p className="spark-shop-card__desc">
@@ -167,11 +189,7 @@ export default function SparkBatteryBar() {
                 disabled={!shopEnabled}
                 onClick={() => handleBuy("spark-refill")}
               >
-                {shopEnabled
-                  ? "Buy"
-                  : isAuthenticated
-                    ? "MegaETH, Sui, or Vara wallet required"
-                    : "Connect wallet"}
+                {buyButtonLabel}
               </button>
             </div>
             <div className="spark-shop-card">
@@ -180,7 +198,10 @@ export default function SparkBatteryBar() {
                   {SHOP_PRODUCTS["infinite-24h"].name}
                 </span>
                 <span className="spark-shop-card__price">
-                  {formatShopPrice(SHOP_PRODUCTS["infinite-24h"].priceUsd)}
+                  {formatShopPriceForNetwork(
+                    SHOP_PRODUCTS["infinite-24h"].priceUsd,
+                    shopCopy
+                  )}
                 </span>
               </div>
               <p className="spark-shop-card__desc">
@@ -192,11 +213,7 @@ export default function SparkBatteryBar() {
                 disabled={!shopEnabled}
                 onClick={() => handleBuy("infinite-24h")}
               >
-                {shopEnabled
-                  ? "Buy"
-                  : isAuthenticated
-                    ? "MegaETH, Sui, or Vara wallet required"
-                    : "Connect wallet"}
+                {buyButtonLabel}
               </button>
             </div>
           </div>
