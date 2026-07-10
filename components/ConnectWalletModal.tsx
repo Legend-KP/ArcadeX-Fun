@@ -331,9 +331,12 @@ export default function ConnectWalletModal({
                     onClick={() => handleSelect(option)}
                   >
                     <span className="wallet-option__label">{option.label}</span>
-                    <span className="wallet-option__chain">
-                      {option.networkLabel ?? getEcosystemLabel(option.ecosystem)}
-                    </span>
+                    {option.ecosystem !== "vara" && (
+                      <span className="wallet-option__chain">
+                        {option.networkLabel ??
+                          getEcosystemLabel(option.ecosystem)}
+                      </span>
+                    )}
                   </button>
                 ))
               )}

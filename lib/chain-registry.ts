@@ -177,7 +177,7 @@ export const WALLET_OPTIONS: WalletOption[] = [
   },
   {
     id: "polkadot",
-    label: "Polkadot.js",
+    label: "Vara Network",
     ecosystem: "vara",
     chainKey: "vara",
   },
