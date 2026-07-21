@@ -43,6 +43,13 @@ export const CHAIN_REGISTRY: ChainSettingsEntry[] = [
     defaultShopPayments: false,
   },
   {
+    key: "avalanche",
+    name: "Avalanche",
+    ecosystem: "evm",
+    chainId: 43114,
+    defaultShopPayments: false,
+  },
+  {
     key: "beam",
     name: "Beam",
     ecosystem: "evm",
@@ -129,6 +136,15 @@ export const WALLET_OPTIONS: WalletOption[] = [
     chainId: 25,
     networkLabel: "Cronos",
     chainKey: "cronos",
+  },
+  {
+    id: "metamask-avalanche",
+    label: "MetaMask",
+    ecosystem: "evm",
+    connectorId: "metaMaskSDK",
+    chainId: 43114,
+    networkLabel: "Avalanche",
+    chainKey: "avalanche",
   },
   {
     id: "metamask-beam",

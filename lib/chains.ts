@@ -78,6 +78,18 @@ export const cronos = defineChain({
   },
 });
 
+export const avalanche = defineChain({
+  id: 43114,
+  name: "Avalanche",
+  nativeCurrency: { name: "Avalanche", symbol: "AVAX", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://api.avax.network/ext/bc/C/rpc"] },
+  },
+  blockExplorers: {
+    default: { name: "Snowtrace", url: "https://snowtrace.io" },
+  },
+});
+
 export const beam = defineChain({
   id: 4337,
   name: "Beam",
@@ -101,6 +113,7 @@ export const supportedEvmChains = [
   bnb,
   berachain,
   cronos,
+  avalanche,
   beam,
 ] as const;
 

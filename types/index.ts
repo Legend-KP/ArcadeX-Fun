@@ -106,6 +106,7 @@ export type ChainKey =
   | "bnb"
   | "berachain"
   | "cronos"
+  | "avalanche"
   | "beam"
   | "sui"
   | "aptos"
