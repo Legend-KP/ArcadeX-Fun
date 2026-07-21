@@ -52,6 +52,7 @@ export async function verifyShopPaymentTx(params: {
   productId: ShopProductId;
   tokenAddress: `0x${string}`;
   expectedFrom: string;
+  overrideAmount?: bigint;
 }): Promise<void> {
   const token = findShopPaymentToken(params.tokenAddress);
   if (!token) {
@@ -65,10 +66,9 @@ export async function verifyShopPaymentTx(params: {
   }
 
   const product = SHOP_PRODUCTS[params.productId];
-  const requiredAmount = shopPriceToAmount(
-    product.priceUsd,
-    SHOP_TOKEN_DECIMALS
-  );
+  const requiredAmount =
+    params.overrideAmount ??
+    shopPriceToAmount(product.priceUsd, SHOP_TOKEN_DECIMALS);
   const recipient = getAddress(SHOP_RECIPIENT_ADDRESS);
   const from = getAddress(params.expectedFrom);
   const tokenAddress = getAddress(token.address);

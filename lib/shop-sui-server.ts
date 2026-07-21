@@ -69,12 +69,12 @@ export async function verifySuiShopPaymentTx(params: {
   txDigest: string;
   productId: ShopProductId;
   expectedFrom: string;
+  overrideAmount?: bigint;
 }): Promise<void> {
   const product = SHOP_PRODUCTS[params.productId];
-  const requiredAmount = shopPriceToAmount(
-    product.priceUsd,
-    SHOP_TOKEN_DECIMALS
-  );
+  const requiredAmount =
+    params.overrideAmount ??
+    shopPriceToAmount(product.priceUsd, SHOP_TOKEN_DECIMALS);
   const recipient = SUI_SHOP_RECIPIENT_ADDRESS;
   const sender = normalizeSuiAddress(params.expectedFrom);
   const coinType = normalizeCoinType(SUI_USDC_COIN_TYPE);

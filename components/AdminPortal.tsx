@@ -14,8 +14,10 @@ import {
   updateAdminChainSettings,
   updateAdminGame,
 } from "@/lib/admin-api";
+import AdminContestModal from "@/components/AdminContestModal";
 import { chainSupportsShopPaymentsConfig } from "@/lib/chain-registry";
-import { Game, ChainFeatures, ChainKey, ChainSettingsEntry, gameHasLeaderboard, gameIsLive } from "@/types";
+import { contestStatusLabel } from "@/lib/contest";
+import { Game, ChainFeatures, ChainKey, ChainSettingsEntry, gameHasLeaderboard, gameIsLive, getContestStatus } from "@/types";
 import Logo from "@/components/Logo";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "/";
@@ -60,6 +62,7 @@ export default function AdminPortal() {
   >({} as Record<ChainKey, ChainFeatures>);
   const [chainsLoading, setChainsLoading] = useState(true);
   const [chainSaving, setChainSaving] = useState<ChainKey | null>(null);
+  const [contestGame, setContestGame] = useState<Game | null>(null);
 
   async function handleLogin() {
     setPwLoading(true);
@@ -636,6 +639,8 @@ export default function AdminPortal() {
                       {g.plays} plays · {g.active ? "🟢 Visible" : "⚫ Hidden"} ·{" "}
                       {gameIsLive(g) ? "✅ Live" : "🔜 Coming Soon"} ·{" "}
                       {gameHasLeaderboard(g) ? "🏆 Leaderboard" : "📊 Level-based"}
+                      {gameHasLeaderboard(g) &&
+                        ` · ${contestStatusLabel(getContestStatus(g))}`}
                     </p>
                   </div>
                   <div className="admin-actions">
@@ -647,6 +652,20 @@ export default function AdminPortal() {
                     >
                       Edit
                     </button>
+                    {gameHasLeaderboard(g) && (
+                      <button
+                        className="toggle-btn"
+                        type="button"
+                        onClick={() => setContestGame(g)}
+                        disabled={reordering}
+                      >
+                        {getContestStatus(g) === "live"
+                          ? "Edit Contest"
+                          : getContestStatus(g) === "ended"
+                            ? "Contest Results"
+                            : "Start Contest"}
+                      </button>
+                    )}
                     <button
                       className="toggle-btn"
                       type="button"
@@ -757,6 +776,18 @@ export default function AdminPortal() {
           </div>
         )}
       </div>
+
+      {contestGame && (
+        <AdminContestModal
+          game={contestGame}
+          open={Boolean(contestGame)}
+          onClose={() => setContestGame(null)}
+          onUpdated={() => {
+            void refresh();
+            setContestGame(null);
+          }}
+        />
+      )}
     </div>
   );
 }

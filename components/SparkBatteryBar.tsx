@@ -19,7 +19,12 @@ import {
   getShopPanelCopy,
   isShopPaymentEcosystem,
 } from "@/lib/shop-ui";
-import { formatSparkCountdown } from "@/lib/spark";
+import { formatSparkCountdown, SPARK_REGEN_MS } from "@/lib/spark";
+
+function formatRegenHours(ms: number): string {
+  const hours = Math.round(ms / (60 * 60 * 1000));
+  return `${hours} hour${hours === 1 ? "" : "s"}`;
+}
 
 export default function SparkBatteryBar() {
   const { sparks, loading, refresh } = useSparks();
@@ -56,18 +61,14 @@ export default function SparkBatteryBar() {
 
   const displayAvailable = isAuthenticated ? sparks.available : sparks.max;
   const showInfinite = isAuthenticated && sparks.hasInfinite;
+  const allReady =
+    isAuthenticated && !showInfinite && sparks.available === sparks.max;
   const shopEnabled =
     isAuthenticated &&
     ecosystem !== null &&
     isShopPaymentsEnabled(ecosystem, chainId);
 
   const shopCopy = getShopPanelCopy(ecosystem, chainId);
-
-  const buyButtonLabel = shopCopy
-    ? shopCopy.getBuyButtonLabel({ isAuthenticated, shopEnabled })
-    : isAuthenticated
-      ? "Connect supported wallet"
-      : "Connect wallet";
 
   function handleBuy(productId: ShopProductId) {
     if (!isAuthenticated) {
@@ -79,7 +80,6 @@ export default function SparkBatteryBar() {
       return;
     }
 
-    setOpen(false);
     setPaymentProductId(productId);
   }
 
@@ -90,133 +90,179 @@ export default function SparkBatteryBar() {
       onClick={() => setOpen(false)}
     >
       <div
-        className="spark-panel"
+        className="spark-panel spark-panel--v2"
         role="dialog"
         aria-modal="true"
         aria-labelledby="spark-panel-title"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="spark-panel__orb" aria-hidden>
+          ⚡
+        </div>
+
         <button
           type="button"
-          className="spark-panel__close"
+          className="spark-panel__close spark-panel__close--v2"
           onClick={() => setOpen(false)}
           aria-label="Close"
         >
           ×
         </button>
 
-        <h2 id="spark-panel-title" className="spark-panel__title">
-          Sparks
+        <h2 id="spark-panel-title" className="spark-panel__title spark-panel__title--v2">
+          <span aria-hidden>✦</span> SPARKS <span aria-hidden>✦</span>
         </h2>
 
-        <p className="spark-panel__status">
-          {showInfinite ? (
-            <>Infinite Sparks active</>
-          ) : (
-            <>
-              <strong>{displayAvailable}</strong> / {sparks.max} ready
-            </>
-          )}
+        <p className="spark-panel__tagline">
+          Use Sparks to play any game. Once inside, play freely and infinitely!
         </p>
 
-        {!isAuthenticated && (
-          <p className="spark-panel__hint">
-            Connect your wallet to track and spend Sparks.
+        <div className="spark-panel__status-card">
+          <p className="spark-panel__status-label">YOUR SPARKS</p>
+
+          <p className="spark-panel__balance">
+            <span className="spark-panel__balance-icon" aria-hidden>
+              ⚡
+            </span>
+            {showInfinite ? (
+              <>
+                <strong>∞</strong> Infinite Sparks active
+              </>
+            ) : (
+              <>
+                <strong>{displayAvailable}</strong> / {sparks.max} Sparks Available
+              </>
+            )}
           </p>
-        )}
 
-        {isAuthenticated && shopEnabled && shopCopy && (
-          <p className="spark-panel__hint">{shopCopy.paymentHint}</p>
-        )}
-
-        {isAuthenticated && !shopEnabled && isShopPaymentEcosystem(ecosystem) && shopCopy && (
-          <p className="spark-panel__hint">{shopCopy.disabledHint}</p>
-        )}
-
-        {isAuthenticated && !isShopPaymentEcosystem(ecosystem) && (
-          <p className="spark-panel__hint">
-            Shop purchases are available with MegaETH, Sui, or Vara.
-          </p>
-        )}
-
-        <div className="spark-panel__slots">
-          {sparks.slots.map((slot) => (
-            <div key={slot.index} className="spark-panel__slot">
-              <div
-                className={`spark-panel__slot-bar${
-                  slot.status === "ready" ? " is-ready" : ""
-                }`}
-              >
-                <div
-                  className="spark-panel__slot-fill"
-                  style={{ height: `${slot.fillPercent}%` }}
-                />
-              </div>
-              <span className="spark-panel__slot-label">
-                {slot.status === "ready"
-                  ? "Ready"
-                  : formatSparkCountdown(slot.timeRemainingMs)}
-              </span>
+          {!showInfinite && (
+            <div className="spark-panel__bars">
+              {sparks.slots.map((slot) => (
+                <div key={slot.index} className="spark-panel__bar-col">
+                  <div
+                    className={`spark-panel__bar${
+                      slot.status === "ready" ? " is-ready" : ""
+                    }`}
+                  >
+                    <div
+                      className="spark-panel__bar-fill"
+                      style={{ width: `${slot.fillPercent}%` }}
+                    />
+                  </div>
+                  <span
+                    className={`spark-panel__bar-label${
+                      slot.status === "ready" ? " is-ready" : ""
+                    }`}
+                  >
+                    {slot.status === "ready"
+                      ? "READY"
+                      : formatSparkCountdown(slot.timeRemainingMs)}
+                  </span>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
+
+          {allReady && (
+            <p className="spark-panel__full-badge">All Sparks are full! ✦</p>
+          )}
+
+          <p className="spark-panel__info-box">
+            <span className="spark-panel__info-icon" aria-hidden>
+              ℹ
+            </span>
+            1 Spark = 1 game entry. Each Spark refills in{" "}
+            {formatRegenHours(SPARK_REGEN_MS)}.
+          </p>
         </div>
 
         {loading && (
           <p className="spark-panel__loading">Syncing Sparks…</p>
         )}
 
-        <div className="spark-panel__shop">
-          <h3 className="spark-panel__shop-title">Shop</h3>
-          <div className="spark-shop-cards">
-            <div className="spark-shop-card">
-              <div className="spark-shop-card__info">
-                <span className="spark-shop-card__name">
-                  {SHOP_PRODUCTS["spark-refill"].name}
-                </span>
-                <span className="spark-shop-card__price">
-                  {formatShopPriceForNetwork(
-                    SHOP_PRODUCTS["spark-refill"].priceUsd,
-                    shopCopy
-                  )}
+        {!isAuthenticated && (
+          <p className="spark-panel__hint spark-panel__hint--v2">
+            Connect your wallet to track and spend Sparks.
+          </p>
+        )}
+
+        {isAuthenticated && shopEnabled && shopCopy && (
+          <p className="spark-panel__hint spark-panel__hint--v2">
+            {shopCopy.paymentHint}
+          </p>
+        )}
+
+        {isAuthenticated && !shopEnabled && isShopPaymentEcosystem(ecosystem) && shopCopy && (
+          <p className="spark-panel__hint spark-panel__hint--v2">
+            {shopCopy.disabledHint}
+          </p>
+        )}
+
+        <div className="spark-panel__shop spark-panel__shop--v2">
+          <h3 className="spark-panel__shop-title spark-panel__shop-title--v2">
+            ✦ GET MORE SPARKS ✦
+          </h3>
+
+          <div className="spark-shop-cards spark-shop-cards--v2">
+            <article className="spark-shop-card spark-shop-card--refill">
+              <div className="spark-shop-card__icon spark-shop-card__icon--coin" aria-hidden>
+                ⚡
+              </div>
+              <div className="spark-shop-card__content">
+                <p className="spark-shop-card__name">Spark Refill</p>
+                <p className="spark-shop-card__desc">
+                  Instantly refill your Spark bar to full.
+                </p>
+                <span className="spark-shop-card__badge spark-shop-card__badge--gold">
+                  Best for quick top-up
                 </span>
               </div>
-              <p className="spark-shop-card__desc">
-                {SHOP_PRODUCTS["spark-refill"].description}
-              </p>
               <button
                 type="button"
-                className="spark-shop-card__btn"
-                disabled={!shopEnabled}
+                className="spark-shop-card__price-btn spark-shop-card__price-btn--gold"
+                disabled={isAuthenticated && !shopEnabled}
                 onClick={() => handleBuy("spark-refill")}
               >
-                {buyButtonLabel}
+                {formatShopPriceForNetwork(
+                  SHOP_PRODUCTS["spark-refill"].priceUsd,
+                  shopCopy
+                )}
+                <span aria-hidden>›</span>
               </button>
-            </div>
-            <div className="spark-shop-card">
-              <div className="spark-shop-card__info">
-                <span className="spark-shop-card__name">
-                  {SHOP_PRODUCTS["infinite-24h"].name}
-                </span>
-                <span className="spark-shop-card__price">
-                  {formatShopPriceForNetwork(
-                    SHOP_PRODUCTS["infinite-24h"].priceUsd,
-                    shopCopy
-                  )}
+            </article>
+
+            <article className="spark-shop-card spark-shop-card--infinite">
+              <div className="spark-shop-card__icon spark-shop-card__icon--infinite" aria-hidden>
+                ∞
+              </div>
+              <div className="spark-shop-card__content">
+                <p className="spark-shop-card__name">Infinite Spark (24h)</p>
+                <p className="spark-shop-card__desc">
+                  Unlimited game access for 24 hours.
+                </p>
+                <span className="spark-shop-card__badge spark-shop-card__badge--purple">
+                  Play without limits
                 </span>
               </div>
-              <p className="spark-shop-card__desc">
-                {SHOP_PRODUCTS["infinite-24h"].description}
-              </p>
               <button
                 type="button"
-                className="spark-shop-card__btn"
-                disabled={!shopEnabled}
+                className="spark-shop-card__price-btn spark-shop-card__price-btn--purple"
+                disabled={isAuthenticated && !shopEnabled}
                 onClick={() => handleBuy("infinite-24h")}
               >
-                {buyButtonLabel}
+                {formatShopPriceForNetwork(
+                  SHOP_PRODUCTS["infinite-24h"].priceUsd,
+                  shopCopy
+                )}
+                <span aria-hidden>›</span>
               </button>
-            </div>
+            </article>
           </div>
+
+          <p className="spark-panel__shop-footnote">
+            <span aria-hidden>🛡</span> Infinite Spark removes the entry gate only.
+            Weekly leaderboard attempt limits still apply.
+          </p>
         </div>
       </div>
     </div>

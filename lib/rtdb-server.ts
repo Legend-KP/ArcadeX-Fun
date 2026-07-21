@@ -1,5 +1,6 @@
 import {
   GameProgress,
+  CONTEST_TOP_MAX_ENTRIES,
   LEADERBOARD_MAX_ENTRIES,
   LeaderboardEntry,
   PlayerProfile,
@@ -13,6 +14,8 @@ import {
   bumpCachedPlayCount,
   cachedFetchLeaderboardTop,
   invalidateLeaderboardTopCache,
+  cachedFetchContestLeaderboardTop,
+  invalidateContestLeaderboardTopCache,
 } from "@/lib/rtdb-cache";
 import {
   isValidAddress,
@@ -340,10 +343,45 @@ export async function fetchUserBestScoreFromServer(
   return best;
 }
 
-export async function submitLeaderboardEntryOnServer(
+export async function fetchUserSubmittedBestFromServer(
   gameId: string,
-  entry: LeaderboardEntry
-): Promise<void> {
+  opts: { walletAddress?: string; playerName?: string }
+): Promise<number> {
+  return fetchUserBestScoreFromServer(gameId, opts);
+}
+
+export async function fetchPersonalBestFromServer(
+  playerId: string,
+  gameId: string
+): Promise<number> {
+  const stored = await fetchGameProgressFromServer(playerId, gameId);
+  return stored?.s ?? 0;
+}
+
+export async function fetchContestLeaderboardFromServer(
+  gameId: string,
+  contestStartedAt: number,
+  limit = CONTEST_TOP_MAX_ENTRIES
+): Promise<LeaderboardEntry[]> {
+  return cachedFetchContestLeaderboardTop(
+    gameId,
+    contestStartedAt,
+    async () => {
+      const map = await readPath<LeaderboardMap>(
+        `contestLeaderboards/${gameId}/${contestStartedAt}`
+      );
+      return deduplicateLeaderboardEntries(mapToLeaderboardEntries(map))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+    }
+  );
+}
+
+async function writeLeaderboardEntry(
+  basePath: string,
+  entry: LeaderboardEntry,
+  invalidate: () => void
+): Promise<boolean> {
   const wallet = entry.walletAddress?.trim();
   const payload: LeaderboardEntry = {
     name: entry.name,
@@ -352,18 +390,107 @@ export async function submitLeaderboardEntryOnServer(
     createdAt: entry.createdAt ?? Date.now(),
   };
 
-  const map = await readPath<LeaderboardMap>(`leaderboards/${gameId}`);
+  const map = await readPath<LeaderboardMap>(basePath);
   const userKey = leaderboardUserKey(payload);
   const existingBest = deduplicateLeaderboardEntries(
     mapToLeaderboardEntries(map)
   ).find((e) => leaderboardUserKey(e) === userKey);
 
   if (existingBest && existingBest.score >= payload.score) {
-    return;
+    return false;
   }
 
-  await writePath(`leaderboards/${gameId}/${leaderboardStorageKey(payload)}`, payload);
-  invalidateLeaderboardTopCache(gameId);
+  await writePath(
+    `${basePath}/${leaderboardStorageKey(payload)}`,
+    payload
+  );
+  invalidate();
+  return true;
+}
+
+export async function submitLeaderboardEntryOnServer(
+  gameId: string,
+  entry: LeaderboardEntry
+): Promise<void> {
+  await writeLeaderboardEntry(
+    `leaderboards/${gameId}`,
+    entry,
+    () => invalidateLeaderboardTopCache(gameId)
+  );
+}
+
+export async function submitContestLeaderboardEntryOnServer(
+  gameId: string,
+  contestStartedAt: number,
+  entry: LeaderboardEntry
+): Promise<void> {
+  await writeLeaderboardEntry(
+    `contestLeaderboards/${gameId}/${contestStartedAt}`,
+    entry,
+    () => invalidateContestLeaderboardTopCache(gameId, contestStartedAt)
+  );
+}
+
+function processedScoreSubmitTxPath(
+  ecosystem: ShopPurchaseEcosystem,
+  txKey: string
+): string {
+  if (ecosystem === "evm") {
+    return `scoreSubmit/processedTxs/${txKey}`;
+  }
+  return `scoreSubmit/processedTxs/${ecosystem}/${txKey}`;
+}
+
+export async function submitPublicScoreOnServer(params: {
+  gameId: string;
+  entry: LeaderboardEntry;
+  txHash: string;
+  ecosystem?: ShopPurchaseEcosystem;
+  contestStartedAt?: number;
+}): Promise<{ submittedBest: number }> {
+  const ecosystem = params.ecosystem ?? "evm";
+  const txKey = normalizeShopTxKey(ecosystem, params.txHash);
+  const processedPath = processedScoreSubmitTxPath(ecosystem, txKey);
+
+  const existing = await readPath<{ gameId: string; walletAddress?: string }>(
+    processedPath
+  );
+  if (existing) {
+    if (
+      existing.gameId !== params.gameId ||
+      (existing.walletAddress &&
+        params.entry.walletAddress &&
+        existing.walletAddress !== params.entry.walletAddress.trim())
+    ) {
+      throw new ShopPurchaseError(
+        "This transaction was already used.",
+        "TX_ALREADY_USED"
+      );
+    }
+  } else {
+    await writePath(processedPath, {
+      gameId: params.gameId,
+      walletAddress: params.entry.walletAddress?.trim(),
+      processedAt: Date.now(),
+    });
+  }
+
+  await submitLeaderboardEntryOnServer(params.gameId, params.entry);
+
+  if (typeof params.contestStartedAt === "number") {
+    await submitContestLeaderboardEntryOnServer(
+      params.gameId,
+      params.contestStartedAt,
+      params.entry
+    );
+  }
+
+  const submittedBest = await fetchUserSubmittedBestFromServer(params.gameId, {
+    walletAddress: params.entry.walletAddress,
+    playerName: params.entry.name,
+  });
+
+  return { submittedBest };
 }
 
 // ─── Per-user game progress ───────────────────────────────────────────────────
@@ -396,77 +523,19 @@ export async function fetchGameProgressFromServer(
 }
 
 /**
- * Resolves progress for API / bootstrap. Score games use max(user `s`, leaderboard best)
- * and sync leaderboard → user node when the leaderboard is ahead.
+ * Resolves progress for API / bootstrap from the user node only.
+ * Public leaderboard scores are separate (paid submit).
  */
 export async function resolveGameProgressFromServer(
   playerId: string,
   gameId: string,
-  hasLeaderboard: boolean,
-  opts?: { playerName?: string }
+  hasLeaderboard: boolean
 ): Promise<GameProgress> {
   const resolved = resolvePlayerId(playerId);
   if (!resolved) return {};
 
   const stored = await fetchGameProgressFromServer(resolved, gameId);
-
-  if (!hasLeaderboard) {
-    return storedProgressToGameProgress(stored, false);
-  }
-
-  const userScore = stored?.s ?? 0;
-  const parsed = parsePlayerId(resolved);
-  const walletForLookup = parsed?.address ?? resolved;
-  const leaderboardBest = await fetchUserBestScoreFromServer(gameId, {
-    walletAddress: walletForLookup,
-    playerName: opts?.playerName,
-  });
-
-  if (userScore > leaderboardBest) {
-    await syncLeaderboardFromScoreOnServer(gameId, resolved, userScore, {
-      playerName: opts?.playerName,
-    });
-  }
-
-  const score = Math.max(userScore, leaderboardBest);
-
-  if (score > userScore) {
-    await saveGameProgressOnServer(resolved, gameId, score, true, {
-      playerName: opts?.playerName,
-    });
-  }
-
-  return score > 0 ? { score } : storedProgressToGameProgress(stored, true);
-}
-
-function resolveLeaderboardPlayerName(
-  wallet: string,
-  playerName?: string,
-  profileName?: string
-): string {
-  const trimmed = playerName?.trim() || profileName?.trim();
-  if (trimmed) return trimmed;
-  return `${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
-}
-
-async function syncLeaderboardFromScoreOnServer(
-  gameId: string,
-  playerId: string,
-  score: number,
-  opts?: { playerName?: string }
-): Promise<void> {
-  const profile = await fetchUserFromServer(playerId);
-  const parsed = parsePlayerId(resolvePlayerId(playerId) ?? playerId);
-  const wallet = parsed?.address ?? playerId;
-  await submitLeaderboardEntryOnServer(gameId, {
-    name: resolveLeaderboardPlayerName(
-      wallet,
-      opts?.playerName,
-      profile?.name
-    ),
-    score,
-    walletAddress: wallet,
-  });
+  return storedProgressToGameProgress(stored, hasLeaderboard);
 }
 
 export async function saveGameProgressOnServer(
@@ -487,10 +556,6 @@ export async function saveGameProgressOnServer(
   const current = await fetchGameProgressFromServer(resolved, gameId);
   const field: "s" | "l" = hasLeaderboard ? "s" : "l";
   const currentValue = hasLeaderboard ? (current?.s ?? 0) : (current?.l ?? 0);
-
-  if (hasLeaderboard) {
-    await syncLeaderboardFromScoreOnServer(gameId, resolved, value, opts);
-  }
 
   if (value <= currentValue) {
     return storedProgressToGameProgress(current, hasLeaderboard);

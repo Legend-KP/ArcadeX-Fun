@@ -1,17 +1,26 @@
 import { fetchGameFromServer } from "@/lib/firestore-server";
 import {
+  fetchContestLeaderboardFromServer,
   fetchLeaderboardFromServer,
-  fetchUserBestScoreFromServer,
+  fetchPersonalBestFromServer,
   fetchUserFromServer,
+  fetchUserSubmittedBestFromServer,
   saveGameProgressOnServer,
-  submitLeaderboardEntryOnServer,
 } from "@/lib/rtdb-server";
 import {
   corsJsonResponse,
   handleCorsPreflightRequest,
 } from "@/lib/cors";
-import { gameHasLeaderboard, LEADERBOARD_MAX_ENTRIES, LeaderboardEntry } from "@/types";
+import {
+  CONTEST_TOP_MAX_ENTRIES,
+  gameHasLeaderboard,
+  getContestStatus,
+  LEADERBOARD_MAX_ENTRIES,
+  LeaderboardEntry,
+  LeaderboardResponse,
+} from "@/types";
 import { isWalletAddress, tryNormalizeWalletAddress } from "@/lib/wallet-address";
+import { resolvePlayerId } from "@/lib/player-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -19,19 +28,19 @@ export async function OPTIONS(request: Request) {
   return handleCorsPreflightRequest(request);
 }
 
-async function assertLeaderboardEnabled(
-  request: Request,
-  gameId: string
-) {
+async function assertLeaderboardEnabled(request: Request, gameId: string) {
   const game = await fetchGameFromServer(gameId);
   if (!game || !gameHasLeaderboard(game)) {
-    return corsJsonResponse(
-      request,
-      { error: "Leaderboard is not enabled for this game." },
-      { status: 404 }
-    );
+    return {
+      error: corsJsonResponse(
+        request,
+        { error: "Leaderboard is not enabled for this game." },
+        { status: 404 }
+      ),
+      game: null,
+    };
   }
-  return null;
+  return { error: null, game };
 }
 
 function parseScoreBody(body: LeaderboardEntry & { value?: number }) {
@@ -50,23 +59,73 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const disabled = await assertLeaderboardEnabled(request, id);
-    if (disabled) return disabled;
+    const { error, game } = await assertLeaderboardEnabled(request, id);
+    if (error || !game) return error;
 
     const { searchParams } = new URL(request.url);
     const wallet = searchParams.get("wallet") ?? undefined;
     const name = searchParams.get("name") ?? undefined;
+    const playerId =
+      resolvePlayerId(searchParams.get("playerId") ?? "") ??
+      resolvePlayerId(wallet ?? "");
 
     const entries = await fetchLeaderboardFromServer(id, LEADERBOARD_MAX_ENTRIES);
-    const personalBest =
-      wallet || name
-        ? await fetchUserBestScoreFromServer(id, {
-            walletAddress: wallet,
-            playerName: name,
-          })
-        : undefined;
 
-    return corsJsonResponse(request, { entries, personalBest });
+    let personalBest: number | undefined;
+    if (playerId) {
+      personalBest = await fetchPersonalBestFromServer(playerId, id);
+    }
+
+    let submittedBest: number | undefined;
+    if (wallet || name) {
+      submittedBest = await fetchUserSubmittedBestFromServer(id, {
+        walletAddress: wallet,
+        playerName: name,
+      });
+    }
+
+    const canSubmit =
+      typeof personalBest === "number" &&
+      personalBest > 0 &&
+      personalBest > (submittedBest ?? 0);
+
+    const contestStatus = getContestStatus(game);
+    let contest: LeaderboardResponse["contest"] = null;
+
+    if (
+      contestStatus &&
+      typeof game.contestStartedAt === "number" &&
+      typeof game.contestEndsAt === "number"
+    ) {
+      const contestEntries = await fetchContestLeaderboardFromServer(
+        id,
+        game.contestStartedAt,
+        CONTEST_TOP_MAX_ENTRIES
+      );
+
+      contest = {
+        status: contestStatus,
+        task: game.contestTask ?? "",
+        startedAt: game.contestStartedAt,
+        endsAt: game.contestEndsAt,
+        durationDays: game.contestDurationDays ?? 1,
+        entries: contestEntries,
+      };
+    }
+
+    const response: LeaderboardResponse = {
+      entries,
+      ...(personalBest !== undefined && personalBest > 0
+        ? { personalBest }
+        : {}),
+      ...(submittedBest !== undefined && submittedBest > 0
+        ? { submittedBest }
+        : {}),
+      ...(canSubmit ? { canSubmit: true } : {}),
+      contest,
+    };
+
+    return corsJsonResponse(request, response);
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load leaderboard.";
@@ -74,18 +133,20 @@ export async function GET(
   }
 }
 
+/** Free personal-best save only — does not write to the public board. */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const disabled = await assertLeaderboardEnabled(request, id);
-    if (disabled) return disabled;
+    const { error, game } = await assertLeaderboardEnabled(request, id);
+    if (error || !game) return error;
 
     const body = (await request.json()) as LeaderboardEntry & {
       value?: number;
       playerName?: string;
+      playerId?: string;
     };
     const score = parseScoreBody(body);
 
@@ -98,6 +159,9 @@ export async function POST(
     }
 
     const wallet = tryNormalizeWalletAddress(body.walletAddress);
+    const playerId =
+      resolvePlayerId(body.playerId ?? "") ?? resolvePlayerId(wallet ?? "");
+
     let name = body.name?.trim() || body.playerName?.trim() || "";
 
     if (!name && wallet) {
@@ -109,37 +173,25 @@ export async function POST(
       name = `${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
     }
 
-    if (!name) {
+    if (!playerId) {
       return corsJsonResponse(
         request,
-        { error: "name is required when walletAddress is not provided." },
+        { error: "playerId or walletAddress is required." },
         { status: 400 }
       );
     }
 
-    const entry = {
-      name,
-      score,
-      walletAddress: body.walletAddress,
-    };
-
-    if (wallet && isWalletAddress(wallet)) {
-      await saveGameProgressOnServer(wallet, id, score, true, {
-        playerName: name,
-      });
-    } else {
-      await submitLeaderboardEntryOnServer(id, entry);
-    }
-
-    const personalBest = await fetchUserBestScoreFromServer(id, {
-      walletAddress: entry.walletAddress,
-      playerName: entry.name,
+    const progress = await saveGameProgressOnServer(playerId, id, score, true, {
+      playerName: name,
     });
 
-    return corsJsonResponse(request, { success: true, personalBest });
+    return corsJsonResponse(request, {
+      success: true,
+      personalBest: progress.score ?? score,
+    });
   } catch (err) {
     const message =
-      err instanceof Error ? err.message : "Failed to submit score.";
+      err instanceof Error ? err.message : "Failed to save score.";
     return corsJsonResponse(request, { error: message }, { status: 500 });
   }
 }

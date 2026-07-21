@@ -87,6 +87,39 @@ export function invalidateLeaderboardTopCache(gameId: string): void {
   leaderboardTopCache.delete(gameId);
 }
 
+// ─── Contest leaderboard top mirror ──────────────────────────────────────────
+
+const contestLeaderboardTopCache = new Map<string, LeaderboardTopEntry>();
+
+function contestCacheKey(gameId: string, startedAt: number): string {
+  return `${gameId}:${startedAt}`;
+}
+
+export async function cachedFetchContestLeaderboardTop(
+  gameId: string,
+  contestStartedAt: number,
+  fetcher: () => Promise<LeaderboardEntry[]>
+): Promise<LeaderboardEntry[]> {
+  const now = Date.now();
+  const key = contestCacheKey(gameId, contestStartedAt);
+  const entry = contestLeaderboardTopCache.get(key);
+
+  if (entry && now - entry.fetchedAt < LEADERBOARD_TOP_TTL_MS) {
+    return entry.entries;
+  }
+
+  const entries = await fetcher();
+  contestLeaderboardTopCache.set(key, { entries, fetchedAt: now });
+  return entries;
+}
+
+export function invalidateContestLeaderboardTopCache(
+  gameId: string,
+  contestStartedAt: number
+): void {
+  contestLeaderboardTopCache.delete(contestCacheKey(gameId, contestStartedAt));
+}
+
 /** Expose stats for metrics logging. */
 export function getRtdbCacheStats() {
   return {

@@ -1,10 +1,31 @@
 export const LEADERBOARD_MAX_ENTRIES = 25;
+export const CONTEST_TOP_MAX_ENTRIES = 10;
+
+export type ContestDurationDays = 1 | 2 | 4 | 7;
+export type ContestStatus = "live" | "ended";
 
 export interface LeaderboardEntry {
   name: string;
   score: number;
   walletAddress?: string;
   createdAt?: number;
+}
+
+export interface ContestLeaderboardPayload {
+  status: ContestStatus;
+  task: string;
+  startedAt: number;
+  endsAt: number;
+  durationDays: ContestDurationDays;
+  entries: LeaderboardEntry[];
+}
+
+export interface LeaderboardResponse {
+  entries: LeaderboardEntry[];
+  personalBest?: number;
+  submittedBest?: number;
+  canSubmit?: boolean;
+  contest?: ContestLeaderboardPayload | null;
 }
 
 export type WalletEcosystem =
@@ -43,6 +64,13 @@ export interface Game {
   /** Lower numbers appear first on the home page. Set via admin drag-and-drop. */
   order?: number;
   createdAt: number;
+  /** Contest task description shown in leaderboard UI */
+  contestTask?: string;
+  /** Legacy flag — use contestEndsAt for live status */
+  contestLive?: boolean;
+  contestStartedAt?: number;
+  contestEndsAt?: number;
+  contestDurationDays?: ContestDurationDays;
 }
 
 export function gameHasLeaderboard(game: Pick<Game, "hasLeaderboard">): boolean {
@@ -51,6 +79,26 @@ export function gameHasLeaderboard(game: Pick<Game, "hasLeaderboard">): boolean 
 
 export function gameIsLive(game: Pick<Game, "live">): boolean {
   return game.live !== false;
+}
+
+export function gameHasContestLive(
+  game: Pick<Game, "contestEndsAt">,
+  now = Date.now()
+): boolean {
+  return typeof game.contestEndsAt === "number" && game.contestEndsAt > now;
+}
+
+export function getContestStatus(
+  game: Pick<Game, "contestStartedAt" | "contestEndsAt">,
+  now = Date.now()
+): ContestStatus | null {
+  if (
+    typeof game.contestStartedAt !== "number" ||
+    typeof game.contestEndsAt !== "number"
+  ) {
+    return null;
+  }
+  return game.contestEndsAt > now ? "live" : "ended";
 }
 
 export type ChainKey =

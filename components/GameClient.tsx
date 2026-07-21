@@ -4,23 +4,25 @@ import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import ExitGameModal from "@/components/ExitGameModal";
 import LoadingScreen from "@/components/LoadingScreen";
+import ScoreSubmitModal from "@/components/ScoreSubmitModal";
 import { sendToUnity, UnityMessage } from "@/lib/bridge";
-import { getLeaderboard, submitScore } from "@/lib/firebase";
+import { getLeaderboard } from "@/lib/firebase";
 import { getGameProgress, saveGameProgress } from "@/lib/game-progress-client";
 import { buildGameIframeUrl, getShellOrigin } from "@/lib/game-iframe-url";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import { getGameTheme } from "@/lib/game-themes";
-import { Game, gameHasLeaderboard } from "@/types";
+import { Game, gameHasContestLive, gameHasLeaderboard } from "@/types";
 
 interface GameClientProps {
   game: Game;
+  onScoreSubmitted?: () => void;
 }
 
 const GAME_LOAD_FALLBACK_MS = 12000;
 const SHELL_LAYOUT_FALLBACK_MS = 4500;
 const PROGRESS_RETRY_DELAYS_MS = [0, 600, 1500, 3000] as const;
 
-export default function GameClient({ game }: GameClientProps) {
+export default function GameClient({ game, onScoreSubmitted }: GameClientProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const loadFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shellLayoutFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -29,7 +31,13 @@ export default function GameClient({ game }: GameClientProps) {
   const router = useRouter();
   const [exitOpen, setExitOpen] = useState(false);
   const [gameReady, setGameReady] = useState(false);
+  const [scoreSubmitOpen, setScoreSubmitOpen] = useState(false);
+  const [pendingScore, setPendingScore] = useState<{
+    score: number;
+    name: string;
+  } | null>(null);
   const leaderboardEnabled = gameHasLeaderboard(game);
+  const contestLive = gameHasContestLive(game);
   const theme = getGameTheme(game);
   const shellOrigin = getShellOrigin();
   const progressRetryRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -172,6 +180,7 @@ export default function GameClient({ game }: GameClientProps) {
             shellOrigin,
             walletAddress: wallet,
             playerName: bootstrapName,
+            contestLive,
             ...progressPayload,
             hints: 0,
             tutorialComplete: false,
@@ -192,7 +201,8 @@ export default function GameClient({ game }: GameClientProps) {
           break;
         }
 
-        case "MINIPAY_SUBMIT_SCORE": {
+        case "MINIPAY_SUBMIT_SCORE":
+        case "GAME_LEADERBOARD_SUBMIT": {
           if (!leaderboardEnabled) {
             sendToUnity(iframeRef, "OnScoreSubmitted", {
               success: false,
@@ -205,25 +215,22 @@ export default function GameClient({ game }: GameClientProps) {
             score: number;
             walletAddress?: string;
           };
-          const resolvedWallet =
-            walletAddress || payloadWallet || profile?.walletAddress;
-          const activePlayerId = resolvedPlayerId;
-          const personalBest = await submitScore(game.id, {
-            name: playerName || name,
-            score,
-            walletAddress: resolvedWallet,
-          });
-          if (activePlayerId) {
-            saveGameProgress(game.id, activePlayerId, score, {
-              playerName: playerName || name,
-            }).catch(() => {
-              // User-node sync is best-effort
+          const submitWallet =
+            resolvedWallet || payloadWallet || profile?.walletAddress;
+
+          if (!submitWallet) {
+            sendToUnity(iframeRef, "OnScoreSubmitted", {
+              success: false,
+              error: "Connect your wallet to submit a score.",
             });
+            break;
           }
-          sendToUnity(iframeRef, "OnScoreSubmitted", {
-            success: true,
-            highScore: personalBest,
+
+          setPendingScore({
+            score,
+            name: playerName || name,
           });
+          setScoreSubmitOpen(true);
           break;
         }
 
@@ -319,6 +326,7 @@ export default function GameClient({ game }: GameClientProps) {
     },
     [
       game.id,
+      contestLive,
       leaderboardEnabled,
       playerName,
       profile?.name,
@@ -389,6 +397,33 @@ export default function GameClient({ game }: GameClientProps) {
         onExit={() => router.push("/")}
         onPlayMore={() => router.push("/")}
       />
+
+      {pendingScore && resolvedWallet && (
+        <ScoreSubmitModal
+          open={scoreSubmitOpen}
+          gameId={game.id}
+          score={pendingScore.score}
+          playerName={pendingScore.name}
+          walletAddress={resolvedWallet}
+          onClose={() => {
+            setScoreSubmitOpen(false);
+            setPendingScore(null);
+            sendToUnity(iframeRef, "OnScoreSubmitted", {
+              success: false,
+              error: "Score submission cancelled.",
+            });
+          }}
+          onSuccess={(submittedBest) => {
+            setScoreSubmitOpen(false);
+            setPendingScore(null);
+            sendToUnity(iframeRef, "OnScoreSubmitted", {
+              success: true,
+              highScore: submittedBest,
+            });
+            onScoreSubmitted?.();
+          }}
+        />
+      )}
     </div>
   );
 }

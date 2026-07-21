@@ -26,6 +26,9 @@ export {
   getLeaderboard,
   getUserBestScore,
   submitScore,
+  savePersonalBest,
+  submitPaidScore,
+  fetchLeaderboardData,
 } from "@/lib/leaderboard-client";
 
 let app: FirebaseApp;

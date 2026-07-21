@@ -1,4 +1,8 @@
 import { sortGames } from "@/lib/games-sort";
+import {
+  removeGameGatingFromRtdb,
+  syncGameGatingFlagsToRtdb,
+} from "@/lib/game-gating";
 import { Game } from "@/types";
 import { getFirebaseAccessToken, getProjectId, getServiceAccount } from "@/lib/firebase-admin";
 import {
@@ -49,6 +53,13 @@ function docToGame(doc: FirestoreDocument): Game {
         ? Number(parseField(fields.order))
         : undefined,
     createdAt: Number(parseField(fields.createdAt) ?? 0),
+    contestTask: parseField(fields.contestTask) as string | undefined,
+    contestLive: parseField(fields.contestLive) as boolean | undefined,
+    contestStartedAt: parseField(fields.contestStartedAt) as number | undefined,
+    contestEndsAt: parseField(fields.contestEndsAt) as number | undefined,
+    contestDurationDays: parseField(fields.contestDurationDays) as
+      | Game["contestDurationDays"]
+      | undefined,
   };
 }
 
@@ -152,6 +163,12 @@ export async function createGameOnServer(
   const doc = (await res.json()) as FirestoreDocument;
   const newId = doc.name.split("/").pop() ?? "";
   invalidateGameCache();
+  const game = await fetchGameFromServer(newId);
+  if (game) {
+    await syncGameGatingFlagsToRtdb(game).catch(() => {
+      // Gating sync is best-effort
+    });
+  }
   return newId;
 }
 
@@ -176,6 +193,12 @@ export async function updateGameOnServer(
   }
 
   invalidateGameCache(id);
+  const game = await fetchGameFromServer(id);
+  if (game) {
+    await syncGameGatingFlagsToRtdb(game).catch(() => {
+      // Gating sync is best-effort
+    });
+  }
 }
 
 export async function reorderGamesOnServer(ids: string[]): Promise<void> {
@@ -193,6 +216,9 @@ export async function deleteGameOnServer(id: string): Promise<void> {
     throw new Error(`Firestore delete failed (${res.status}): ${text}`);
   }
   invalidateGameCache(id);
+  await removeGameGatingFromRtdb(id).catch(() => {
+    // Gating sync is best-effort
+  });
 }
 
 // Re-export project id helper for other modules.

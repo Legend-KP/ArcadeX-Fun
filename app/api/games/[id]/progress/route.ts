@@ -49,9 +49,9 @@ export async function GET(
 
     const hasLeaderboard = gameHasLeaderboard(game);
     const result = await cachedGetProgress(playerId, id, () =>
-      resolveGameProgressFromServer(playerId, id, hasLeaderboard, {
-        playerName: name,
-      }).then((progress) => ({ progress, hasLeaderboard }))
+      resolveGameProgressFromServer(playerId, id, hasLeaderboard).then(
+        (progress) => ({ progress, hasLeaderboard })
+      )
     );
 
     return corsJsonResponse(request, result);

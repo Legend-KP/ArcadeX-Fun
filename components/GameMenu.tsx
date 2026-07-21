@@ -1,9 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import GameTutorialModal from "@/components/GameTutorialModal";
 import { gameAssetCandidates, gameFallbackCandidates } from "@/lib/game-assets";
-import { Game, gameHasLeaderboard } from "@/types";
+import {
+  getTutorialImageUrl,
+  hasSeenTutorial,
+  hasTutorial,
+  markTutorialSeen,
+} from "@/lib/game-tutorial";
+import { Game, gameHasContestLive, gameHasLeaderboard } from "@/types";
 
 interface GameMenuProps {
   game: Game;
@@ -21,6 +28,22 @@ export default function GameMenu({
   spending = false,
 }: GameMenuProps) {
   const router = useRouter();
+  const tutorialUrl = useMemo(() => getTutorialImageUrl(game), [game]);
+  const showTutorialButton = hasTutorial(game);
+
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+
+  useEffect(() => {
+    if (!tutorialUrl) return;
+    if (!hasSeenTutorial(game.id)) {
+      setTutorialOpen(true);
+    }
+  }, [game.id, tutorialUrl]);
+
+  const dismissTutorial = () => {
+    markTutorialSeen(game.id);
+    setTutorialOpen(false);
+  };
 
   const thumbCandidates = useMemo(
     () => gameAssetCandidates(game, "thumbnail"),
@@ -50,82 +73,123 @@ export default function GameMenu({
   const fallbackSrc = fallbackCandidates[fallbackIdx];
 
   return (
-    <div className="game-menu">
-      <div className="game-menu-bg">
-        {thumbSrc ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={thumbSrc}
-            alt=""
-            className="game-menu-bg-img"
-            onError={() => setThumbIdx((i) => i + 1)}
-          />
-        ) : (
-          <div className="game-menu-bg-fallback" />
+    <>
+      <div className="game-menu">
+        {gameHasContestLive(game) && (
+          <div className="game-menu-contest-stripe" aria-hidden>
+            <div className="game-menu-contest-stripe__track">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <span key={i}>Contest is Live</span>
+              ))}
+            </div>
+          </div>
         )}
-        <div className="game-menu-bg-overlay" />
-      </div>
 
-      <div className="game-menu-grid" aria-hidden />
-
-      <div className="game-menu-card">
-        <div className="game-menu-logo-wrap">
-          {logoSrc ? (
+        <div className="game-menu-bg">
+          {thumbSrc ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={logoSrc}
-              alt={game.name}
-              className="game-menu-logo"
-              onError={() => setLogoIdx((i) => i + 1)}
-            />
-          ) : fallbackSrc ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={fallbackSrc}
-              alt={game.name}
-              className="game-menu-logo"
-              onError={() => setFallbackIdx((i) => i + 1)}
+              src={thumbSrc}
+              alt=""
+              className="game-menu-bg-img"
+              onError={() => setThumbIdx((i) => i + 1)}
             />
           ) : (
-            <span className="game-menu-logo-fallback">🎮</span>
+            <div className="game-menu-bg-fallback" />
           )}
+          <div className="game-menu-bg-overlay" />
         </div>
 
-        <h1 className="game-menu-title">{game.name}</h1>
+        <div className="game-menu-grid" aria-hidden />
 
-        {sparkError ? (
-          <p className="game-menu-spark-error" role="alert">
-            {sparkError}
-          </p>
-        ) : null}
-
-        <div className="game-menu-actions">
+        <div className="game-menu-topbar">
           <button
             type="button"
-            className="game-menu-btn game-menu-btn--start"
-            onClick={() => void onStart()}
-            disabled={spending}
-          >
-            {spending ? "Starting…" : "START"}
-          </button>
-          {gameHasLeaderboard(game) && (
-            <button
-              type="button"
-              className="game-menu-btn game-menu-btn--leaderboard"
-              onClick={onLeaderboard}
-            >
-              Leaderboard
-            </button>
-          )}
-          <button
-            type="button"
-            className="game-menu-btn game-menu-btn--back"
+            className="game-menu-circle-btn"
+            aria-label="Back to home"
             onClick={() => router.push("/")}
           >
-            Back
+            ←
           </button>
+          {showTutorialButton && (
+            <button
+              type="button"
+              className="game-menu-circle-btn game-menu-circle-btn--info"
+              aria-label="How to play"
+              onClick={() => setTutorialOpen(true)}
+            >
+              ⓘ
+            </button>
+          )}
+        </div>
+
+        <div className="game-menu-stack">
+          <div className="game-menu-card">
+            <div className="game-menu-logo-wrap">
+              {logoSrc ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={logoSrc}
+                  alt={game.name}
+                  className="game-menu-logo"
+                  onError={() => setLogoIdx((i) => i + 1)}
+                />
+              ) : fallbackSrc ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={fallbackSrc}
+                  alt={game.name}
+                  className="game-menu-logo"
+                  onError={() => setFallbackIdx((i) => i + 1)}
+                />
+              ) : (
+                <span className="game-menu-logo-fallback">🎮</span>
+              )}
+            </div>
+          </div>
+
+          {sparkError ? (
+            <p className="game-menu-spark-error" role="alert">
+              {sparkError}
+            </p>
+          ) : null}
+
+          <div className="game-menu-actions">
+            <button
+              type="button"
+              className="game-menu-btn game-menu-btn--start"
+              onClick={() => void onStart()}
+              disabled={spending}
+            >
+              <span className="game-menu-btn__icon" aria-hidden>
+                ▶
+              </span>
+              {spending ? "Starting…" : "Start Game"}
+            </button>
+            {gameHasLeaderboard(game) && (
+              <button
+                type="button"
+                className="game-menu-btn game-menu-btn--leaderboard"
+                onClick={onLeaderboard}
+              >
+                <span className="game-menu-btn__icon game-menu-btn__icon--trophy" aria-hidden>
+                  🏆
+                </span>
+                Leaderboard
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      {tutorialUrl && (
+        <GameTutorialModal
+          open={tutorialOpen}
+          imageUrl={tutorialUrl}
+          gameName={game.name}
+          onDismiss={dismissTutorial}
+        />
+      )}
+    </>
   );
 }

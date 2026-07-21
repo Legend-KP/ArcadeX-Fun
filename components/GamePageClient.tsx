@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Game, gameHasLeaderboard, gameIsLive } from "@/types";
 import GameClient from "@/components/GameClient";
 import GameMenu from "@/components/GameMenu";
-import Leaderboard from "@/components/Leaderboard";
+import Leaderboard, { LeaderboardMode } from "@/components/Leaderboard";
 import LoadingScreen from "@/components/LoadingScreen";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import { useSparks } from "@/components/SparkProvider";
@@ -15,11 +15,13 @@ import { formatSparkCountdown } from "@/lib/spark";
 export default function GamePageClient() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { walletAddress, isAuthenticated, openConnect } = usePlayerProfile();
+  const { walletAddress, isAuthenticated, openConnect, playerId, playerName } =
+    usePlayerProfile();
   const { sparks, spendForGame } = useSparks();
   const [game, setGame] = useState<Game | null>(null);
   const [started, setStarted] = useState(false);
   const [lbOpen, setLbOpen] = useState(false);
+  const [lbMode, setLbMode] = useState<LeaderboardMode>("default");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [sparkError, setSparkError] = useState("");
@@ -124,25 +126,40 @@ export default function GamePageClient() {
     }
   };
 
+  const openLeaderboard = (mode: LeaderboardMode = "default") => {
+    setLbMode(mode);
+    setLbOpen(true);
+  };
+
   return (
     <>
       {!started ? (
         <GameMenu
           game={game}
           onStart={handleStart}
-          onLeaderboard={() => setLbOpen(true)}
+          onLeaderboard={() => openLeaderboard("default")}
           sparkError={sparkError}
           spending={spending}
         />
       ) : (
-        <GameClient game={game} />
+        <GameClient
+          game={game}
+          onScoreSubmitted={() => openLeaderboard("postSubmit")}
+        />
       )}
       {gameHasLeaderboard(game) && (
         <Leaderboard
           gameId={game.id}
           gameName={game.name}
           open={lbOpen}
-          onClose={() => setLbOpen(false)}
+          mode={lbMode}
+          walletAddress={walletAddress ?? undefined}
+          playerName={playerName ?? undefined}
+          playerId={playerId ?? undefined}
+          onClose={() => {
+            setLbOpen(false);
+            setLbMode("default");
+          }}
         />
       )}
     </>

@@ -149,6 +149,7 @@ export async function verifyVaraShopPaymentTx(params: {
   productId: ShopProductId;
   tokenProgramId: HexString;
   expectedFrom: string;
+  overrideAmount?: bigint;
 }): Promise<void> {
   if (!VARA_SHOP_RECIPIENT_ADDRESS) {
     throw new Error("Vara shop recipient is not configured.");
@@ -176,7 +177,9 @@ export async function verifyVaraShopPaymentTx(params: {
 
   const transfer = decodeTransferFromPayload(payload);
   const product = SHOP_PRODUCTS[params.productId];
-  const requiredAmount = shopPriceToAmount(product.priceUsd, SHOP_TOKEN_DECIMALS);
+  const requiredAmount =
+    params.overrideAmount ??
+    shopPriceToAmount(product.priceUsd, SHOP_TOKEN_DECIMALS);
   const recipient = normalizeActorId(VARA_SHOP_RECIPIENT_ADDRESS);
 
   if (transfer.to !== recipient) {

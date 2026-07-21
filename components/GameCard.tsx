@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { gameAssetCandidates, gameFallbackCandidates } from "@/lib/game-assets";
 import { formatPlayCount } from "@/lib/format-play-count";
-import { Game, gameIsLive } from "@/types";
+import { Game, gameHasContestLive, gameIsLive } from "@/types";
 
 interface GameCardProps {
   game: Game;
@@ -13,6 +13,7 @@ interface GameCardProps {
 
 export default function GameCard({ game, playCount = 0 }: GameCardProps) {
   const isLive = gameIsLive(game);
+  const contestLive = gameHasContestLive(game);
 
   const thumbCandidates = useMemo(
     () => gameAssetCandidates(game, "thumbnail"),
@@ -67,6 +68,9 @@ export default function GameCard({ game, playCount = 0 }: GameCardProps) {
     <>
       <div className="thumb-wrap">
         {thumbContent}
+        {contestLive && (
+          <span className="game-card-contest-badge">CONTEST LIVE</span>
+        )}
         {!isLive && (
           <div className="coming-soon-overlay" aria-hidden>
             <span>Coming Soon</span>
@@ -83,14 +87,31 @@ export default function GameCard({ game, playCount = 0 }: GameCardProps) {
 
   if (!isLive) {
     return (
-      <div className="game-card game-card--coming-soon" aria-label={`${game.name} — coming soon`}>
+      <div
+        className={[
+          "game-card",
+          "game-card--coming-soon",
+          contestLive && "game-card--contest-live",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        aria-label={`${game.name} — coming soon`}
+      >
         {cardBody}
       </div>
     );
   }
 
   return (
-    <Link href={`/game/${game.id}`} className="game-card">
+    <Link
+      href={`/game/${game.id}`}
+      className={[
+        "game-card",
+        contestLive && "game-card--contest-live",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       {cardBody}
     </Link>
   );
