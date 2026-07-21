@@ -109,6 +109,7 @@ export default function SparkBatteryBar() {
           ×
         </button>
 
+        <div className="spark-panel__body">
         <h2 id="spark-panel-title" className="spark-panel__title spark-panel__title--v2">
           <span aria-hidden>✦</span> SPARKS <span aria-hidden>✦</span>
         </h2>
@@ -263,6 +264,7 @@ export default function SparkBatteryBar() {
             <span aria-hidden>🛡</span> Infinite Spark removes the entry gate only.
             Weekly leaderboard attempt limits still apply.
           </p>
+        </div>
         </div>
       </div>
     </div>
