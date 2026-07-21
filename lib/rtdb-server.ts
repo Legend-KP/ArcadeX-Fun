@@ -9,6 +9,12 @@ import {
 } from "@/types";
 import { getDatabaseUrl } from "./firebase-admin";
 import {
+  cachedFetchAllPlayCounts,
+  bumpCachedPlayCount,
+  cachedFetchLeaderboardTop,
+  invalidateLeaderboardTopCache,
+} from "@/lib/rtdb-cache";
+import {
   isValidAddress,
   normalizeAddress,
   parsePlayerId,
@@ -250,14 +256,16 @@ export async function bootstrapUserOnServer(
 // ─── Game play counts ──────────────────────────────────────────────────────────
 
 export async function fetchAllGamePlayCounts(): Promise<Record<string, number>> {
-  const data = await readPath<Record<string, number>>("gamePlays");
-  if (!data) return {};
+  return cachedFetchAllPlayCounts(async () => {
+    const data = await readPath<Record<string, number>>("gamePlays");
+    if (!data) return {};
 
-  const counts: Record<string, number> = {};
-  for (const [gameId, value] of Object.entries(data)) {
-    counts[gameId] = typeof value === "number" ? value : 0;
-  }
-  return counts;
+    const counts: Record<string, number> = {};
+    for (const [gameId, value] of Object.entries(data)) {
+      counts[gameId] = typeof value === "number" ? value : 0;
+    }
+    return counts;
+  });
 }
 
 export async function fetchGamePlayCount(gameId: string): Promise<number> {
@@ -266,10 +274,30 @@ export async function fetchGamePlayCount(gameId: string): Promise<number> {
 }
 
 export async function incrementGamePlayCount(gameId: string): Promise<number> {
-  const current = await fetchGamePlayCount(gameId);
-  const next = current + 1;
-  await writePath(`gamePlays/${gameId}`, next);
-  return next;
+  // Atomic server-side increment — no read-modify-write race.
+  const auth = getRtdbAuthQuery();
+  const url = `${getDatabaseUrl()}/${encodeRtdbPath(`gamePlays/${gameId}`)}.json?${auth}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ".sv": { increment: 1 } }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    // Fallback: read-then-write if the server-value syntax isn't supported
+    const current = await fetchGamePlayCount(gameId);
+    const next = current + 1;
+    await writePath(`gamePlays/${gameId}`, next);
+    bumpCachedPlayCount(gameId);
+    return next;
+  }
+
+  // Bump the in-memory cache without a full re-fetch
+  bumpCachedPlayCount(gameId);
+
+  const body = (await res.json()) as number | null;
+  return typeof body === "number" ? body : 0;
 }
 
 // ─── Leaderboard ─────────────────────────────────────────────────────────────
@@ -278,10 +306,12 @@ export async function fetchLeaderboardFromServer(
   gameId: string,
   limit = LEADERBOARD_MAX_ENTRIES
 ): Promise<LeaderboardEntry[]> {
-  const map = await readPath<LeaderboardMap>(`leaderboards/${gameId}`);
-  return deduplicateLeaderboardEntries(mapToLeaderboardEntries(map))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  return cachedFetchLeaderboardTop(gameId, async () => {
+    const map = await readPath<LeaderboardMap>(`leaderboards/${gameId}`);
+    return deduplicateLeaderboardEntries(mapToLeaderboardEntries(map))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  });
 }
 
 export async function fetchUserBestScoreFromServer(
@@ -333,6 +363,7 @@ export async function submitLeaderboardEntryOnServer(
   }
 
   await writePath(`leaderboards/${gameId}/${leaderboardStorageKey(payload)}`, payload);
+  invalidateLeaderboardTopCache(gameId);
 }
 
 // ─── Per-user game progress ───────────────────────────────────────────────────

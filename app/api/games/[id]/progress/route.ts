@@ -9,6 +9,8 @@ import {
 } from "@/lib/cors";
 import { gameHasLeaderboard } from "@/types";
 import { resolvePlayerId } from "@/lib/player-identity";
+import { cachedGetProgress, invalidateProgressCache } from "@/lib/progress-response-cache";
+import { coalesceProgressWrite } from "@/lib/progress-write-coalesce";
 
 export const dynamic = "force-dynamic";
 
@@ -46,14 +48,13 @@ export async function GET(
     }
 
     const hasLeaderboard = gameHasLeaderboard(game);
-    const progress = await resolveGameProgressFromServer(
-      playerId,
-      id,
-      hasLeaderboard,
-      { playerName: name }
+    const result = await cachedGetProgress(playerId, id, () =>
+      resolveGameProgressFromServer(playerId, id, hasLeaderboard, {
+        playerName: name,
+      }).then((progress) => ({ progress, hasLeaderboard }))
     );
 
-    return corsJsonResponse(request, { progress, hasLeaderboard });
+    return corsJsonResponse(request, result);
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load game progress.";
@@ -113,13 +114,19 @@ export async function POST(
     }
 
     const hasLeaderboard = gameHasLeaderboard(game);
-    const progress = await saveGameProgressOnServer(
+    const playerName = body.playerName ?? body.name;
+
+    const progress = await coalesceProgressWrite(
       playerId,
       id,
       scoreValue,
       hasLeaderboard,
-      { playerName: body.playerName ?? body.name }
+      { playerName },
+      (v, hl, opts) => saveGameProgressOnServer(playerId, id, v, hl, opts)
     );
+
+    // Bust the read cache so the next GET reflects the new value immediately
+    invalidateProgressCache(playerId, id);
 
     return corsJsonResponse(request, { success: true, progress, hasLeaderboard });
   } catch (err) {

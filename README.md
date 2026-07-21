@@ -2,6 +2,11 @@
 
 A multi-game arcade shell for Unity WebGL games, built with Next.js + TypeScript + Firebase.
 
+## Internal Guides
+
+- UI guide: `docs/arcadex-ui-guide.md`
+- Firebase optimization guide: `docs/arcadex-firebase-optimization-guide.md`
+
 ## File Structure
 
 ```

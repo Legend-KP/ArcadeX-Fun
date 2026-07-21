@@ -1,6 +1,11 @@
 import { sortGames } from "@/lib/games-sort";
 import { Game } from "@/types";
 import { getFirebaseAccessToken, getProjectId, getServiceAccount } from "@/lib/firebase-admin";
+import {
+  cachedFetchGameList,
+  cachedFetchGameDoc,
+  invalidateGameCache,
+} from "@/lib/game-cache";
 
 type FirestoreValue = {
   stringValue?: string;
@@ -95,20 +100,25 @@ export function isGameVisible(game: Game): boolean {
 }
 
 export async function fetchGamesFromServer(): Promise<Game[]> {
-  const docs = await listDocuments("games");
-  return sortGames(docs.map(docToGame));
+  return cachedFetchGameList(async () => {
+    const docs = await listDocuments("games");
+    return sortGames(docs.map(docToGame));
+  });
 }
 
 export async function fetchGameFromServer(id: string): Promise<Game | null> {
-  const res = await firestoreFetch(`games/${id}`);
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Firestore request failed (${res.status}): ${text}`);
-  }
-
-  return docToGame((await res.json()) as FirestoreDocument);
+  return cachedFetchGameDoc(id, async () => {
+    const res = await firestoreFetch(`games/${id}`);
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Firestore request failed (${res.status}): ${text}`);
+    }
+    return docToGame((await res.json()) as FirestoreDocument);
+  });
 }
+
+export { invalidateGameCache };
 
 export async function createGameOnServer(
   data: Omit<Game, "id" | "createdAt">
@@ -140,7 +150,9 @@ export async function createGameOnServer(
   }
 
   const doc = (await res.json()) as FirestoreDocument;
-  return doc.name.split("/").pop() ?? "";
+  const newId = doc.name.split("/").pop() ?? "";
+  invalidateGameCache();
+  return newId;
 }
 
 export async function updateGameOnServer(
@@ -162,12 +174,16 @@ export async function updateGameOnServer(
     const text = await res.text();
     throw new Error(`Firestore update failed (${res.status}): ${text}`);
   }
+
+  invalidateGameCache(id);
 }
 
 export async function reorderGamesOnServer(ids: string[]): Promise<void> {
   await Promise.all(
     ids.map((id, index) => updateGameOnServer(id, { order: index }))
   );
+  // updateGameOnServer already invalidates each doc; also bust the list
+  invalidateGameCache();
 }
 
 export async function deleteGameOnServer(id: string): Promise<void> {
@@ -176,6 +192,7 @@ export async function deleteGameOnServer(id: string): Promise<void> {
     const text = await res.text();
     throw new Error(`Firestore delete failed (${res.status}): ${text}`);
   }
+  invalidateGameCache(id);
 }
 
 // Re-export project id helper for other modules.
