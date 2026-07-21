@@ -1497,9 +1497,9 @@ a { color: inherit; text-decoration: none; }
 .game-menu-contest-stripe__track {
   display: flex;
   width: max-content;
-  gap: 28px;
+  gap: 56px;
   padding: 8px 0;
-  animation: contest-stripe-scroll 18s linear infinite;
+  animation: contest-stripe-scroll 28s linear infinite;
 }
 
 .game-menu-contest-stripe__track span {

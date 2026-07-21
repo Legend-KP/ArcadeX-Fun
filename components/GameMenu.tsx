@@ -78,8 +78,11 @@ export default function GameMenu({
         {gameHasContestLive(game) && (
           <div className="game-menu-contest-stripe" aria-hidden>
             <div className="game-menu-contest-stripe__track">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <span key={i}>Contest is Live</span>
+              {Array.from({ length: 16 }).map((_, i) => (
+                <span key={`contest-stripe-a-${i}`}>Contest is Live</span>
+              ))}
+              {Array.from({ length: 16 }).map((_, i) => (
+                <span key={`contest-stripe-b-${i}`}>Contest is Live</span>
               ))}
             </div>
           </div>
