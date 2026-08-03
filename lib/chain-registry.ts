@@ -22,6 +22,13 @@ export const CHAIN_REGISTRY: ChainSettingsEntry[] = [
     defaultShopPayments: true,
   },
   {
+    key: "base",
+    name: "Base",
+    ecosystem: "evm",
+    chainId: 8453,
+    defaultShopPayments: false,
+  },
+  {
     key: "bnb",
     name: "BNB Chain",
     ecosystem: "evm",
@@ -163,6 +170,15 @@ export const WALLET_OPTIONS: WalletOption[] = [
     chainId: PRIMARY_EVM_CHAIN_ID,
     networkLabel: "MegaETH",
     chainKey: "megaeth",
+  },
+  {
+    id: "coinbase-base",
+    label: "Coinbase Wallet",
+    ecosystem: "evm",
+    connectorId: "coinbaseWalletSDK",
+    chainId: 8453,
+    networkLabel: "Base",
+    chainKey: "base",
   },
   {
     id: "walletconnect-megaeth",

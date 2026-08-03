@@ -103,6 +103,7 @@ export function getContestStatus(
 
 export type ChainKey =
   | "megaeth"
+  | "base"
   | "bnb"
   | "berachain"
   | "cronos"
