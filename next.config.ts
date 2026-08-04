@@ -6,8 +6,8 @@ const stubsDir = path.join(__dirname, "lib/stubs");
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(process.cwd()),
-  // Do NOT externalize @polkadot/api or @gear-js/api on Cloudflare —
-  // externals get copied into the Worker and blow past the 3 MiB free limit.
+  // Do NOT externalize @polkadot/@gear — that copies multi‑MB type metadata
+  // into the Worker and exceeds Cloudflare's free 3 MiB limit.
   serverExternalPackages: ["jose"],
   experimental: {
     optimizePackageImports: ["viem", "wagmi", "@tanstack/react-query"],
@@ -16,23 +16,27 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
   webpack: (config, { isServer }) => {
+    const assertPolyfill = require.resolve("assert/");
+    const bufferPolyfill = require.resolve("buffer/");
+
     config.resolve.alias = {
       ...config.resolve.alias,
       porto: false,
       "porto/internal": false,
       accounts: false,
-      "node:assert": require.resolve("assert/"),
-      "node:buffer": require.resolve("buffer/"),
+      "node:assert": assertPolyfill,
+      "node:buffer": bufferPolyfill,
+      assert: assertPolyfill,
+      buffer: bufferPolyfill,
     };
 
-    // Server Worker: stub heavy Substrate packages (type metadata alone is multi‑MB).
-    // Client bundles still use the real packages for Vara wallet UX.
+    // Server Worker stubs — real packages stay in the browser bundle for Vara UX.
     if (isServer) {
       config.resolve.alias = {
         ...config.resolve.alias,
         "@gear-js/api": path.join(stubsDir, "gear-api.ts"),
         "@polkadot/api": path.join(stubsDir, "polkadot-api.ts"),
-        "@polkadot/types": false,
+        "@polkadot/types": path.join(stubsDir, "polkadot-types.ts"),
         "sails-js": path.join(stubsDir, "sails-js.ts"),
       };
     }
@@ -40,8 +44,18 @@ const nextConfig: NextConfig = {
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
-        assert: require.resolve("assert/"),
-        buffer: require.resolve("buffer/"),
+        assert: assertPolyfill,
+        buffer: bufferPolyfill,
+        crypto: false,
+        fs: false,
+        net: false,
+        tls: false,
+        path: false,
+        os: false,
+        stream: false,
+        http: false,
+        https: false,
+        zlib: false,
       };
     }
 

@@ -2,7 +2,7 @@
 export class GearApi {
   static async create(): Promise<GearApi> {
     throw new Error(
-      "Vara RPC is not available in this deployment. Use Base (EVM) or Sui for shop payments."
+      "Vara Gear API runs in the browser only (Cloudflare Worker size limit)."
     );
   }
 
@@ -10,3 +10,7 @@ export class GearApi {
 }
 
 export type HexString = `0x${string}`;
+
+export function decodeAddress(_address: string): Uint8Array {
+  throw new Error("decodeAddress is not available on the server Worker.");
+}

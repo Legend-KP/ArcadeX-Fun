@@ -2,20 +2,43 @@
 
 import type { SubmittableExtrinsic } from "@polkadot/api/types";
 import { web3Enable, web3FromAddress } from "@polkadot/extension-dapp";
-import { VARA_RPC_URL } from "@/lib/shop-vara";
+import {
+  assertVaraShopRecipientConfigured,
+  findVaraShopPaymentToken,
+  VARA_RPC_URL,
+  VARA_SHOP_RECIPIENT_ADDRESS,
+} from "@/lib/shop-vara";
+import {
+  isShopProductId,
+  SHOP_PRODUCTS,
+  shopPriceToAmount,
+  SHOP_TOKEN_DECIMALS,
+  type ShopProductId,
+} from "@/lib/shop";
+import {
+  buildVftTransferPayload,
+  calculateVftTransferGas,
+} from "@/lib/vara-http-rpc";
+import { toVaraActorId } from "@/lib/vara-address";
 
 const VARA_APP_NAME = "ArcadeX";
-
-async function getVaraApi() {
-  const { ApiPromise, WsProvider } = await import("@polkadot/api");
-  return ApiPromise.create({ provider: new WsProvider(VARA_RPC_URL) });
-}
 
 export async function transferVaraVftTokenOnClient(params: {
   tokenProgramId: string;
   fromAddress: string;
   productId: string;
 }): Promise<string> {
+  assertVaraShopRecipientConfigured();
+
+  if (!isShopProductId(params.productId)) {
+    throw new Error("Unknown shop product.");
+  }
+
+  const token = findVaraShopPaymentToken(params.tokenProgramId);
+  if (!token) {
+    throw new Error("Unsupported payment token.");
+  }
+
   const extensions = await web3Enable(VARA_APP_NAME);
   if (!extensions.length) {
     throw new Error("Polkadot.js extension not found.");
@@ -26,44 +49,48 @@ export async function transferVaraVftTokenOnClient(params: {
     throw new Error("Selected account cannot sign transactions.");
   }
 
-  const prepareRes = await fetch("/api/vara/shop/prepare-transfer", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      tokenProgramId: params.tokenProgramId,
-      productId: params.productId,
-    }),
+  const amount = shopPriceToAmount(
+    SHOP_PRODUCTS[params.productId as ShopProductId].priceUsd,
+    SHOP_TOKEN_DECIMALS
+  );
+  const toActorId = toVaraActorId(VARA_SHOP_RECIPIENT_ADDRESS);
+  const payload = buildVftTransferPayload(toActorId, amount);
+  const gasLimit = await calculateVftTransferGas({
+    programId: token.programId,
+    fromAddress: params.fromAddress,
+    toActorId,
+    amount,
   });
 
-  const prepareData = (await prepareRes.json()) as {
-    extrinsicHex?: string;
-    error?: string;
-  };
-
-  if (!prepareRes.ok || !prepareData.extrinsicHex) {
-    throw new Error(prepareData.error ?? "Could not prepare Vara transfer.");
-  }
-
-  const api = await getVaraApi();
+  const { ApiPromise, WsProvider } = await import("@polkadot/api");
+  const api = await ApiPromise.create({
+    provider: new WsProvider(VARA_RPC_URL),
+  });
 
   try {
-    const extrinsic = api.registry.createType(
-      "Extrinsic",
-      prepareData.extrinsicHex
+    const extrinsic = api.tx.gear.sendMessage(
+      token.programId,
+      payload,
+      gasLimit,
+      0,
+      true
     ) as SubmittableExtrinsic<"promise">;
 
     const txHash = await new Promise<string>((resolve, reject) => {
       extrinsic
-        .signAndSend(params.fromAddress, { signer: injector.signer }, (result) => {
-          if (result.status.isInBlock || result.status.isFinalized) {
-            if (result.dispatchError) {
-              reject(new Error("Payment was cancelled or failed."));
-              return;
+        .signAndSend(
+          params.fromAddress,
+          { signer: injector.signer },
+          (result) => {
+            if (result.status.isInBlock || result.status.isFinalized) {
+              if (result.dispatchError) {
+                reject(new Error("Payment was cancelled or failed."));
+                return;
+              }
+              resolve(extrinsic.hash.toHex());
             }
-
-            resolve(extrinsic.hash.toHex());
           }
-        })
+        )
         .catch(reject);
     });
 
