@@ -33,7 +33,6 @@ const nextConfig: NextConfig = {
         "@gear-js/api": path.join(stubsDir, "gear-api.ts"),
         "@polkadot/api": path.join(stubsDir, "polkadot-api.ts"),
         "@polkadot/types": false,
-        "@polkadot/util-crypto": path.join(stubsDir, "polkadot-util-crypto.ts"),
         "sails-js": path.join(stubsDir, "sails-js.ts"),
       };
     }

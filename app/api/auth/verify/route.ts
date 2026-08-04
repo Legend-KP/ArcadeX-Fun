@@ -17,6 +17,8 @@ import {
 } from "@/lib/movement-auth";
 import { isStellarAuthMessageValid } from "@/lib/stellar-auth";
 import { verifyStellarSignedMessage } from "@/lib/stellar-verify";
+import { isVaraAuthMessageValid } from "@/lib/vara-auth";
+import { verifyVaraSignature } from "@/lib/vara-verify";
 import { buildStarknetAuthTypedData } from "@/lib/starknet-auth";
 import { isSuiAuthMessageValid } from "@/lib/sui-auth";
 import { isValidPersonalMessageSignature } from "@mysten/sui/verify";
@@ -233,10 +235,27 @@ async function verifyStellarAuth(body: VerifyBody): Promise<{ address: string }>
   return { address: signer };
 }
 
-async function verifyVaraAuth(_body: VerifyBody): Promise<{ address: string }> {
-  throw new Error(
-    "Vara wallet sign-in is temporarily unavailable on this deployment. Connect with Base (MetaMask/Coinbase) or another supported wallet."
-  );
+async function verifyVaraAuth(body: VerifyBody): Promise<{ address: string }> {
+  const { signature, nonce, address, message } = body;
+  if (!signature || !nonce || !address || !message) {
+    throw new Error("signature, nonce, address, and message are required.");
+  }
+
+  const consumed = await consumeAuthNonce(nonce);
+  if (!consumed) {
+    throw new Error("Invalid or expired nonce.");
+  }
+
+  if (!isVaraAuthMessageValid(message, nonce)) {
+    throw new Error("Invalid sign-in message.");
+  }
+
+  const signer = normalizeAddress("vara", address);
+  if (!verifyVaraSignature(message, signature, signer)) {
+    throw new Error("Invalid Vara signature.");
+  }
+
+  return { address: signer };
 }
 
 export async function POST(request: Request) {
