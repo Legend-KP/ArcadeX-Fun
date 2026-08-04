@@ -1,4 +1,4 @@
-import type { HexString } from "@gear-js/api";
+import type { HexString } from "@/lib/shop-vara";
 import { compactFromU8aLim, hexToU8a, u8aToHex } from "@polkadot/util";
 import { decodeAddress } from "@polkadot/util-crypto";
 

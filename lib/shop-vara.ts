@@ -1,4 +1,4 @@
-import type { HexString } from "@gear-js/api";
+export type HexString = `0x${string}`;
 
 export const VARA_SHOP_EXPLORER_TX_URL =
   "https://vara.subscan.io/extrinsic";
