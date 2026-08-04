@@ -102,12 +102,16 @@ export const beam = defineChain({
   },
 });
 
-export const primaryEvmChain = megaeth;
-export const PRIMARY_EVM_CHAIN_ID = megaeth.id;
+export const primaryEvmChain = base;
+export const PRIMARY_EVM_CHAIN_ID = base.id;
+
+/** Native Circle USDC on Base mainnet (6 decimals). */
+export const BASE_USDC_ADDRESS =
+  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as const;
 
 export const supportedEvmChains = [
-  megaeth,
   base,
+  megaeth,
   arbitrum,
   abstract,
   bnb,

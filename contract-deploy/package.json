@@ -1,0 +1,27 @@
+{
+  "name": "arcadex-fun-base-deploy",
+  "private": true,
+  "scripts": {
+    "compile": "hardhat compile",
+    "deploy:all": "node scripts/deploy-all-base.cjs",
+    "deploy:spark-refill": "hardhat run scripts/deploy-spark-refill.cjs --network base",
+    "deploy:score-submit": "hardhat run scripts/deploy-score-submit.cjs --network base",
+    "deploy:infinite-spark": "hardhat run scripts/deploy-infinite-spark.cjs --network base",
+    "deploy:arcadex-rewards": "hardhat run scripts/deploy-arcadex-rewards.cjs --network base",
+    "verify:spark-refill": "node scripts/verify-spark-refill.cjs",
+    "verify:score-submit": "node scripts/verify-score-submit.cjs",
+    "verify:infinite-spark": "node scripts/verify-infinite-spark.cjs",
+    "verify:arcadex-rewards": "node scripts/verify-arcadex-rewards.cjs",
+    "verify:all": "node scripts/verify-all-base.cjs"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.2",
+    "@types/node": "^22.15.0",
+    "dotenv": "^16.6.1",
+    "hardhat": "^2.22.0",
+    "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "5.0.2"
+  }
+}

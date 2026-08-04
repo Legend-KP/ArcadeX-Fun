@@ -62,7 +62,7 @@ export default function ScoreSubmitModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const onMegaEth = chainId === PRIMARY_EVM_CHAIN_ID;
+  const onPrimaryChain = chainId === PRIMARY_EVM_CHAIN_ID;
   const requiredAmount = scoreSubmitPriceToAmount();
 
   const { data: contractData, isLoading: balancesLoading } = useReadContracts({
@@ -82,7 +82,7 @@ export default function ScoreSubmitModal({
       },
     ]),
     query: {
-      enabled: open && Boolean(address) && onMegaEth,
+      enabled: open && Boolean(address) && onPrimaryChain,
     },
   });
 
@@ -154,8 +154,8 @@ export default function ScoreSubmitModal({
 
   useEffect(() => {
     if (!open) return;
-    setStep(onMegaEth ? "token" : "network");
-  }, [open, onMegaEth]);
+    setStep(onPrimaryChain ? "token" : "network");
+  }, [open, onPrimaryChain]);
 
   const handleSwitchNetwork = useCallback(async () => {
     setBusy(true);
@@ -235,7 +235,7 @@ export default function ScoreSubmitModal({
 
   if (!open || !mounted) return null;
 
-  const showTokenStep = step === "token" && onMegaEth;
+  const showTokenStep = step === "token" && onPrimaryChain;
 
   const modal = (
     <div
@@ -265,7 +265,7 @@ export default function ScoreSubmitModal({
             Submit to Leaderboard
           </h2>
           <p className="spark-shop-payment__price">
-            Pay {formatScoreSubmitPrice()} in USDT or USDC
+            Pay {formatScoreSubmitPrice()} in USDC
           </p>
           <p className="spark-shop-payment__desc">
             Your score of <strong>{score.toLocaleString()}</strong> will appear
@@ -281,7 +281,7 @@ export default function ScoreSubmitModal({
           {step === "network" && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
-                Switch to MegaETH to pay with USDT or USDC.
+                Switch to Base to pay with USDC. Gas is paid in ETH.
               </p>
               <button
                 type="button"
@@ -289,7 +289,7 @@ export default function ScoreSubmitModal({
                 onClick={() => void handleSwitchNetwork()}
                 disabled={busy}
               >
-                Switch Network
+                Switch to Base
               </button>
             </div>
           )}
@@ -297,7 +297,7 @@ export default function ScoreSubmitModal({
           {showTokenStep && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
-                Select a token to pay {formatScoreSubmitPrice()}.
+                Select USDC to pay {formatScoreSubmitPrice()}.
               </p>
               {balancesLoading ? (
                 <p className="spark-shop-payment__hint">Loading balances…</p>

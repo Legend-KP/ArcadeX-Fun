@@ -56,7 +56,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Shop purchases require an EVM wallet on MegaETH, a Sui wallet, or a Vara wallet.",
+            "Shop purchases require an EVM wallet on Base, a Sui wallet, or a Vara wallet.",
           code: "UNSUPPORTED_WALLET",
         },
         { status: 400 }

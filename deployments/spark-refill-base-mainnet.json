@@ -1,0 +1,17 @@
+{
+  "contract": "SparkRefill",
+  "network": "base-mainnet",
+  "chainId": 8453,
+  "address": "0xfB01e841E1bF81b44048b9a219f55F7f3BAF7E0C",
+  "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "fee": "200000",
+  "deployer": "0x11015f39Ac7389201aEc778Be8e3D84f2aF44A70",
+  "deployedAt": "2026-08-04T17:58:27.514Z",
+  "txHash": "0x566c679d7cebd0c3822e0dcbec9c762bc72f109d66d3ca37f9f277f7ca5e4427",
+  "verified": true,
+  "verifiedAt": "2026-08-04T18:34:39.197Z",
+  "verification": {
+    "basescan": "https://basescan.org/address/0xfB01e841E1bF81b44048b9a219f55F7f3BAF7E0C#code",
+    "sourcify": "https://repo.sourcify.dev/8453/0xfB01e841E1bF81b44048b9a219f55F7f3BAF7E0C"
+  }
+}

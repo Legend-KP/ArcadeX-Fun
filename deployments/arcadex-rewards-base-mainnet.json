@@ -1,0 +1,33 @@
+{
+  "contract": "ArcadeXRewards",
+  "network": "base-mainnet",
+  "chainId": 8453,
+  "address": "0xa3ff9C5f592e2891279b83f9017C00733A3F19fC",
+  "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "campaignId": 1,
+  "campaignType": "STREAK",
+  "requiredDays": 7,
+  "minIntervalSeconds": 86400,
+  "rewardMode": 0,
+  "rewardMeta": "0x0ab4843ee23ccd969c6d889afda5daeb2a0d59d52a8da8a2b6a3006a8906de71",
+  "resetAfterMilestone": true,
+  "requireEligibility": false,
+  "maxSinglePayout": 0,
+  "startTime": 1785866296,
+  "endTime": 1817402296,
+  "eligibilitySigner": "0x11015f39Ac7389201aEc778Be8e3D84f2aF44A70",
+  "spinResultSigner": "0x0000000000000000000000000000000000000000",
+  "constructorArgs": [
+    "0x11015f39Ac7389201aEc778Be8e3D84f2aF44A70"
+  ],
+  "deployer": "0x11015f39Ac7389201aEc778Be8e3D84f2aF44A70",
+  "deployedAt": "2026-08-04T17:58:23.333Z",
+  "txHash": "0xe2c30b7f05771453fe4d4e85a7161c2de5fe4d86b5445b0e10aaeb370ccc6ff1",
+  "setCampaignTxHash": "0x70861953611da74c8347e0bfa4078939874402d48cdf67706cd0a30621cd78af",
+  "verified": true,
+  "verifiedAt": "2026-08-04T18:34:25.902Z",
+  "verification": {
+    "basescan": "https://basescan.org/address/0xa3ff9C5f592e2891279b83f9017C00733A3F19fC#code",
+    "sourcify": "https://repo.sourcify.dev/8453/0xa3ff9C5f592e2891279b83f9017C00733A3F19fC"
+  }
+}

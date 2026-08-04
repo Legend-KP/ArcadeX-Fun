@@ -15,17 +15,17 @@ export type WalletOption = {
 
 export const CHAIN_REGISTRY: ChainSettingsEntry[] = [
   {
-    key: "megaeth",
-    name: "MegaETH",
+    key: "base",
+    name: "Base",
     ecosystem: "evm",
     chainId: PRIMARY_EVM_CHAIN_ID,
     defaultShopPayments: true,
   },
   {
-    key: "base",
-    name: "Base",
+    key: "megaeth",
+    name: "MegaETH",
     ecosystem: "evm",
-    chainId: 8453,
+    chainId: 4326,
     defaultShopPayments: false,
   },
   {
@@ -109,11 +109,20 @@ export const WALLET_OPTIONS: WalletOption[] = [
     chainKey: "sui",
   },
   {
-    id: "metamask-megaeth",
+    id: "metamask-base",
     label: "MetaMask",
     ecosystem: "evm",
     connectorId: "metaMaskSDK",
     chainId: PRIMARY_EVM_CHAIN_ID,
+    networkLabel: "Base",
+    chainKey: "base",
+  },
+  {
+    id: "metamask-megaeth",
+    label: "MetaMask",
+    ecosystem: "evm",
+    connectorId: "metaMaskSDK",
+    chainId: 4326,
     networkLabel: "MegaETH",
     chainKey: "megaeth",
   },
@@ -163,20 +172,29 @@ export const WALLET_OPTIONS: WalletOption[] = [
     chainKey: "beam",
   },
   {
-    id: "coinbase-megaeth",
-    label: "Coinbase Wallet",
-    ecosystem: "evm",
-    connectorId: "coinbaseWalletSDK",
-    chainId: PRIMARY_EVM_CHAIN_ID,
-    networkLabel: "MegaETH",
-    chainKey: "megaeth",
-  },
-  {
     id: "coinbase-base",
     label: "Coinbase Wallet",
     ecosystem: "evm",
     connectorId: "coinbaseWalletSDK",
-    chainId: 8453,
+    chainId: PRIMARY_EVM_CHAIN_ID,
+    networkLabel: "Base",
+    chainKey: "base",
+  },
+  {
+    id: "coinbase-megaeth",
+    label: "Coinbase Wallet",
+    ecosystem: "evm",
+    connectorId: "coinbaseWalletSDK",
+    chainId: 4326,
+    networkLabel: "MegaETH",
+    chainKey: "megaeth",
+  },
+  {
+    id: "walletconnect-base",
+    label: "WalletConnect",
+    ecosystem: "evm",
+    connectorId: "walletConnect",
+    chainId: PRIMARY_EVM_CHAIN_ID,
     networkLabel: "Base",
     chainKey: "base",
   },
@@ -185,7 +203,7 @@ export const WALLET_OPTIONS: WalletOption[] = [
     label: "WalletConnect",
     ecosystem: "evm",
     connectorId: "walletConnect",
-    chainId: PRIMARY_EVM_CHAIN_ID,
+    chainId: 4326,
     networkLabel: "MegaETH",
     chainKey: "megaeth",
   },
@@ -314,7 +332,7 @@ export function isShopPaymentsEnabled(
   }
 
   if (ecosystem === "evm") {
-    const key = chainId ? getChainKeyForEvmChainId(chainId) : "megaeth";
+    const key = chainId ? getChainKeyForEvmChainId(chainId) : "base";
     if (!key) return false;
     return settings[key]?.shopPayments !== false;
   }

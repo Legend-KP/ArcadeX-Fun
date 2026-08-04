@@ -15,11 +15,16 @@ import { disconnectPetraWallet } from "@/lib/aptos-wallet-client";
 import { disconnectMovementWallet } from "@/lib/movement-wallet-client";
 import dynamic from "next/dynamic";
 import OnboardingModal from "@/components/OnboardingModal";
-
-const ConnectWalletModal = dynamic(
-  () => import("@/components/ConnectWalletModal"),
-  { ssr: false }
-);
+import DailyCheckInModal from "@/components/DailyCheckInModal";
+import DailyShuffleModal from "@/components/DailyShuffleModal";
+import { isArcadeXRewardsConfigured } from "@/lib/arcadex-rewards";
+import { fetchDailyPlayConfig } from "@/lib/daily-play-config-client";
+import type { DailyPlayMode } from "@/lib/daily-play-mode";
+import {
+  fetchStreakStatus,
+  type StreakStatus,
+} from "@/lib/streak-client";
+import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 import {
   bootstrapPlayerProfile,
   fetchAuthSession,
@@ -35,6 +40,11 @@ import {
 import { WalletEcosystem } from "@/lib/player-identity";
 import { PlayerProfile } from "@/types";
 
+const ConnectWalletModal = dynamic(
+  () => import("@/components/ConnectWalletModal"),
+  { ssr: false }
+);
+
 interface PlayerProfileContextValue {
   playerId: string;
   profile: PlayerProfile | null;
@@ -44,6 +54,8 @@ interface PlayerProfileContextValue {
   chainId?: number;
   isReady: boolean;
   isAuthenticated: boolean;
+  streakStatus: StreakStatus | null;
+  refreshStreakStatus: () => Promise<void>;
   openConnect: () => void;
   logout: () => Promise<void>;
 }
@@ -79,8 +91,63 @@ export default function PlayerProfileProvider({
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showConnect, setShowConnect] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showDailyPlay, setShowDailyPlay] = useState(false);
+  const [dailyPlayMode, setDailyPlayMode] = useState<DailyPlayMode>("streak");
+  const [streakStatus, setStreakStatus] = useState<StreakStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  const maybePromptDailyPlay = useCallback(
+    async (session: {
+      address: string;
+      ecosystem: WalletEcosystem;
+      chainId?: number;
+    }) => {
+      if (
+        session.ecosystem !== "evm" ||
+        (session.chainId != null && session.chainId !== PRIMARY_EVM_CHAIN_ID) ||
+        !isArcadeXRewardsConfigured()
+      ) {
+        setShowDailyPlay(false);
+        setStreakStatus(null);
+        return;
+      }
+
+      try {
+        const config = await fetchDailyPlayConfig({ fresh: true });
+        setDailyPlayMode(config.mode);
+        const status = await fetchStreakStatus(session.address, config.campaignId, {
+          fresh: true,
+        });
+        setStreakStatus(status);
+        setShowDailyPlay(Boolean(status.canCheckIn));
+      } catch {
+        // Daily play is best-effort after wallet auth.
+      }
+    },
+    []
+  );
+
+  const refreshStreakStatus = useCallback(async () => {
+    if (
+      ecosystem !== "evm" ||
+      !walletAddress ||
+      !isArcadeXRewardsConfigured()
+    ) {
+      setStreakStatus(null);
+      return;
+    }
+    try {
+      const config = await fetchDailyPlayConfig();
+      setDailyPlayMode(config.mode);
+      const status = await fetchStreakStatus(walletAddress, config.campaignId, {
+        fresh: true,
+      });
+      setStreakStatus(status);
+    } catch {
+      // ignore
+    }
+  }, [ecosystem, walletAddress]);
 
   const loadProfileForSession = useCallback(
     async (session: {
@@ -114,9 +181,10 @@ export default function PlayerProfileProvider({
         setShowOnboarding(true);
       } else {
         setShowOnboarding(false);
+        await maybePromptDailyPlay(session);
       }
     },
-    []
+    [maybePromptDailyPlay]
   );
 
   useEffect(() => {
@@ -188,6 +256,11 @@ export default function PlayerProfileProvider({
 
         setProfile(saved);
         setShowOnboarding(false);
+        await maybePromptDailyPlay({
+          address: walletAddress,
+          ecosystem,
+          chainId,
+        });
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Could not save your profile."
@@ -196,8 +269,13 @@ export default function PlayerProfileProvider({
         setSaving(false);
       }
     },
-    [playerId, walletAddress, ecosystem, chainId]
+    [playerId, walletAddress, ecosystem, chainId, maybePromptDailyPlay]
   );
+
+  const handleDailyPlayComplete = useCallback(async () => {
+    setShowDailyPlay(false);
+    await refreshStreakStatus();
+  }, [refreshStreakStatus]);
 
   const logout = useCallback(async () => {
     try {
@@ -234,6 +312,8 @@ export default function PlayerProfileProvider({
     setChainId(undefined);
     setIsAuthenticated(false);
     setShowOnboarding(false);
+    setShowDailyPlay(false);
+    setStreakStatus(null);
     setShowConnect(true);
   }, [disconnectAsync]);
 
@@ -247,6 +327,8 @@ export default function PlayerProfileProvider({
       chainId,
       isReady,
       isAuthenticated,
+      streakStatus,
+      refreshStreakStatus,
       openConnect: () => setShowConnect(true),
       logout,
     }),
@@ -258,6 +340,8 @@ export default function PlayerProfileProvider({
       chainId,
       isReady,
       isAuthenticated,
+      streakStatus,
+      refreshStreakStatus,
       logout,
     ]
   );
@@ -271,12 +355,24 @@ export default function PlayerProfileProvider({
         onSignedIn={handleSignedIn}
       />
       <OnboardingModal
-        open={showOnboarding}
+        open={showOnboarding && !showDailyPlay}
         saving={saving}
         error={error}
         defaultName={profile?.name ?? ""}
         defaultEmail={profile?.email ?? ""}
         onSubmit={handleOnboardingSubmit}
+      />
+      <DailyCheckInModal
+        open={showDailyPlay && dailyPlayMode !== "shuffle"}
+        walletAddress={walletAddress}
+        status={streakStatus}
+        onComplete={handleDailyPlayComplete}
+      />
+      <DailyShuffleModal
+        open={showDailyPlay && dailyPlayMode === "shuffle"}
+        walletAddress={walletAddress}
+        status={streakStatus}
+        onComplete={handleDailyPlayComplete}
       />
     </PlayerProfileContext.Provider>
   );

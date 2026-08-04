@@ -1,0 +1,17 @@
+{
+  "contract": "InfiniteSpark",
+  "network": "base-mainnet",
+  "chainId": 8453,
+  "address": "0xe179550c0b745591ae0113d97eB072129e14F75f",
+  "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "fee": "500000",
+  "deployer": "0x11015f39Ac7389201aEc778Be8e3D84f2aF44A70",
+  "deployedAt": "2026-08-04T17:58:35.825Z",
+  "txHash": "0xaaae821b94e03387f590aa1b800e8469db2bdd9b7b04cd3035bdf6c90e832668",
+  "verified": true,
+  "verifiedAt": "2026-08-04T18:35:06.607Z",
+  "verification": {
+    "basescan": "https://basescan.org/address/0xe179550c0b745591ae0113d97eB072129e14F75f#code",
+    "sourcify": "https://repo.sourcify.dev/8453/0xe179550c0b745591ae0113d97eB072129e14F75f"
+  }
+}

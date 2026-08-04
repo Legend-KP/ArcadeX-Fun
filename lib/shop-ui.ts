@@ -57,10 +57,10 @@ export function getShopPanelCopy(
       const networkLabel = getEvmNetworkLabel(chainId);
       return {
         networkLabel,
-        paymentHint: `Pay with USDm or USDT0 on ${networkLabel}.`,
+        paymentHint: `Pay with USDC on ${networkLabel}.`,
         priceSuffix: `on ${networkLabel}`,
         disabledHint: `Shop purchases on ${networkLabel} are currently unavailable.`,
-        unsupportedHint: `Shop purchases are available with an EVM wallet on MegaETH.`,
+        unsupportedHint: `Shop purchases are available with an EVM wallet on Base.`,
         getBuyButtonLabel: buyButtonLabel,
       };
     }

@@ -1,0 +1,17 @@
+{
+  "contract": "ScoreSubmit",
+  "network": "base-mainnet",
+  "chainId": 8453,
+  "address": "0xf0E45525FCC4716eFa65f24318b1Ea1A8f567333",
+  "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "fee": "50000",
+  "deployer": "0x11015f39Ac7389201aEc778Be8e3D84f2aF44A70",
+  "deployedAt": "2026-08-04T17:58:31.665Z",
+  "txHash": "0x033360a97b34527ac4168adda6c3ab454bf13bea8545f02d1592581cf3f4a752",
+  "verified": true,
+  "verifiedAt": "2026-08-04T18:34:52.479Z",
+  "verification": {
+    "basescan": "https://basescan.org/address/0xf0E45525FCC4716eFa65f24318b1Ea1A8f567333#code",
+    "sourcify": "https://repo.sourcify.dev/8453/0xf0E45525FCC4716eFa65f24318b1Ea1A8f567333"
+  }
+}

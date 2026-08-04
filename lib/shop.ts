@@ -1,4 +1,5 @@
 import { getAddress } from "viem";
+import { BASE_USDC_ADDRESS } from "@/lib/chains";
 
 export const SHOP_RECIPIENT_ADDRESS = getAddress(
   process.env.NEXT_PUBLIC_SHOP_RECIPIENT_ADDRESS?.trim() ||
@@ -22,7 +23,7 @@ export interface ShopPurchaseSuccess {
   productId: ShopProductId;
   txHash: string;
   tokenSymbol: string;
-  network: "megaeth" | "sui" | "vara";
+  network: "base" | "megaeth" | "sui" | "vara";
 }
 
 export const SHOP_TOKEN_DECIMALS = 6;
@@ -49,21 +50,19 @@ export const SHOP_PRODUCTS: Record<ShopProductId, ShopProduct> = {
 };
 
 export interface ShopPaymentToken {
-  id: "usdm" | "usdt0";
+  id: "usdc";
   symbol: string;
   address: `0x${string}`;
 }
 
+/** Base mainnet: Circle USDC only (no USDT). */
 export const SHOP_PAYMENT_TOKENS: ShopPaymentToken[] = [
   {
-    id: "usdm",
-    symbol: "USDm",
-    address: "0xFAfDdbb3FC7688494971a79cc65DCa3EF82079E7",
-  },
-  {
-    id: "usdt0",
-    symbol: "USDT0",
-    address: "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb",
+    id: "usdc",
+    symbol: "USDC",
+    address: getAddress(
+      process.env.NEXT_PUBLIC_USDC_ADDRESS?.trim() || BASE_USDC_ADDRESS
+    ),
   },
 ];
 

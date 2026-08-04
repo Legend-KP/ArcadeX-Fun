@@ -64,7 +64,7 @@ export default function SparkShopPaymentModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const onMegaEth = chainId === PRIMARY_EVM_CHAIN_ID;
+  const onPrimaryChain = chainId === PRIMARY_EVM_CHAIN_ID;
 
   const { data: contractData, isLoading: balancesLoading } = useReadContracts({
     contracts: SHOP_PAYMENT_TOKENS.flatMap((token) => [
@@ -83,7 +83,7 @@ export default function SparkShopPaymentModal({
       },
     ]),
     query: {
-      enabled: open && Boolean(address) && onMegaEth,
+      enabled: open && Boolean(address) && onPrimaryChain,
     },
   });
 
@@ -137,7 +137,7 @@ export default function SparkShopPaymentModal({
           productId: purchasedProduct.id,
           txHash: hash,
           tokenSymbol: token.symbol,
-          network: "megaeth",
+          network: "base",
         });
         onClose();
       } catch (err) {
@@ -169,8 +169,8 @@ export default function SparkShopPaymentModal({
 
   useEffect(() => {
     if (!open) return;
-    setStep(onMegaEth ? "token" : "network");
-  }, [open, onMegaEth]);
+    setStep(onPrimaryChain ? "token" : "network");
+  }, [open, onPrimaryChain]);
 
   const handleSwitchNetwork = useCallback(async () => {
     setBusy(true);
@@ -183,7 +183,7 @@ export default function SparkShopPaymentModal({
       setError(
         err instanceof Error
           ? err.message
-          : "Could not switch to MegaETH. Approve the network switch in your wallet."
+          : `Could not switch to ${primaryEvmChain.name}. Approve the network switch in your wallet.`
       );
     } finally {
       setBusy(false);
@@ -248,7 +248,7 @@ export default function SparkShopPaymentModal({
 
   const affordableCount = tokenOptions.filter((option) => option.sufficient)
     .length;
-  const showTokenStep = step === "token" && onMegaEth;
+  const showTokenStep = step === "token" && onPrimaryChain;
   const showPayFooter =
     showTokenStep && !balancesLoading && affordableCount > 0;
 
@@ -280,7 +280,7 @@ export default function SparkShopPaymentModal({
             {product.name}
           </h2>
           <p className="spark-shop-payment__price">
-            {formatShopPrice(product.priceUsd)} on MegaETH
+            {formatShopPrice(product.priceUsd)} on {primaryEvmChain.name}
           </p>
           <p className="spark-shop-payment__desc">{product.description}</p>
 
@@ -293,7 +293,7 @@ export default function SparkShopPaymentModal({
           {step === "network" && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
-                Switch to {primaryEvmChain.name} to pay with USDm or USDT0.
+                Switch to {primaryEvmChain.name} to pay with USDC.
               </p>
               <button
                 type="button"
@@ -309,8 +309,8 @@ export default function SparkShopPaymentModal({
           {showTokenStep && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
-                Tap a token to pay. Your wallet will open to approve the
-                transfer.
+                Tap USDC to pay. Your wallet will open to approve the transfer.
+                Gas is paid in ETH on Base.
               </p>
 
               {balancesLoading ? (
@@ -349,8 +349,8 @@ export default function SparkShopPaymentModal({
 
               {affordableCount === 0 && !balancesLoading && (
                 <p className="spark-shop-payment__error" role="alert">
-                  You need at least {formatShopPrice(product.priceUsd)} in USDm
-                  or USDT0 on MegaETH.
+                  You need at least {formatShopPrice(product.priceUsd)} in USDC
+                  on {primaryEvmChain.name}.
                 </p>
               )}
             </div>
@@ -360,7 +360,7 @@ export default function SparkShopPaymentModal({
             <div className="spark-shop-payment__section">
               <p className="spark-panel__loading">
                 {step === "confirming"
-                  ? "Confirming payment on MegaETH…"
+                  ? `Confirming payment on ${primaryEvmChain.name}…`
                   : "Approve the transfer in your wallet…"}
               </p>
             </div>

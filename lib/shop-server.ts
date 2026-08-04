@@ -7,7 +7,7 @@ import {
   type Hash,
   type TransactionReceipt,
 } from "viem";
-import { megaeth } from "@/lib/chains";
+import { base, primaryEvmChain } from "@/lib/chains";
 import {
   erc20Abi,
   findShopPaymentToken,
@@ -21,9 +21,13 @@ import {
 const RECEIPT_POLL_MS = 250;
 const RECEIPT_MAX_WAIT_MS = 60_000;
 
+const rpcUrl =
+  process.env.NEXT_PUBLIC_BASE_RPC_URL?.trim() ||
+  base.rpcUrls.default.http[0];
+
 const publicClient = createPublicClient({
-  chain: megaeth,
-  transport: http(megaeth.rpcUrls.default.http[0], {
+  chain: primaryEvmChain,
+  transport: http(rpcUrl, {
     timeout: 12_000,
   }),
 });

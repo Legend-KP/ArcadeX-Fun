@@ -1,3 +1,4 @@
+import type { Hash } from "viem";
 import {
   GameProgress,
   CONTEST_TOP_MAX_ENTRIES,
@@ -31,9 +32,13 @@ import {
   normalizeSparkState,
 } from "@/lib/spark";
 import { INFINITE_SPARKS_MS, type ShopProductId } from "@/lib/shop";
+import { isWalletAddress, normalizeWalletAddress } from "@/lib/wallet-address";
+import { SHUFFLE_DAILY_USDC_BUDGET_MICRO } from "@/lib/shuffle-outcomes";
 
 type StoredUser = Omit<PlayerProfile, "id">;
 type LeaderboardMap = Record<string, LeaderboardEntry>;
+
+const RTDB_TRANSACTION_MAX_RETRIES = 8;
 
 function getRtdbAuthQuery(): string {
   const secret = process.env.FIREBASE_DATABASE_SECRET?.trim();
@@ -139,6 +144,149 @@ async function patchPath(path: string, data: unknown): Promise<void> {
     const text = await res.text();
     throw new Error(`Realtime Database patch failed (${res.status}): ${text}`);
   }
+}
+
+async function deletePath(path: string): Promise<void> {
+  const res = await rtdbFetch(path, { method: "DELETE" });
+  if (!res.ok && res.status !== 404) {
+    const text = await res.text();
+    throw new Error(`Realtime Database delete failed (${res.status}): ${text}`);
+  }
+}
+
+/** GET with ETag for conditional writes (REST transactions). */
+async function readPathWithEtag<T>(
+  path: string
+): Promise<{ data: T | null; etag: string }> {
+  const res = await rtdbFetch(path, {
+    headers: { "X-Firebase-ETag": "true" },
+  });
+  if (res.status === 404) {
+    return { data: null, etag: res.headers.get("ETag") ?? '""' };
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Realtime Database read failed (${res.status}): ${text}`);
+  }
+
+  const etag = res.headers.get("ETag");
+  if (!etag) {
+    throw new Error("Realtime Database ETag missing for transaction read.");
+  }
+
+  const data = (await res.json()) as T | null;
+  return { data: data ?? null, etag };
+}
+
+async function writePathIfMatch(
+  path: string,
+  data: unknown,
+  etag: string
+): Promise<"ok" | "conflict"> {
+  const res = await rtdbFetch(path, {
+    method: "PUT",
+    headers: { "if-match": etag },
+    body: JSON.stringify(data),
+  });
+
+  if (res.status === 412) return "conflict";
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Realtime Database write failed (${res.status}): ${text}`);
+  }
+  return "ok";
+}
+
+/**
+ * Conditional write with automatic retry (RTDB REST transaction via ETag).
+ * Return `undefined` from `updateFn` to abort without writing.
+ */
+async function runRtdbTransaction<T>(
+  path: string,
+  updateFn: (current: T | null) => T | undefined,
+  maxRetries = RTDB_TRANSACTION_MAX_RETRIES
+): Promise<{ committed: boolean; snapshot: T | null }> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const { data, etag } = await readPathWithEtag<T>(path);
+    const next = updateFn(data);
+    if (next === undefined) {
+      return { committed: false, snapshot: data };
+    }
+
+    const result = await writePathIfMatch(path, next, etag);
+    if (result === "ok") {
+      return { committed: true, snapshot: next };
+    }
+  }
+
+  throw new Error("Realtime Database transaction failed after max retries.");
+}
+
+type GuardRecord = { wallet?: string } & Record<string, unknown>;
+
+type GuardClaimResult<T extends GuardRecord> =
+  | { status: "created"; record: T }
+  | { status: "exists"; record: T }
+  | { status: "conflict_other_wallet" };
+
+/**
+ * Atomically claim a one-time payment/reward guard.
+ * Only one concurrent caller can create the marker for a given tx hash.
+ */
+async function claimGuardRecord<T extends GuardRecord>(
+  path: string,
+  wallet: string,
+  buildRecord: () => T
+): Promise<GuardClaimResult<T>> {
+  let createdRecord: T | null = null;
+  let existsRecord: T | null = null;
+  let conflictOther = false;
+
+  const { committed, snapshot } = await runRtdbTransaction<T>(path, (current) => {
+    if (current?.wallet) {
+      const recorded = normalizeWalletAddress(String(current.wallet));
+      if (recorded === wallet) {
+        existsRecord = current;
+        return undefined;
+      }
+      conflictOther = true;
+      return undefined;
+    }
+
+    const record = buildRecord();
+    createdRecord = record;
+    return record;
+  });
+
+  if (createdRecord && committed) {
+    return { status: "created", record: createdRecord };
+  }
+  if (existsRecord) {
+    return { status: "exists", record: existsRecord };
+  }
+  if (conflictOther) {
+    return { status: "conflict_other_wallet" };
+  }
+
+  const existing = snapshot ?? (await readPath<T>(path));
+  if (existing?.wallet) {
+    const recorded = normalizeWalletAddress(String(existing.wallet));
+    if (recorded === wallet) {
+      return { status: "exists", record: existing };
+    }
+    return { status: "conflict_other_wallet" };
+  }
+
+  throw new Error("Failed to claim payment guard.");
+}
+
+/** Map Base/EVM wallet → Fun player id (`evm:0x…`) for spark storage. */
+function walletToPlayerId(walletAddress: string): string {
+  const playerId = resolvePlayerId(walletAddress);
+  if (!playerId) {
+    throw new Error("A valid wallet address is required.");
+  }
+  return playerId;
 }
 
 function toPlayerProfile(id: string, data: StoredUser | null): PlayerProfile | null {
@@ -775,5 +923,817 @@ export async function applyShopPurchaseOnServer(
   return {
     state: nextState,
     sparks: computeSparkSnapshot(nextState, now),
+  };
+}
+
+// ─── Contract payment activations (Infinite Spark / Refill) ───────────────────
+
+function sparkPaymentPath(txHash: string): string {
+  return `sparkPayments/${txHash.toLowerCase()}`;
+}
+
+export class InfiniteSparkActivationError extends Error {
+  constructor(
+    message: string,
+    public readonly code: "NO_WALLET" | "INVALID_TX" | "TX_ALREADY_USED"
+  ) {
+    super(message);
+    this.name = "InfiniteSparkActivationError";
+  }
+}
+
+export class SparkRefillActivationError extends Error {
+  constructor(
+    message: string,
+    public readonly code: "NO_WALLET" | "INVALID_TX" | "TX_ALREADY_USED"
+  ) {
+    super(message);
+    this.name = "SparkRefillActivationError";
+  }
+}
+
+export async function activateInfiniteSparkOnServer(
+  walletAddress: string,
+  txHash: string
+): Promise<{
+  state: StoredSparkState;
+  sparks: SparkSnapshot;
+  activated: boolean;
+}> {
+  if (!isWalletAddress(walletAddress)) {
+    throw new InfiniteSparkActivationError(
+      "A valid wallet address is required.",
+      "NO_WALLET"
+    );
+  }
+
+  const wallet = normalizeWalletAddress(walletAddress);
+  const playerId = walletToPlayerId(wallet);
+  const normalizedTxHash = txHash.trim().toLowerCase();
+
+  if (!/^0x[0-9a-f]{64}$/.test(normalizedTxHash)) {
+    throw new InfiniteSparkActivationError(
+      "A valid transaction hash is required.",
+      "INVALID_TX"
+    );
+  }
+
+  const guardPath = sparkPaymentPath(normalizedTxHash);
+  const existingPayment = await readPath<{ wallet?: string }>(guardPath);
+
+  if (existingPayment?.wallet) {
+    const recordedWallet = normalizeWalletAddress(existingPayment.wallet);
+    if (recordedWallet !== wallet) {
+      throw new InfiniteSparkActivationError(
+        "This payment was already used by another wallet.",
+        "TX_ALREADY_USED"
+      );
+    }
+
+    const snapshot = await getSparkSnapshotOnServer(playerId);
+    return { ...snapshot, activated: false };
+  }
+
+  const { verifyInfiniteSparkPaymentTx } = await import(
+    "@/lib/infinite-spark-verify"
+  );
+  await verifyInfiniteSparkPaymentTx(wallet, normalizedTxHash as Hash);
+
+  const now = Date.now();
+  const state = normalizeSparkState(
+    await ensureSparkStateOnServer(playerId),
+    now
+  );
+  const baseUntil =
+    state.infiniteUntil && state.infiniteUntil > now
+      ? state.infiniteUntil
+      : now;
+  const infiniteUntil = baseUntil + INFINITE_SPARKS_MS;
+
+  const claim = await claimGuardRecord(guardPath, wallet, () => ({
+    wallet,
+    activatedAt: now,
+    infiniteUntil,
+  }));
+
+  if (claim.status === "conflict_other_wallet") {
+    throw new InfiniteSparkActivationError(
+      "This payment was already used by another wallet.",
+      "TX_ALREADY_USED"
+    );
+  }
+
+  if (claim.status === "exists") {
+    const snapshot = await getSparkSnapshotOnServer(playerId);
+    return { ...snapshot, activated: false };
+  }
+
+  const nextState: StoredSparkState = {
+    ...state,
+    infiniteUntil,
+  };
+
+  try {
+    await writePath(sparksPath(playerId), nextState);
+  } catch (err) {
+    await deletePath(guardPath).catch(() => {});
+    throw err;
+  }
+
+  return {
+    state: nextState,
+    sparks: computeSparkSnapshot(nextState, now),
+    activated: true,
+  };
+}
+
+export async function activateSparkRefillOnServer(
+  walletAddress: string,
+  txHash: string
+): Promise<{
+  state: StoredSparkState;
+  sparks: SparkSnapshot;
+  refilled: boolean;
+}> {
+  if (!isWalletAddress(walletAddress)) {
+    throw new SparkRefillActivationError(
+      "A valid wallet address is required.",
+      "NO_WALLET"
+    );
+  }
+
+  const wallet = normalizeWalletAddress(walletAddress);
+  const playerId = walletToPlayerId(wallet);
+  const normalizedTxHash = txHash.trim().toLowerCase();
+
+  if (!/^0x[0-9a-f]{64}$/.test(normalizedTxHash)) {
+    throw new SparkRefillActivationError(
+      "A valid transaction hash is required.",
+      "INVALID_TX"
+    );
+  }
+
+  const guardPath = sparkPaymentPath(normalizedTxHash);
+  const existingPayment = await readPath<{ wallet?: string; type?: string }>(
+    guardPath
+  );
+
+  if (existingPayment?.wallet) {
+    const recordedWallet = normalizeWalletAddress(existingPayment.wallet);
+    if (recordedWallet !== wallet) {
+      throw new SparkRefillActivationError(
+        "This payment was already used by another wallet.",
+        "TX_ALREADY_USED"
+      );
+    }
+
+    const snapshot = await getSparkSnapshotOnServer(playerId);
+    return { ...snapshot, refilled: false };
+  }
+
+  const { verifySparkRefillPaymentTx } = await import(
+    "@/lib/spark-refill-verify"
+  );
+  await verifySparkRefillPaymentTx(wallet, normalizedTxHash as Hash);
+
+  const now = Date.now();
+  const state = normalizeSparkState(
+    await ensureSparkStateOnServer(playerId),
+    now
+  );
+
+  const claim = await claimGuardRecord(guardPath, wallet, () => ({
+    wallet,
+    type: "refill",
+    activatedAt: now,
+  }));
+
+  if (claim.status === "conflict_other_wallet") {
+    throw new SparkRefillActivationError(
+      "This payment was already used by another wallet.",
+      "TX_ALREADY_USED"
+    );
+  }
+
+  if (claim.status === "exists") {
+    const snapshot = await getSparkSnapshotOnServer(playerId);
+    return { ...snapshot, refilled: false };
+  }
+
+  const nextState: StoredSparkState = {
+    ...state,
+    slots: Array.from({ length: state.max }, () => null),
+  };
+
+  try {
+    await writePath(sparksPath(playerId), nextState);
+  } catch (err) {
+    await deletePath(guardPath).catch(() => {});
+    throw err;
+  }
+
+  return {
+    state: nextState,
+    sparks: computeSparkSnapshot(nextState, now),
+    refilled: true,
+  };
+}
+
+// ─── Streak check-in + off-chain rewards ───────────────────────────────────────
+
+function checkInTxPath(txHash: string): string {
+  return `checkInTxs/${txHash.toLowerCase()}`;
+}
+
+function streakGrantPath(txHash: string): string {
+  return `streakGrants/${txHash.toLowerCase()}`;
+}
+
+export class StreakSyncError extends Error {
+  constructor(
+    message: string,
+    public readonly code: "NO_WALLET" | "INVALID_TX" | "TX_ALREADY_USED"
+  ) {
+    super(message);
+    this.name = "StreakSyncError";
+  }
+}
+
+export class StreakRewardError extends Error {
+  constructor(
+    message: string,
+    public readonly code:
+      | "NO_WALLET"
+      | "INVALID_TX"
+      | "TX_ALREADY_USED"
+      | "NO_MILESTONE"
+  ) {
+    super(message);
+    this.name = "StreakRewardError";
+  }
+}
+
+export async function recordCheckInTxOnServer(
+  walletAddress: string,
+  txHash: string,
+  day: number,
+  campaignId: number
+): Promise<{ reused: boolean }> {
+  if (!isWalletAddress(walletAddress)) {
+    throw new StreakSyncError("A valid wallet address is required.", "NO_WALLET");
+  }
+
+  const wallet = normalizeWalletAddress(walletAddress);
+  const normalizedTxHash = txHash.trim().toLowerCase();
+
+  if (!/^0x[0-9a-f]{64}$/.test(normalizedTxHash)) {
+    throw new StreakSyncError(
+      "A valid transaction hash is required.",
+      "INVALID_TX"
+    );
+  }
+
+  const claim = await claimGuardRecord(
+    checkInTxPath(normalizedTxHash),
+    wallet,
+    () => ({
+      wallet,
+      campaignId,
+      day,
+      syncedAt: Date.now(),
+    })
+  );
+
+  if (claim.status === "conflict_other_wallet") {
+    throw new StreakSyncError(
+      "This check-in was already used by another wallet.",
+      "TX_ALREADY_USED"
+    );
+  }
+
+  return { reused: claim.status === "exists" };
+}
+
+/**
+ * Grants Infinite Spark after a verified on-chain MilestoneReached for OFFCHAIN campaigns.
+ */
+export async function grantStreakInfiniteSparkOnServer(
+  walletAddress: string,
+  txHash: string,
+  campaignId: number
+): Promise<{
+  state: StoredSparkState;
+  sparks: SparkSnapshot;
+  granted: boolean;
+}> {
+  if (!isWalletAddress(walletAddress)) {
+    throw new StreakRewardError(
+      "A valid wallet address is required.",
+      "NO_WALLET"
+    );
+  }
+
+  const wallet = normalizeWalletAddress(walletAddress);
+  const playerId = walletToPlayerId(wallet);
+  const normalizedTxHash = txHash.trim().toLowerCase();
+
+  if (!/^0x[0-9a-f]{64}$/.test(normalizedTxHash)) {
+    throw new StreakRewardError(
+      "A valid transaction hash is required.",
+      "INVALID_TX"
+    );
+  }
+
+  const guardPath = streakGrantPath(normalizedTxHash);
+  const existingGrant = await readPath<{ wallet?: string }>(guardPath);
+
+  if (existingGrant?.wallet) {
+    const recorded = normalizeWalletAddress(existingGrant.wallet);
+    if (recorded !== wallet) {
+      throw new StreakRewardError(
+        "This reward was already used by another wallet.",
+        "TX_ALREADY_USED"
+      );
+    }
+
+    const snapshot = await getSparkSnapshotOnServer(playerId);
+    return { ...snapshot, granted: false };
+  }
+
+  const { verifyOffchainMilestoneTx } = await import(
+    "@/lib/arcadex-rewards-verify"
+  );
+
+  try {
+    await verifyOffchainMilestoneTx(
+      wallet,
+      normalizedTxHash as Hash,
+      campaignId
+    );
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Invalid milestone transaction.";
+    throw new StreakRewardError(message, "NO_MILESTONE");
+  }
+
+  await recordCheckInTxOnServer(wallet, normalizedTxHash, 0, campaignId);
+
+  const now = Date.now();
+  const state = normalizeSparkState(
+    await ensureSparkStateOnServer(playerId),
+    now
+  );
+  const baseUntil =
+    state.infiniteUntil && state.infiniteUntil > now
+      ? state.infiniteUntil
+      : now;
+  const infiniteUntil = baseUntil + INFINITE_SPARKS_MS;
+
+  const claim = await claimGuardRecord(guardPath, wallet, () => ({
+    wallet,
+    campaignId,
+    grantedAt: now,
+    infiniteUntil,
+    reward: "INFINITE_SPARK_24H",
+  }));
+
+  if (claim.status === "conflict_other_wallet") {
+    throw new StreakRewardError(
+      "This reward was already used by another wallet.",
+      "TX_ALREADY_USED"
+    );
+  }
+
+  if (claim.status === "exists") {
+    const snapshot = await getSparkSnapshotOnServer(playerId);
+    return { ...snapshot, granted: false };
+  }
+
+  const nextState: StoredSparkState = {
+    ...state,
+    infiniteUntil,
+  };
+
+  try {
+    await writePath(sparksPath(playerId), nextState);
+  } catch (err) {
+    await deletePath(guardPath).catch(() => {});
+    throw err;
+  }
+
+  return {
+    state: nextState,
+    sparks: computeSparkSnapshot(nextState, now),
+    granted: true,
+  };
+}
+
+// ─── Daily shuffle pending + USDC budget ───────────────────────────────────────
+
+export type ShufflePendingRecord = {
+  wallet: string;
+  campaignId: number;
+  nonce: number;
+  outcomeId: string;
+  outcomeType: "usdc" | "spark" | "none";
+  displayAmount: number | null;
+  rewardMode: number;
+  rewardTarget: string;
+  rewardAmount: string;
+  deadline: number;
+  signature: string;
+  createdAt: number;
+  consumedAt?: number;
+  txHash?: string;
+};
+
+function shufflePendingPath(
+  wallet: string,
+  campaignId: number,
+  nonce: number
+): string {
+  return `shufflePending/${wallet.toLowerCase()}/${campaignId}/${nonce}`;
+}
+
+function spinTxPath(txHash: string): string {
+  return `spinTxs/${txHash.toLowerCase()}`;
+}
+
+function shuffleGrantPath(txHash: string): string {
+  return `shuffleGrants/${txHash.toLowerCase()}`;
+}
+
+function shuffleDailyBudgetPath(dayKey: string): string {
+  return `shuffleDailyBudget/${dayKey}`;
+}
+
+/** UTC calendar day used for the hard daily USDC spend ceiling. */
+export function shuffleUtcDayKey(nowMs: number = Date.now()): string {
+  return new Date(nowMs).toISOString().slice(0, 10);
+}
+
+type ShuffleUsdcReservation = {
+  amountMicro: number;
+  expiresAt: number;
+};
+
+type ShuffleDailyBudgetRecord = {
+  /** Confirmed on-chain USDC payouts for the day (micro-USDC). */
+  spentMicro?: number;
+  /** Pending signed outcomes not yet synced (micro-USDC), keyed by wallet_nonce. */
+  reservations?: Record<string, ShuffleUsdcReservation>;
+  /** Keys already moved into spentMicro (idempotent sync). */
+  confirmed?: Record<string, number>;
+};
+
+function pruneExpiredReservations(
+  reservations: Record<string, ShuffleUsdcReservation> | undefined,
+  nowMs: number
+): Record<string, ShuffleUsdcReservation> {
+  if (!reservations) return {};
+  const next: Record<string, ShuffleUsdcReservation> = {};
+  for (const [key, value] of Object.entries(reservations)) {
+    if (
+      value &&
+      typeof value.amountMicro === "number" &&
+      typeof value.expiresAt === "number" &&
+      value.expiresAt > nowMs &&
+      value.amountMicro > 0
+    ) {
+      next[key] = value;
+    }
+  }
+  return next;
+}
+
+function sumReservedMicro(
+  reservations: Record<string, ShuffleUsdcReservation>
+): number {
+  let sum = 0;
+  for (const value of Object.values(reservations)) {
+    sum += value.amountMicro;
+  }
+  return sum;
+}
+
+export function shuffleUsdcReservationKey(
+  walletAddress: string,
+  campaignId: number,
+  nonce: number
+): string {
+  return `${normalizeWalletAddress(walletAddress)}_${campaignId}_${nonce}`;
+}
+
+/** @deprecated Use shuffleUsdcReservationKey */
+export const shuffleUsdtReservationKey = shuffleUsdcReservationKey;
+
+export async function getShuffleUsdcBudgetRemainingMicro(
+  nowMs: number = Date.now()
+): Promise<number> {
+  const dayKey = shuffleUtcDayKey(nowMs);
+  const data = await readPath<ShuffleDailyBudgetRecord>(
+    shuffleDailyBudgetPath(dayKey)
+  );
+  const reservations = pruneExpiredReservations(data?.reservations, nowMs);
+  const spent = typeof data?.spentMicro === "number" ? data.spentMicro : 0;
+  const reserved = sumReservedMicro(reservations);
+  return Math.max(0, SHUFFLE_DAILY_USDC_BUDGET_MICRO - spent - reserved);
+}
+
+/** @deprecated Use getShuffleUsdcBudgetRemainingMicro */
+export const getShuffleUsdtBudgetRemainingMicro =
+  getShuffleUsdcBudgetRemainingMicro;
+
+/**
+ * Atomically reserve USDC against today's hard budget before signing a spin.
+ * Expired reservations are dropped on write. Returns false if amount cannot fit.
+ */
+export async function reserveShuffleUsdcBudget(opts: {
+  amountMicro: number;
+  reservationKey: string;
+  expiresAtMs: number;
+  nowMs?: number;
+}): Promise<
+  { ok: true; remainingMicro: number } | { ok: false; remainingMicro: number }
+> {
+  const nowMs = opts.nowMs ?? Date.now();
+  const dayKey = shuffleUtcDayKey(nowMs);
+  const path = shuffleDailyBudgetPath(dayKey);
+  let remainingMicro = 0;
+
+  const { committed, snapshot } =
+    await runRtdbTransaction<ShuffleDailyBudgetRecord>(path, (current) => {
+      const reservations = pruneExpiredReservations(
+        current?.reservations,
+        nowMs
+      );
+      const confirmed = current?.confirmed ?? {};
+      const spent =
+        typeof current?.spentMicro === "number" ? current.spentMicro : 0;
+      const existing = reservations[opts.reservationKey];
+      if (existing && existing.amountMicro === opts.amountMicro) {
+        remainingMicro = Math.max(
+          0,
+          SHUFFLE_DAILY_USDC_BUDGET_MICRO -
+            spent -
+            sumReservedMicro(reservations)
+        );
+        return {
+          spentMicro: spent,
+          reservations: {
+            ...reservations,
+            [opts.reservationKey]: {
+              amountMicro: opts.amountMicro,
+              expiresAt: opts.expiresAtMs,
+            },
+          },
+          confirmed,
+        };
+      }
+
+      if (existing) {
+        delete reservations[opts.reservationKey];
+      }
+
+      const reserved = sumReservedMicro(reservations);
+      remainingMicro = Math.max(
+        0,
+        SHUFFLE_DAILY_USDC_BUDGET_MICRO - spent - reserved
+      );
+      if (opts.amountMicro > remainingMicro) {
+        return undefined;
+      }
+
+      reservations[opts.reservationKey] = {
+        amountMicro: opts.amountMicro,
+        expiresAt: opts.expiresAtMs,
+      };
+      remainingMicro -= opts.amountMicro;
+      return {
+        spentMicro: spent,
+        reservations,
+        confirmed,
+      };
+    });
+
+  if (!committed) {
+    const spent =
+      typeof snapshot?.spentMicro === "number" ? snapshot.spentMicro : 0;
+    const reserved = sumReservedMicro(
+      pruneExpiredReservations(snapshot?.reservations, nowMs)
+    );
+    return {
+      ok: false,
+      remainingMicro: Math.max(
+        0,
+        SHUFFLE_DAILY_USDC_BUDGET_MICRO - spent - reserved
+      ),
+    };
+  }
+
+  return { ok: true, remainingMicro };
+}
+
+/** @deprecated Use reserveShuffleUsdcBudget */
+export const reserveShuffleUsdtBudget = reserveShuffleUsdcBudget;
+
+/** Move a reservation into confirmed spend after on-chain sync. */
+export async function confirmShuffleUsdcBudget(opts: {
+  amountMicro: number;
+  reservationKey: string;
+  nowMs?: number;
+}): Promise<void> {
+  const nowMs = opts.nowMs ?? Date.now();
+  const dayKey = shuffleUtcDayKey(nowMs);
+  const path = shuffleDailyBudgetPath(dayKey);
+
+  await runRtdbTransaction<ShuffleDailyBudgetRecord>(path, (current) => {
+    const reservations = pruneExpiredReservations(current?.reservations, nowMs);
+    const confirmed = { ...(current?.confirmed ?? {}) };
+    const spent =
+      typeof current?.spentMicro === "number" ? current.spentMicro : 0;
+
+    if (typeof confirmed[opts.reservationKey] === "number") {
+      delete reservations[opts.reservationKey];
+      return {
+        spentMicro: spent,
+        reservations,
+        confirmed,
+      };
+    }
+
+    const existing = reservations[opts.reservationKey];
+    delete reservations[opts.reservationKey];
+    const addMicro = existing?.amountMicro ?? opts.amountMicro;
+    confirmed[opts.reservationKey] = addMicro;
+
+    return {
+      spentMicro: spent + addMicro,
+      reservations,
+      confirmed,
+    };
+  });
+}
+
+/** @deprecated Use confirmShuffleUsdcBudget */
+export const confirmShuffleUsdtBudget = confirmShuffleUsdcBudget;
+
+export async function saveShufflePending(
+  record: ShufflePendingRecord
+): Promise<void> {
+  await writePath(
+    shufflePendingPath(record.wallet, record.campaignId, record.nonce),
+    record
+  );
+}
+
+export async function getShufflePending(
+  walletAddress: string,
+  campaignId: number,
+  nonce: number
+): Promise<ShufflePendingRecord | null> {
+  const wallet = normalizeWalletAddress(walletAddress);
+  return readPath<ShufflePendingRecord>(
+    shufflePendingPath(wallet, campaignId, nonce)
+  );
+}
+
+export async function markShufflePendingConsumed(
+  walletAddress: string,
+  campaignId: number,
+  nonce: number,
+  txHash: string
+): Promise<void> {
+  const wallet = normalizeWalletAddress(walletAddress);
+  const path = shufflePendingPath(wallet, campaignId, nonce);
+  const existing = await readPath<ShufflePendingRecord>(path);
+  if (!existing) return;
+  await patchPath(path, {
+    consumedAt: Date.now(),
+    txHash: txHash.toLowerCase(),
+  });
+}
+
+export async function recordSpinTxOnServer(
+  walletAddress: string,
+  txHash: string,
+  campaignId: number,
+  outcomeId: string
+): Promise<{ reused: boolean }> {
+  if (!isWalletAddress(walletAddress)) {
+    throw new StreakSyncError("A valid wallet address is required.", "NO_WALLET");
+  }
+
+  const wallet = normalizeWalletAddress(walletAddress);
+  const normalizedTxHash = txHash.trim().toLowerCase();
+
+  if (!/^0x[0-9a-f]{64}$/.test(normalizedTxHash)) {
+    throw new StreakSyncError(
+      "A valid transaction hash is required.",
+      "INVALID_TX"
+    );
+  }
+
+  const claim = await claimGuardRecord(
+    spinTxPath(normalizedTxHash),
+    wallet,
+    () => ({
+      wallet,
+      campaignId,
+      outcomeId,
+      syncedAt: Date.now(),
+    })
+  );
+
+  if (claim.status === "conflict_other_wallet") {
+    throw new StreakSyncError(
+      "This spin was already used by another wallet.",
+      "TX_ALREADY_USED"
+    );
+  }
+
+  return { reused: claim.status === "exists" };
+}
+
+export async function grantShuffleInfiniteSparkOnServer(
+  walletAddress: string,
+  txHash: string
+): Promise<{
+  state: StoredSparkState;
+  sparks: SparkSnapshot;
+  granted: boolean;
+}> {
+  if (!isWalletAddress(walletAddress)) {
+    throw new StreakRewardError(
+      "A valid wallet address is required.",
+      "NO_WALLET"
+    );
+  }
+
+  const wallet = normalizeWalletAddress(walletAddress);
+  const playerId = walletToPlayerId(wallet);
+  const normalizedTxHash = txHash.trim().toLowerCase();
+  const guardPath = shuffleGrantPath(normalizedTxHash);
+  const existingGrant = await readPath<{ wallet?: string }>(guardPath);
+
+  if (existingGrant?.wallet) {
+    const recorded = normalizeWalletAddress(existingGrant.wallet);
+    if (recorded !== wallet) {
+      throw new StreakRewardError(
+        "This reward was already used by another wallet.",
+        "TX_ALREADY_USED"
+      );
+    }
+    const snapshot = await getSparkSnapshotOnServer(playerId);
+    return { ...snapshot, granted: false };
+  }
+
+  const now = Date.now();
+  const state = normalizeSparkState(
+    await ensureSparkStateOnServer(playerId),
+    now
+  );
+  const baseUntil =
+    state.infiniteUntil && state.infiniteUntil > now
+      ? state.infiniteUntil
+      : now;
+  const infiniteUntil = baseUntil + INFINITE_SPARKS_MS;
+
+  const claim = await claimGuardRecord(guardPath, wallet, () => ({
+    wallet,
+    grantedAt: now,
+    infiniteUntil,
+    reward: "INFINITE_SPARK_24H",
+    source: "shuffle",
+  }));
+
+  if (claim.status === "conflict_other_wallet") {
+    throw new StreakRewardError(
+      "This reward was already used by another wallet.",
+      "TX_ALREADY_USED"
+    );
+  }
+
+  if (claim.status === "exists") {
+    const snapshot = await getSparkSnapshotOnServer(playerId);
+    return { ...snapshot, granted: false };
+  }
+
+  const nextState: StoredSparkState = {
+    ...state,
+    infiniteUntil,
+  };
+
+  try {
+    await writePath(sparksPath(playerId), nextState);
+  } catch (err) {
+    await deletePath(guardPath).catch(() => {});
+    throw err;
+  }
+
+  return {
+    state: nextState,
+    sparks: computeSparkSnapshot(nextState, now),
+    granted: true,
   };
 }
