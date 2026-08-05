@@ -14,7 +14,11 @@ import {
   getEvmChainById,
   primaryEvmChain,
 } from "@/lib/chains";
-import { WALLET_OPTIONS, type WalletOption } from "@/lib/chain-registry";
+import {
+  CHAIN_REGISTRY,
+  WALLET_OPTIONS,
+  type WalletOption,
+} from "@/lib/chain-registry";
 import { useChainSettings } from "@/components/ChainSettingsProvider";
 import { connect as connectStarknet, disconnect as disconnectStarknet } from "starknetkit";
 import { InjectedConnector } from "starknetkit/injected";
@@ -52,10 +56,12 @@ import {
 } from "@/lib/stellar-wallet-client";
 import { connectVaraWallet, signVaraMessage } from "@/lib/vara-wallet-client";
 import { getEcosystemLabel } from "@/lib/wallet-ecosystems";
-import type { WalletEcosystem } from "@/lib/player-identity";
+import type { ChainKey } from "@/types";
 import type { Wallet } from "@mysten/wallet-standard";
 
 export type { WalletOption };
+
+type ConnectStep = "select-network" | "select-wallet" | "switch-network";
 
 interface ConnectWalletModalProps {
   open: boolean;
@@ -77,7 +83,10 @@ export default function ConnectWalletModal({
   const { isWalletOptionEnabled } = useChainSettings();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [step, setStep] = useState<"wallet" | "network">("wallet");
+  const [step, setStep] = useState<ConnectStep>("select-network");
+  const [selectedChainKey, setSelectedChainKey] = useState<ChainKey | null>(
+    null
+  );
   const [pendingEvmAddress, setPendingEvmAddress] = useState("");
   const [pendingChainId, setPendingChainId] = useState<number>(PRIMARY_EVM_CHAIN_ID);
   const starknetConnectorRef = useRef<Connector | null>(null);
@@ -91,7 +100,8 @@ export default function ConnectWalletModal({
     if (!open) {
       setError("");
       setBusy(false);
-      setStep("wallet");
+      setStep("select-network");
+      setSelectedChainKey(null);
       setPendingEvmAddress("");
       setPendingChainId(PRIMARY_EVM_CHAIN_ID);
     }
@@ -147,7 +157,7 @@ export default function ConnectWalletModal({
     if (activeChainId !== targetChainId) {
       setPendingEvmAddress(connectedAddress);
       setPendingChainId(targetChainId);
-      setStep("network");
+      setStep("switch-network");
       return;
     }
 
@@ -299,6 +309,32 @@ export default function ConnectWalletModal({
 
   const requiredChain = getEvmChainById(pendingChainId) ?? primaryEvmChain;
   const visibleWalletOptions = WALLET_OPTIONS.filter(isWalletOptionEnabled);
+  const availableNetworks = CHAIN_REGISTRY.filter((chain) =>
+    visibleWalletOptions.some((option) => option.chainKey === chain.key)
+  );
+  const selectedNetwork = selectedChainKey
+    ? CHAIN_REGISTRY.find((chain) => chain.key === selectedChainKey)
+    : undefined;
+  const walletsForNetwork = selectedChainKey
+    ? visibleWalletOptions.filter(
+        (option) => option.chainKey === selectedChainKey
+      )
+    : [];
+
+  function goBackToNetworks() {
+    setStep("select-network");
+    setSelectedChainKey(null);
+    setPendingEvmAddress("");
+    setPendingChainId(PRIMARY_EVM_CHAIN_ID);
+    setError("");
+  }
+
+  function goBackToWallets() {
+    setStep("select-wallet");
+    setPendingEvmAddress("");
+    setPendingChainId(PRIMARY_EVM_CHAIN_ID);
+    setError("");
+  }
 
   const modal = (
     <div className="player-modal-backdrop">
@@ -309,20 +345,60 @@ export default function ConnectWalletModal({
         aria-labelledby="connect-modal-title"
       >
         <Logo variant="login" />
-        {step === "wallet" ? (
+        {step === "select-network" ? (
           <>
             <h2 id="connect-modal-title" className="player-modal-title">
-              Connect your wallet
+              Choose a network
             </h2>
+            <p className="player-modal-hint">
+              Pick the network you want to connect with ArcadeX.
+            </p>
 
             <div className="wallet-list">
-              {visibleWalletOptions.length === 0 ? (
+              {availableNetworks.length === 0 ? (
                 <p className="player-modal-hint">
                   No wallet connections are available right now. Please check
                   back later.
                 </p>
               ) : (
-                visibleWalletOptions.map((option) => (
+                availableNetworks.map((chain) => (
+                  <button
+                    key={chain.key}
+                    type="button"
+                    className="wallet-option"
+                    disabled={busy}
+                    onClick={() => {
+                      setSelectedChainKey(chain.key);
+                      setError("");
+                      setStep("select-wallet");
+                    }}
+                  >
+                    <span className="wallet-option__label">{chain.name}</span>
+                    <span className="wallet-option__chain">
+                      {getEcosystemLabel(chain.ecosystem)}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </>
+        ) : step === "select-wallet" ? (
+          <>
+            <h2 id="connect-modal-title" className="player-modal-title">
+              Connect your wallet
+            </h2>
+            <p className="player-modal-hint">
+              Wallets available on{" "}
+              <strong>{selectedNetwork?.name ?? "this network"}</strong>.
+            </p>
+
+            <div className="wallet-list">
+              {walletsForNetwork.length === 0 ? (
+                <p className="player-modal-hint">
+                  No wallets are available for this network right now.
+                </p>
+              ) : (
+                walletsForNetwork.map((option) => (
                   <button
                     key={option.id}
                     type="button"
@@ -331,16 +407,19 @@ export default function ConnectWalletModal({
                     onClick={() => handleSelect(option)}
                   >
                     <span className="wallet-option__label">{option.label}</span>
-                    {option.ecosystem !== "vara" && (
-                      <span className="wallet-option__chain">
-                        {option.networkLabel ??
-                          getEcosystemLabel(option.ecosystem)}
-                      </span>
-                    )}
                   </button>
                 ))
               )}
             </div>
+
+            <button
+              type="button"
+              className="network-switch-back"
+              disabled={busy}
+              onClick={goBackToNetworks}
+            >
+              Choose a different network
+            </button>
 
             {busy && (
               <p className="connect-modal-status">Connecting and signing in…</p>
@@ -378,12 +457,7 @@ export default function ConnectWalletModal({
               type="button"
               className="network-switch-back"
               disabled={busy}
-              onClick={() => {
-                setStep("wallet");
-                setPendingEvmAddress("");
-                setPendingChainId(PRIMARY_EVM_CHAIN_ID);
-                setError("");
-              }}
+              onClick={goBackToWallets}
             >
               Choose a different wallet
             </button>
