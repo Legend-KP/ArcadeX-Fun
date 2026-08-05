@@ -10,9 +10,8 @@ import {
   getBasePublicClient,
   resetBasePublicClient,
   isBlockOutOfRangeError,
+  waitForBaseTransactionReceipt,
 } from "@/lib/base-public-client";
-
-const RECEIPT_RETRY_DELAYS_MS = [0, 500, 1200, 2500];
 
 function collectErrorText(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
@@ -41,34 +40,40 @@ function isTransientReceiptError(error: unknown): boolean {
   );
 }
 
-/** Fetch a receipt with retries and RPC rotation — critical right after the wallet confirms. */
+/**
+ * Fetch a receipt with long polling + RPC rotation.
+ * Wallets often report "submitted" before public RPCs index the tx.
+ */
 export async function getPaymentTransactionReceipt(
   txHash: Hash
 ): Promise<TransactionReceipt> {
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt < RECEIPT_RETRY_DELAYS_MS.length; attempt++) {
-    if (attempt > 0) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, RECEIPT_RETRY_DELAYS_MS[attempt])
-      );
+  try {
+    return await waitForBaseTransactionReceipt(txHash, {
+      confirmations: 1,
+      timeoutMs: 90_000,
+    });
+  } catch (error) {
+    // Final direct reads across rotated RPCs.
+    let lastError: unknown = error;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 1_000 + attempt * 750));
       resetBasePublicClient();
+      try {
+        const receipt = await getBasePublicClient().getTransactionReceipt({
+          hash: txHash,
+        });
+        if (receipt) return receipt;
+      } catch (err) {
+        lastError = err;
+        if (!isTransientReceiptError(err)) throw err;
+      }
     }
-
-    try {
-      const receipt = await getBasePublicClient().getTransactionReceipt({
-        hash: txHash,
-      });
-      if (receipt) return receipt;
-    } catch (error) {
-      lastError = error;
-      if (!isTransientReceiptError(error)) throw error;
-    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(
+          "Payment is still confirming on Base. Wait a moment, then tap Confirm payment."
+        );
   }
-
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Could not load payment transaction receipt.");
 }
 
 export type StablePaymentToken = "USDC";

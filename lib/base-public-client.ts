@@ -8,8 +8,10 @@ import { base } from "@/lib/chains";
 
 const DEFAULT_RPC_URLS = [
   "https://mainnet.base.org",
-  "https://base.llamarpc.com",
+  "https://base.drpc.org",
   "https://1rpc.io/base",
+  "https://base.meowrpc.com",
+  "https://base.llamarpc.com",
 ] as const;
 
 function getRpcUrls(): string[] {

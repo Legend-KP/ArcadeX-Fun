@@ -9,8 +9,12 @@ import {
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
-import { formatUnits, maxUint256, type Address } from "viem";
+import { formatUnits, maxUint256, type Address, type Hash } from "viem";
 import { PRIMARY_EVM_CHAIN_ID, primaryEvmChain } from "@/lib/chains";
+import {
+  formatChainError,
+  waitForBaseTransactionReceipt,
+} from "@/lib/base-public-client";
 import { purchaseSparkItem } from "@/lib/spark-client";
 import {
   erc20Abi,
@@ -50,6 +54,61 @@ function shopContractForProduct(
     };
   }
   return null;
+}
+
+function isReceiptPendingError(error: unknown): boolean {
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return (
+    message.includes("could not be found") ||
+    message.includes("not be found") ||
+    message.includes("not mined") ||
+    message.includes("still confirming") ||
+    message.includes("timed out waiting") ||
+    message.includes("transaction receipt")
+  );
+}
+
+async function confirmPurchaseWithRetries(params: {
+  playerId: string;
+  productId: ShopProductId;
+  txHash: Hash;
+  tokenAddress: string;
+}): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 1500 * attempt));
+    }
+    try {
+      // Wait until at least one public RPC can see the receipt.
+      await waitForBaseTransactionReceipt(params.txHash, {
+        confirmations: 1,
+        timeoutMs: 45_000,
+      });
+      await purchaseSparkItem({
+        playerId: params.playerId,
+        productId: params.productId,
+        txHash: params.txHash,
+        tokenAddress: params.tokenAddress,
+      });
+      return;
+    } catch (err) {
+      lastError = err;
+      if (!isReceiptPendingError(err) && attempt >= 1) {
+        // Non-receipt errors after first try (e.g. auth) — stop early.
+        if (
+          err instanceof Error &&
+          !isReceiptPendingError(err) &&
+          !err.message.toLowerCase().includes("network")
+        ) {
+          throw err;
+        }
+      }
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Could not confirm payment yet. Tap Confirm payment to retry.");
 }
 
 interface SparkShopPaymentModalProps {
@@ -194,9 +253,10 @@ export default function SparkShopPaymentModal({
       setStep("confirming");
       setBusy(true);
       setError("");
+      setTxHash(hash);
 
       try {
-        await purchaseSparkItem({
+        await confirmPurchaseWithRetries({
           playerId,
           productId: purchasedProduct.id,
           txHash: hash,
@@ -212,10 +272,12 @@ export default function SparkShopPaymentModal({
         onClose();
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Could not confirm purchase."
+          isReceiptPendingError(err)
+            ? "Payment submitted on Base. Confirmation is still catching up — tap Confirm payment (do not pay again)."
+            : formatChainError(err) || "Could not confirm purchase."
         );
         setStep("token");
-        setTxHash(undefined);
+        // Keep txHash so the user can retry confirmation without paying again.
       } finally {
         setBusy(false);
       }
@@ -311,9 +373,7 @@ export default function SparkShopPaymentModal({
       } catch (err) {
         setStep("token");
         setError(
-          err instanceof Error
-            ? err.message
-            : "Payment was cancelled or failed."
+          formatChainError(err) || "Payment was cancelled or failed."
         );
       } finally {
         setBusy(false);
@@ -329,6 +389,11 @@ export default function SparkShopPaymentModal({
       contractPaused,
     ]
   );
+
+  const handleConfirmPendingTx = useCallback(async () => {
+    if (!product || !selectedToken || !txHash) return;
+    await confirmPurchase(txHash, selectedToken, product);
+  }, [product, selectedToken, txHash, confirmPurchase]);
 
   const handleTokenSelect = useCallback(
     (token: ShopPaymentToken, sufficient: boolean) => {
@@ -406,8 +471,8 @@ export default function SparkShopPaymentModal({
           {showTokenStep && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
-                Tap USDC to pay. Your wallet will open to approve the transfer.
-                Gas is paid in ETH on Base.
+                Tap USDC to pay. Your wallet will ask to approve USDC, then pay
+                the Spark contract. Gas is paid in ETH on Base.
               </p>
 
               {balancesLoading ? (
@@ -458,7 +523,7 @@ export default function SparkShopPaymentModal({
               <p className="spark-panel__loading">
                 {step === "confirming"
                   ? `Confirming payment on ${primaryEvmChain.name}…`
-                  : "Approve the transfer in your wallet…"}
+                  : "Approve the transaction in your wallet…"}
               </p>
             </div>
           )}
@@ -468,9 +533,24 @@ export default function SparkShopPaymentModal({
               {error}
             </p>
           ) : null}
+
+          {txHash && showTokenStep && !busy ? (
+            <div className="spark-shop-payment__section">
+              <p className="spark-shop-payment__hint">
+                Payment hash: {txHash.slice(0, 10)}…{txHash.slice(-8)}
+              </p>
+              <button
+                type="button"
+                className="spark-shop-payment__primary"
+                onClick={() => void handleConfirmPendingTx()}
+              >
+                Confirm payment (no extra charge)
+              </button>
+            </div>
+          ) : null}
         </div>
 
-        {showPayFooter && selectedToken && !busy && (
+        {showPayFooter && selectedToken && !busy && !txHash && (
           <div className="spark-shop-payment__footer">
             <button
               type="button"
