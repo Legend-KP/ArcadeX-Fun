@@ -15,6 +15,7 @@ import {
 } from "@/lib/arcadex-rewards";
 import {
   getBasePublicClient,
+  readBaseContractWithFailover,
   waitForBaseTransactionReceipt,
 } from "@/lib/base-public-client";
 
@@ -186,16 +187,35 @@ export async function readStreakProgress(
 ) {
   assertConfigured();
   const player = getAddress(walletAddress);
-  const publicClient = getBasePublicClient();
 
   const [progress, campaign] = await Promise.all([
-    publicClient.readContract({
+    readBaseContractWithFailover<
+      readonly [number, bigint, boolean, boolean, boolean, boolean, boolean]
+    >({
       address: ARCADEX_REWARDS_CONTRACT_ADDRESS,
       abi: ARCADEX_REWARDS_ABI,
       functionName: "getProgress",
       args: [player, BigInt(campaignId)],
     }),
-    publicClient.readContract({
+    readBaseContractWithFailover<
+      readonly [
+        boolean,
+        boolean,
+        boolean,
+        number,
+        number,
+        number,
+        number,
+        bigint,
+        bigint,
+        number,
+        Address,
+        bigint,
+        Hex,
+        boolean,
+        bigint,
+      ]
+    >({
       address: ARCADEX_REWARDS_CONTRACT_ADDRESS,
       abi: ARCADEX_REWARDS_ABI,
       functionName: "getCampaign",

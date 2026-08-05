@@ -11,6 +11,35 @@ import {
   isArcadeXRewardsConfigured,
 } from "@/lib/arcadex-rewards";
 
+/** Pull a tx hash out of viem/MetaMask errors when the wallet already broadcast. */
+function extractSubmittedTxHash(error: unknown): Hash | null {
+  const candidates: unknown[] = [];
+  let current: unknown = error;
+  for (let i = 0; i < 6 && current; i++) {
+    candidates.push(current);
+    if (current && typeof current === "object") {
+      const obj = current as Record<string, unknown>;
+      if ("hash" in obj) candidates.push(obj.hash);
+      if ("transactionHash" in obj) candidates.push(obj.transactionHash);
+      if ("cause" in obj) current = obj.cause;
+      else break;
+    } else break;
+  }
+
+  for (const value of candidates) {
+    if (typeof value === "string" && /^0x[a-fA-F0-9]{64}$/.test(value)) {
+      return value as Hash;
+    }
+  }
+
+  const text =
+    error instanceof Error
+      ? `${error.message} ${error.cause instanceof Error ? error.cause.message : ""}`
+      : String(error);
+  const match = text.match(/0x[a-fA-F0-9]{64}/);
+  return match ? (match[0] as Hash) : null;
+}
+
 /**
  * Wallet write of ArcadeXRewards.checkIn on Base
  * (campaigns without eligibility use deadline=0, signature=0x).
@@ -40,14 +69,21 @@ export async function checkInOnChain(
   const deadline = opts?.deadline ?? BigInt(0);
   const signature = opts?.signature ?? ("0x" as Hex);
 
-  const hash = await walletClient.writeContract({
-    account,
-    chain: base,
-    address: ARCADEX_REWARDS_CONTRACT_ADDRESS,
-    abi: ARCADEX_REWARDS_ABI,
-    functionName: "checkIn",
-    args: [BigInt(campaignId), deadline, signature],
-  });
+  let hash: Hash;
+  try {
+    hash = await walletClient.writeContract({
+      account,
+      chain: base,
+      address: ARCADEX_REWARDS_CONTRACT_ADDRESS,
+      abi: ARCADEX_REWARDS_ABI,
+      functionName: "checkIn",
+      args: [BigInt(campaignId), deadline, signature],
+    });
+  } catch (err) {
+    const submitted = extractSubmittedTxHash(err);
+    if (!submitted) throw err;
+    hash = submitted;
+  }
 
   try {
     const receipt = await waitForBaseTransactionReceipt(hash);

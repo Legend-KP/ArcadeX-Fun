@@ -103,25 +103,15 @@ export default function PlayerProfileProvider({
       ecosystem: WalletEcosystem;
       chainId?: number;
     }) => {
-      if (
-        session.ecosystem !== "evm" ||
-        !isArcadeXRewardsConfigured()
-      ) {
-        setShowDailyPlay(false);
-        setStreakStatus(null);
-        return;
-      }
-
-      // Prefer Base; still load status if SIWE chainId is missing/stale so the
-      // check-in modal can prompt a network switch via the wallet.
       const sessionChainId =
         session.chainId == null ? undefined : Number(session.chainId);
+
+      // Daily Streak is Base mainnet only — user must pick Base in network select.
       if (
-        sessionChainId != null &&
-        Number.isFinite(sessionChainId) &&
-        sessionChainId !== PRIMARY_EVM_CHAIN_ID
+        session.ecosystem !== "evm" ||
+        sessionChainId !== PRIMARY_EVM_CHAIN_ID ||
+        !isArcadeXRewardsConfigured()
       ) {
-        // Non-Base EVM session: skip daily ceremony (wallet must reconnect on Base).
         setShowDailyPlay(false);
         setStreakStatus(null);
         return;
@@ -136,8 +126,8 @@ export default function PlayerProfileProvider({
         setStreakStatus(status);
         setShowDailyPlay(Boolean(status.canCheckIn));
       } catch (err) {
-        // Status RPC can flake — still show the ceremony for Base EVM so new
-        // users are not dropped after onboarding with no daily streak UI.
+        // Status RPC can flake — still show the ceremony for Base so new users
+        // are not dropped after onboarding with no daily streak UI.
         console.warn("[daily-play] status fetch failed; showing modal anyway", err);
         setStreakStatus(null);
         setShowDailyPlay(true);
@@ -149,6 +139,7 @@ export default function PlayerProfileProvider({
   const refreshStreakStatus = useCallback(async () => {
     if (
       ecosystem !== "evm" ||
+      chainId !== PRIMARY_EVM_CHAIN_ID ||
       !walletAddress ||
       !isArcadeXRewardsConfigured()
     ) {
@@ -165,7 +156,7 @@ export default function PlayerProfileProvider({
     } catch {
       // ignore
     }
-  }, [ecosystem, walletAddress]);
+  }, [ecosystem, chainId, walletAddress]);
 
   const loadProfileForSession = useCallback(
     async (session: {

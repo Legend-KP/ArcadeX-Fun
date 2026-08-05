@@ -351,7 +351,8 @@ export default function ConnectWalletModal({
               Choose a network
             </h2>
             <p className="player-modal-hint">
-              Pick the network you want to connect with ArcadeX.
+              Pick the network you want to connect with ArcadeX. Daily Streak
+              is available on Base.
             </p>
 
             <div className="wallet-list">
@@ -361,24 +362,36 @@ export default function ConnectWalletModal({
                   back later.
                 </p>
               ) : (
-                availableNetworks.map((chain) => (
-                  <button
-                    key={chain.key}
-                    type="button"
-                    className="wallet-option"
-                    disabled={busy}
-                    onClick={() => {
-                      setSelectedChainKey(chain.key);
-                      setError("");
-                      setStep("select-wallet");
-                    }}
-                  >
-                    <span className="wallet-option__label">{chain.name}</span>
-                    <span className="wallet-option__chain">
-                      {getEcosystemLabel(chain.ecosystem)}
-                    </span>
-                  </button>
-                ))
+                availableNetworks.map((chain) => {
+                  const isBaseMainnet =
+                    chain.key === "base" &&
+                    chain.chainId === PRIMARY_EVM_CHAIN_ID;
+                  return (
+                    <button
+                      key={chain.key}
+                      type="button"
+                      className="wallet-option"
+                      disabled={busy}
+                      onClick={() => {
+                        setSelectedChainKey(chain.key);
+                        setError("");
+                        setStep("select-wallet");
+                      }}
+                    >
+                      <span className="wallet-option__label">
+                        {chain.name}
+                        {isBaseMainnet ? (
+                          <span className="wallet-option__badge">
+                            Daily Streak
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="wallet-option__chain">
+                        {getEcosystemLabel(chain.ecosystem)}
+                      </span>
+                    </button>
+                  );
+                })
               )}
             </div>
           </>

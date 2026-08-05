@@ -40,27 +40,28 @@ function createHttpClient(rpcUrl: string) {
 type BasePublicClient = ReturnType<typeof createHttpClient>;
 
 let browserClient: BasePublicClient | null = null;
-let browserClientIndex = 0;
+let rpcClientIndex = 0;
 
-function createBrowserPublicClient(): BasePublicClient {
+function createRotatingPublicClient(): BasePublicClient {
   const urls = getRpcUrls();
-  const url = urls[browserClientIndex % urls.length] ?? urls[0]!;
+  const url = urls[rpcClientIndex % urls.length] ?? urls[0]!;
   return createHttpClient(url);
 }
 
 export function getBasePublicClient(): BasePublicClient {
   if (typeof window !== "undefined") {
-    browserClient ??= createBrowserPublicClient();
+    browserClient ??= createRotatingPublicClient();
     return browserClient;
   }
-  return createHttpClient(getRpcUrls()[0]!);
+  // Workers: no singleton — always honor the rotating index so failover works.
+  return createRotatingPublicClient();
 }
 
 export function resetBasePublicClient(): void {
   browserClient = null;
   const urls = getRpcUrls();
   if (urls.length > 0) {
-    browserClientIndex = (browserClientIndex + 1) % urls.length;
+    rpcClientIndex = (rpcClientIndex + 1) % urls.length;
   }
 }
 
@@ -93,8 +94,22 @@ function isTransientRpcError(error: unknown): boolean {
     message.includes("network") ||
     message.includes("429") ||
     message.includes("rate limit") ||
+    message.includes("over rate limit") ||
     message.includes("503") ||
-    message.includes("502")
+    message.includes("502") ||
+    message.includes("524") ||
+    message.includes("cloudflare")
+  );
+}
+
+function isUserRejectedError(error: unknown): boolean {
+  const message = collectErrorText(error).toLowerCase();
+  return (
+    message.includes("user rejected") ||
+    message.includes("user denied") ||
+    message.includes("rejected the request") ||
+    message.includes("request rejected") ||
+    message.includes("4001")
   );
 }
 
@@ -111,6 +126,10 @@ function isTransactionFailureError(error: unknown): boolean {
 }
 
 export function formatChainError(error: unknown): string {
+  if (isUserRejectedError(error)) {
+    return "You cancelled the wallet request. Approve it in MetaMask to check in.";
+  }
+
   if (error instanceof Error) {
     if (
       error.message.includes("Insufficient balance") ||
@@ -149,9 +168,10 @@ type ReadContractParams = Parameters<BasePublicClient["readContract"]>[0];
 
 const RETRY_DELAYS_MS = [0, 400, 900];
 
-export async function readBaseContract(
+/** Read with RPC rotation — public Base endpoints rate-limit Workers hard. */
+export async function readBaseContractWithFailover<T>(
   params: ReadContractParams
-): Promise<bigint> {
+): Promise<T> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt++) {
@@ -166,7 +186,7 @@ export async function readBaseContract(
       return (await getBasePublicClient().readContract({
         ...params,
         blockTag: "latest",
-      })) as bigint;
+      })) as T;
     } catch (error) {
       lastError = error;
       if (!isTransientRpcError(error)) throw error;
@@ -178,7 +198,7 @@ export async function readBaseContract(
       return (await createHttpClient(rpcUrl).readContract({
         ...params,
         blockTag: "latest",
-      })) as bigint;
+      })) as T;
     } catch (error) {
       lastError = error;
       if (!isTransientRpcError(error)) throw error;
@@ -186,6 +206,12 @@ export async function readBaseContract(
   }
 
   throw lastError;
+}
+
+export async function readBaseContract(
+  params: ReadContractParams
+): Promise<bigint> {
+  return readBaseContractWithFailover<bigint>(params);
 }
 
 const RECEIPT_RETRY_DELAYS_MS = [0, 500, 1200, 2500, 4000];

@@ -212,6 +212,23 @@ export default function DailyCheckInModal({
         infiniteSparkGranted: Boolean(result.reward?.granted),
       });
     } catch (err) {
+      // Tx may have landed even when the UI error path fired — recover session.
+      try {
+        const fresh = await fetchStreakStatus(walletAddress, status?.campaignId, {
+          fresh: true,
+        });
+        if (!fresh.canCheckIn && fresh.lastCheckInAt > 0) {
+          await refreshSessionFromCheckIn(walletAddress, status?.campaignId);
+          onComplete({
+            day: fresh.currentDay,
+            milestone: fresh.milestoneReached,
+            infiniteSparkGranted: false,
+          });
+          return;
+        }
+      } catch {
+        // Keep original error for the user.
+      }
       setError(formatChainError(err) || "Check-in failed. Try again.");
     } finally {
       setLoading(false);

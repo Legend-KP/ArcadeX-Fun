@@ -216,7 +216,16 @@ export async function performDailyCheckIn(
 ): Promise<StreakSyncResult> {
   try {
     const { txHash } = await checkInOnChain(campaignId);
-    return await syncStreakCheckIn({ walletAddress, txHash, campaignId });
+    try {
+      return await syncStreakCheckIn({ walletAddress, txHash, campaignId });
+    } catch (syncErr) {
+      // Tx is on-chain — mint session from progress even if sync verify flaked.
+      try {
+        return await sessionFromExistingCheckIn(walletAddress, campaignId);
+      } catch {
+        throw syncErr;
+      }
+    }
   } catch (err) {
     if (isAlreadyCheckedInError(err)) {
       return sessionFromExistingCheckIn(walletAddress, campaignId);
