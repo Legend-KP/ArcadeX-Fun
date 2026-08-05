@@ -9,17 +9,21 @@ import {
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
-import { formatUnits } from "viem";
+import { formatUnits, maxUint256 } from "viem";
 import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 import { submitPaidScore } from "@/lib/leaderboard-client";
 import {
   erc20Abi,
   SHOP_PAYMENT_TOKENS,
-  SHOP_RECIPIENT_ADDRESS,
   SHOP_TOKEN_DECIMALS,
   type ShopPaymentToken,
 } from "@/lib/shop";
 import { formatScoreSubmitPrice, scoreSubmitPriceToAmount } from "@/lib/score-submit";
+import {
+  isScoreSubmitContractConfigured,
+  SCORE_SUBMIT_ABI,
+  SCORE_SUBMIT_CONTRACT_ADDRESS,
+} from "@/lib/score-submit-contract";
 
 interface ScoreSubmitModalProps {
   open: boolean;
@@ -64,51 +68,101 @@ export default function ScoreSubmitModal({
 
   const onPrimaryChain = chainId === PRIMARY_EVM_CHAIN_ID;
   const requiredAmount = scoreSubmitPriceToAmount();
+  const scoreContractConfigured = isScoreSubmitContractConfigured();
 
   const { data: contractData, isLoading: balancesLoading } = useReadContracts({
-    contracts: SHOP_PAYMENT_TOKENS.flatMap((token) => [
-      {
-        address: token.address,
-        abi: erc20Abi,
-        functionName: "balanceOf" as const,
-        args: [address!],
-        chainId: PRIMARY_EVM_CHAIN_ID,
-      },
-      {
-        address: token.address,
-        abi: erc20Abi,
-        functionName: "decimals" as const,
-        chainId: PRIMARY_EVM_CHAIN_ID,
-      },
-    ]),
+    contracts: [
+      ...SHOP_PAYMENT_TOKENS.flatMap((token) => [
+        {
+          address: token.address,
+          abi: erc20Abi,
+          functionName: "balanceOf" as const,
+          args: [address!],
+          chainId: PRIMARY_EVM_CHAIN_ID,
+        },
+        {
+          address: token.address,
+          abi: erc20Abi,
+          functionName: "decimals" as const,
+          chainId: PRIMARY_EVM_CHAIN_ID,
+        },
+        {
+          address: token.address,
+          abi: erc20Abi,
+          functionName: "allowance" as const,
+          args: [
+            address!,
+            scoreContractConfigured
+              ? SCORE_SUBMIT_CONTRACT_ADDRESS
+              : token.address,
+          ],
+          chainId: PRIMARY_EVM_CHAIN_ID,
+        },
+      ]),
+      ...(scoreContractConfigured
+        ? [
+            {
+              address: SCORE_SUBMIT_CONTRACT_ADDRESS,
+              abi: SCORE_SUBMIT_ABI,
+              functionName: "fee" as const,
+              chainId: PRIMARY_EVM_CHAIN_ID,
+            },
+            {
+              address: SCORE_SUBMIT_CONTRACT_ADDRESS,
+              abi: SCORE_SUBMIT_ABI,
+              functionName: "paused" as const,
+              chainId: PRIMARY_EVM_CHAIN_ID,
+            },
+          ]
+        : []),
+    ],
     query: {
       enabled: open && Boolean(address) && onPrimaryChain,
     },
   });
 
+  const onChainFee =
+    scoreContractConfigured &&
+    contractData?.[SHOP_PAYMENT_TOKENS.length * 3]?.status === "success"
+      ? (contractData[SHOP_PAYMENT_TOKENS.length * 3]!.result as bigint)
+      : null;
+  const contractPaused =
+    scoreContractConfigured &&
+    contractData?.[SHOP_PAYMENT_TOKENS.length * 3 + 1]?.status === "success"
+      ? Boolean(contractData[SHOP_PAYMENT_TOKENS.length * 3 + 1]!.result)
+      : false;
+
   const tokenOptions = useMemo(() => {
     return SHOP_PAYMENT_TOKENS.map((token, index) => {
-      const balanceResult = contractData?.[index * 2];
-      const decimalsResult = contractData?.[index * 2 + 1];
+      const balanceResult = contractData?.[index * 3];
+      const decimalsResult = contractData?.[index * 3 + 1];
+      const allowanceResult = contractData?.[index * 3 + 2];
       const balance: bigint =
         balanceResult?.status === "success"
-          ? BigInt(balanceResult.result)
+          ? BigInt(balanceResult.result as bigint)
           : BigInt(0);
       const decimals =
         decimalsResult?.status === "success"
           ? Number(decimalsResult.result)
           : SHOP_TOKEN_DECIMALS;
-      const sufficient = balance >= requiredAmount;
+      const allowance: bigint =
+        allowanceResult?.status === "success"
+          ? BigInt(allowanceResult.result as bigint)
+          : BigInt(0);
+      const amount = onChainFee ?? requiredAmount;
+      const sufficient = balance >= amount;
 
       return {
         token,
         balance,
         decimals,
+        allowance,
+        requiredAmount: amount,
         sufficient,
         balanceLabel: formatTokenBalance(balance, decimals),
       };
     });
-  }, [contractData, requiredAmount]);
+  }, [contractData, requiredAmount, onChainFee]);
 
   const confirmSubmit = useCallback(
     async (hash: `0x${string}`, token: ShopPaymentToken) => {
@@ -187,17 +241,35 @@ export default function ScoreSubmitModal({
         return;
       }
 
+      if (!isScoreSubmitContractConfigured()) {
+        setError("Score submit contract is not configured.");
+        return;
+      }
+      if (contractPaused) {
+        setError("Score submit is temporarily paused. Try again later.");
+        return;
+      }
+
       setSelectedToken(payToken);
       setBusy(true);
       setError("");
       setStep("paying");
 
       try {
+        if (option.allowance < option.requiredAmount) {
+          await writeContractAsync({
+            address: payToken.address,
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [SCORE_SUBMIT_CONTRACT_ADDRESS, maxUint256],
+            chainId: PRIMARY_EVM_CHAIN_ID,
+          });
+        }
+
         const hash = await writeContractAsync({
-          address: payToken.address,
-          abi: erc20Abi,
-          functionName: "transfer",
-          args: [SHOP_RECIPIENT_ADDRESS, requiredAmount],
+          address: SCORE_SUBMIT_CONTRACT_ADDRESS,
+          abi: SCORE_SUBMIT_ABI,
+          functionName: "payWithUSDC",
           chainId: PRIMARY_EVM_CHAIN_ID,
         });
 
@@ -218,8 +290,8 @@ export default function ScoreSubmitModal({
       address,
       tokenOptions,
       writeContractAsync,
-      requiredAmount,
       confirmSubmit,
+      contractPaused,
     ]
   );
 

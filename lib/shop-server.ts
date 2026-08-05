@@ -35,27 +35,31 @@ export async function verifyShopPaymentTx(params: {
   tokenAddress: `0x${string}`;
   expectedFrom: string;
   overrideAmount?: bigint;
+  /** Skip EntryPaid contract checks — used by legacy score-submit transfer path. */
+  legacyTransferOnly?: boolean;
 }): Promise<void> {
   const token = findShopPaymentToken(params.tokenAddress);
   if (!token) {
     throw new Error("Unsupported payment token.");
   }
 
-  if (params.productId === "spark-refill" && isSparkRefillConfigured()) {
-    try {
-      await verifySparkRefillPaymentTx(params.expectedFrom, params.txHash);
-      return;
-    } catch {
-      // Fall through to legacy transfer verification.
+  if (!params.legacyTransferOnly) {
+    if (params.productId === "spark-refill" && isSparkRefillConfigured()) {
+      try {
+        await verifySparkRefillPaymentTx(params.expectedFrom, params.txHash);
+        return;
+      } catch {
+        // Fall through to legacy transfer verification.
+      }
     }
-  }
 
-  if (params.productId === "infinite-24h" && isInfiniteSparkConfigured()) {
-    try {
-      await verifyInfiniteSparkPaymentTx(params.expectedFrom, params.txHash);
-      return;
-    } catch {
-      // Fall through to legacy transfer verification.
+    if (params.productId === "infinite-24h" && isInfiniteSparkConfigured()) {
+      try {
+        await verifyInfiniteSparkPaymentTx(params.expectedFrom, params.txHash);
+        return;
+      } catch {
+        // Fall through to legacy transfer verification.
+      }
     }
   }
 

@@ -1,13 +1,18 @@
 import { getAddress, type Hash } from "viem";
 import { verifyShopPaymentTx } from "@/lib/shop-server";
 import { findShopPaymentToken } from "@/lib/shop";
-import { SCORE_SUBMIT_PRICE_USD, scoreSubmitPriceToAmount } from "@/lib/score-submit";
+import {
+  SCORE_SUBMIT_PRICE_USD,
+  scoreSubmitPriceToAmount,
+} from "@/lib/score-submit";
 import { SHOP_TOKEN_DECIMALS } from "@/lib/shop";
 import { verifySuiShopPaymentTx } from "@/lib/shop-sui-server";
 import { verifyVaraShopPaymentTx } from "@/lib/shop-vara-server";
 import { findVaraShopPaymentToken } from "@/lib/shop-vara";
 import { isValidSuiTxDigest } from "@/lib/shop-sui";
 import { isValidVaraExtrinsicHash } from "@/lib/shop-vara";
+import { verifyScoreSubmitContractPaymentTx } from "@/lib/score-submit-contract-verify";
+import { isScoreSubmitContractConfigured } from "@/lib/score-submit-contract";
 import type { WalletEcosystem } from "@/lib/player-identity";
 
 /** Fixed-amount payment verification for public score submit. */
@@ -23,12 +28,25 @@ export async function verifyScoreSubmitPayment(params: {
     const token = findShopPaymentToken(params.tokenAddress ?? "");
     if (!token) throw new Error("Unsupported payment token.");
 
+    if (isScoreSubmitContractConfigured()) {
+      try {
+        await verifyScoreSubmitContractPaymentTx(
+          params.expectedFrom,
+          params.txHash as Hash
+        );
+        return;
+      } catch {
+        // Fall through to legacy USDC transfer verification.
+      }
+    }
+
     await verifyShopPaymentTx({
       txHash: params.txHash as Hash,
       productId: "spark-refill",
       tokenAddress: getAddress(token.address),
       expectedFrom: params.expectedFrom,
       overrideAmount: requiredAmount,
+      legacyTransferOnly: true,
     });
     return;
   }
