@@ -114,9 +114,12 @@ export default function PlayerProfileProvider({
 
       // Prefer Base; still load status if SIWE chainId is missing/stale so the
       // check-in modal can prompt a network switch via the wallet.
+      const sessionChainId =
+        session.chainId == null ? undefined : Number(session.chainId);
       if (
-        session.chainId != null &&
-        session.chainId !== PRIMARY_EVM_CHAIN_ID
+        sessionChainId != null &&
+        Number.isFinite(sessionChainId) &&
+        sessionChainId !== PRIMARY_EVM_CHAIN_ID
       ) {
         // Non-Base EVM session: skip daily ceremony (wallet must reconnect on Base).
         setShowDailyPlay(false);
@@ -132,8 +135,12 @@ export default function PlayerProfileProvider({
         });
         setStreakStatus(status);
         setShowDailyPlay(Boolean(status.canCheckIn));
-      } catch {
-        // Daily play is best-effort after wallet auth.
+      } catch (err) {
+        // Status RPC can flake — still show the ceremony for Base EVM so new
+        // users are not dropped after onboarding with no daily streak UI.
+        console.warn("[daily-play] status fetch failed; showing modal anyway", err);
+        setStreakStatus(null);
+        setShowDailyPlay(true);
       }
     },
     []
@@ -267,10 +274,14 @@ export default function PlayerProfileProvider({
 
         setProfile(saved);
         setShowOnboarding(false);
+
+        // Prefer a fresh session after profile save so chainId/ecosystem match
+        // the auth cookie (React state can be stale right after first sign-in).
+        const session = await fetchAuthSession().catch(() => null);
         await maybePromptDailyPlay({
-          address: walletAddress,
-          ecosystem,
-          chainId,
+          address: session?.address ?? walletAddress,
+          ecosystem: session?.ecosystem ?? ecosystem,
+          chainId: session?.chainId ?? chainId,
         });
       } catch (err) {
         setError(

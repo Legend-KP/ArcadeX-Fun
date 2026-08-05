@@ -130,16 +130,18 @@ export default function DailyCheckInModal({
     if (!open || !walletAddress || recoverAttemptedRef.current) return;
     recoverAttemptedRef.current = true;
 
+    const campaignId = status?.campaignId;
     let cancelled = false;
     (async () => {
       try {
-        const fresh = await fetchStreakStatus(walletAddress, undefined, {
+        const fresh = await fetchStreakStatus(walletAddress, campaignId, {
           fresh: true,
         });
-        if (cancelled || fresh.canCheckIn) return;
+        // Only auto-complete when they already checked in today on this campaign.
+        if (cancelled || fresh.canCheckIn || fresh.lastCheckInAt <= 0) return;
 
         setLoading(true);
-        await refreshSessionFromCheckIn(walletAddress);
+        await refreshSessionFromCheckIn(walletAddress, campaignId);
         if (cancelled) return;
         onComplete({
           day: fresh.currentDay,
@@ -156,7 +158,7 @@ export default function DailyCheckInModal({
     return () => {
       cancelled = true;
     };
-  }, [open, walletAddress, onComplete]);
+  }, [open, walletAddress, onComplete, status?.campaignId]);
 
   useEffect(() => {
     if (!open) recoverAttemptedRef.current = false;
@@ -200,7 +202,10 @@ export default function DailyCheckInModal({
     setLoading(true);
     setError("");
     try {
-      const result = await performDailyCheckIn(walletAddress);
+      const result = await performDailyCheckIn(
+        walletAddress,
+        status?.campaignId
+      );
       onComplete({
         day: result.day,
         milestone: result.milestone,
