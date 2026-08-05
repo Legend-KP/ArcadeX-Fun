@@ -1,9 +1,15 @@
 import { getAddress } from "viem";
 import { BASE_USDC_ADDRESS } from "@/lib/chains";
+import {
+  BASE_MAINNET_DEPLOYMENTS,
+  envAddress,
+} from "@/lib/base-deployments";
 
 export const SHOP_RECIPIENT_ADDRESS = getAddress(
-  process.env.NEXT_PUBLIC_SHOP_RECIPIENT_ADDRESS?.trim() ||
-    "0x11015f39Ac7389201aEc778Be8e3D84f2aF44A70"
+  envAddress(
+    process.env.NEXT_PUBLIC_SHOP_RECIPIENT_ADDRESS,
+    BASE_MAINNET_DEPLOYMENTS.shopRecipient
+  )
 );
 
 export const INFINITE_SPARKS_MS = 24 * 60 * 60 * 1000;
@@ -61,7 +67,10 @@ export const SHOP_PAYMENT_TOKENS: ShopPaymentToken[] = [
     id: "usdc",
     symbol: "USDC",
     address: getAddress(
-      process.env.NEXT_PUBLIC_USDC_ADDRESS?.trim() || BASE_USDC_ADDRESS
+      envAddress(
+        process.env.NEXT_PUBLIC_USDC_ADDRESS,
+        BASE_MAINNET_DEPLOYMENTS.usdc || BASE_USDC_ADDRESS
+      )
     ),
   },
 ];
@@ -80,6 +89,26 @@ export const erc20Abi = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "uint8" }],
+  },
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "value", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
   },
   {
     type: "function",

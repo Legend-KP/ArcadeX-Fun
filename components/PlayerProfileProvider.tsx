@@ -105,9 +105,20 @@ export default function PlayerProfileProvider({
     }) => {
       if (
         session.ecosystem !== "evm" ||
-        (session.chainId != null && session.chainId !== PRIMARY_EVM_CHAIN_ID) ||
         !isArcadeXRewardsConfigured()
       ) {
+        setShowDailyPlay(false);
+        setStreakStatus(null);
+        return;
+      }
+
+      // Prefer Base; still load status if SIWE chainId is missing/stale so the
+      // check-in modal can prompt a network switch via the wallet.
+      if (
+        session.chainId != null &&
+        session.chainId !== PRIMARY_EVM_CHAIN_ID
+      ) {
+        // Non-Base EVM session: skip daily ceremony (wallet must reconnect on Base).
         setShowDailyPlay(false);
         setStreakStatus(null);
         return;

@@ -1,14 +1,19 @@
 import type { Address } from "viem";
 import { BASE_USDC_ADDRESS } from "@/lib/chains";
+import {
+  BASE_MAINNET_DEPLOYMENTS,
+  envAddress,
+} from "@/lib/base-deployments";
 
-export const SPARK_REFILL_CONTRACT_ADDRESS = (
-  process.env.NEXT_PUBLIC_SPARK_REFILL_CONTRACT?.trim() ||
-  "0x0000000000000000000000000000000000000000"
-) as Address;
+export const SPARK_REFILL_CONTRACT_ADDRESS = envAddress(
+  process.env.NEXT_PUBLIC_SPARK_REFILL_CONTRACT,
+  BASE_MAINNET_DEPLOYMENTS.sparkRefill
+);
 
-export const BASE_USDC = (
-  process.env.NEXT_PUBLIC_USDC_ADDRESS?.trim() || BASE_USDC_ADDRESS
-) as Address;
+export const BASE_USDC = envAddress(
+  process.env.NEXT_PUBLIC_USDC_ADDRESS,
+  BASE_MAINNET_DEPLOYMENTS.usdc || BASE_USDC_ADDRESS
+);
 
 /** @deprecated Use BASE_USDC — kept for transitional imports. */
 export const CELO_USDC_ADDRESS = BASE_USDC;

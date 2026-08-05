@@ -1,13 +1,19 @@
 import {
-  createPublicClient,
   decodeEventLog,
   getAddress,
-  http,
-  TransactionReceiptNotFoundError,
   type Hash,
-  type TransactionReceipt,
 } from "viem";
-import { base, primaryEvmChain } from "@/lib/chains";
+import {
+  getPaymentTransactionReceipt,
+} from "@/lib/payment-tx-verify";
+import { verifySparkRefillPaymentTx } from "@/lib/spark-refill-verify";
+import { verifyInfiniteSparkPaymentTx } from "@/lib/infinite-spark-verify";
+import {
+  isInfiniteSparkConfigured,
+} from "@/lib/infinite-spark";
+import {
+  isSparkRefillConfigured,
+} from "@/lib/spark-refill";
 import {
   erc20Abi,
   findShopPaymentToken,
@@ -18,39 +24,11 @@ import {
   type ShopProductId,
 } from "@/lib/shop";
 
-const RECEIPT_POLL_MS = 250;
-const RECEIPT_MAX_WAIT_MS = 60_000;
-
-const rpcUrl =
-  process.env.NEXT_PUBLIC_BASE_RPC_URL?.trim() ||
-  base.rpcUrls.default.http[0];
-
-const publicClient = createPublicClient({
-  chain: primaryEvmChain,
-  transport: http(rpcUrl, {
-    timeout: 12_000,
-  }),
-});
-
-async function waitForReceipt(hash: Hash): Promise<TransactionReceipt> {
-  const deadline = Date.now() + RECEIPT_MAX_WAIT_MS;
-
-  while (Date.now() < deadline) {
-    try {
-      const receipt = await publicClient.getTransactionReceipt({ hash });
-      return receipt;
-    } catch (err) {
-      if (!(err instanceof TransactionReceiptNotFoundError)) {
-        throw err;
-      }
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, RECEIPT_POLL_MS));
-  }
-
-  throw new Error("Timed out waiting for transaction confirmation.");
-}
-
+/**
+ * Verify a Base shop payment.
+ * Prefers EntryPaid from SparkRefill / InfiniteSpark (current UI path).
+ * Falls back to legacy USDC transfer → shop recipient for older txs.
+ */
 export async function verifyShopPaymentTx(params: {
   txHash: Hash;
   productId: ShopProductId;
@@ -63,7 +41,25 @@ export async function verifyShopPaymentTx(params: {
     throw new Error("Unsupported payment token.");
   }
 
-  const receipt = await waitForReceipt(params.txHash);
+  if (params.productId === "spark-refill" && isSparkRefillConfigured()) {
+    try {
+      await verifySparkRefillPaymentTx(params.expectedFrom, params.txHash);
+      return;
+    } catch {
+      // Fall through to legacy transfer verification.
+    }
+  }
+
+  if (params.productId === "infinite-24h" && isInfiniteSparkConfigured()) {
+    try {
+      await verifyInfiniteSparkPaymentTx(params.expectedFrom, params.txHash);
+      return;
+    } catch {
+      // Fall through to legacy transfer verification.
+    }
+  }
+
+  const receipt = await getPaymentTransactionReceipt(params.txHash);
 
   if (receipt.status !== "success") {
     throw new Error("Transaction failed on chain.");

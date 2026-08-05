@@ -13,7 +13,9 @@ const DEFAULT_RPC_URLS = [
 ] as const;
 
 function getRpcUrls(): string[] {
-  const primary = process.env.NEXT_PUBLIC_BASE_RPC_URL?.trim();
+  const primary =
+    process.env.BASE_RPC_URL?.trim() ||
+    process.env.NEXT_PUBLIC_BASE_RPC_URL?.trim();
   const urls = primary
     ? [primary, ...DEFAULT_RPC_URLS.filter((url) => url !== primary)]
     : [...DEFAULT_RPC_URLS];

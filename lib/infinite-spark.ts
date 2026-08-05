@@ -1,4 +1,3 @@
-import type { Address } from "viem";
 import {
   BASE_USDC,
   ERC20_ABI,
@@ -7,11 +6,15 @@ import {
   type SparkRefillPaymentToken,
   tokenAddress,
 } from "@/lib/spark-refill";
+import {
+  BASE_MAINNET_DEPLOYMENTS,
+  envAddress,
+} from "@/lib/base-deployments";
 
-export const INFINITE_SPARK_CONTRACT_ADDRESS = (
-  process.env.NEXT_PUBLIC_INFINITE_SPARK_CONTRACT?.trim() ||
-  "0x0000000000000000000000000000000000000000"
-) as Address;
+export const INFINITE_SPARK_CONTRACT_ADDRESS = envAddress(
+  process.env.NEXT_PUBLIC_INFINITE_SPARK_CONTRACT,
+  BASE_MAINNET_DEPLOYMENTS.infiniteSpark
+);
 
 export function isInfiniteSparkConfigured(): boolean {
   return (

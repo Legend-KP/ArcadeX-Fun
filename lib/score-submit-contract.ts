@@ -5,12 +5,16 @@ import {
   SPARK_REFILL_ABI,
   STABLECOIN_DECIMALS,
 } from "@/lib/spark-refill";
+import {
+  BASE_MAINNET_DEPLOYMENTS,
+  envAddress,
+} from "@/lib/base-deployments";
 
-/** On-chain leaderboard score-submit contract (Base + USDC), separate from the ERC20-transfer shop flow. */
-export const SCORE_SUBMIT_CONTRACT_ADDRESS = (
-  process.env.NEXT_PUBLIC_SCORE_SUBMIT_CONTRACT?.trim() ||
-  "0x0000000000000000000000000000000000000000"
-) as Address;
+/** On-chain leaderboard score-submit contract (Base + USDC). */
+export const SCORE_SUBMIT_CONTRACT_ADDRESS = envAddress(
+  process.env.NEXT_PUBLIC_SCORE_SUBMIT_CONTRACT,
+  BASE_MAINNET_DEPLOYMENTS.scoreSubmit
+);
 
 export type ScoreSubmitPaymentToken = "USDC";
 

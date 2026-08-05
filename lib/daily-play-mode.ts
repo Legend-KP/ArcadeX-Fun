@@ -1,6 +1,7 @@
 import {
   DEFAULT_STREAK_CAMPAIGN_ID,
 } from "@/lib/arcadex-rewards";
+import { BASE_MAINNET_DEPLOYMENTS } from "@/lib/base-deployments";
 
 export type DailyPlayMode = "streak" | "shuffle";
 
@@ -25,7 +26,7 @@ export function isShuffleDailyPlay(): boolean {
 export const DEFAULT_SHUFFLE_CAMPAIGN_ID = Number(
   process.env.SHUFFLE_CAMPAIGN_ID?.trim() ||
     process.env.NEXT_PUBLIC_SHUFFLE_CAMPAIGN_ID?.trim() ||
-    "2"
+    String(BASE_MAINNET_DEPLOYMENTS.shuffleCampaignId)
 );
 
 /** Campaign used for today's daily sign-in ceremony. */

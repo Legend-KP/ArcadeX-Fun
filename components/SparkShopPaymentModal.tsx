@@ -9,7 +9,7 @@ import {
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
-import { formatUnits } from "viem";
+import { formatUnits, maxUint256, type Address } from "viem";
 import { PRIMARY_EVM_CHAIN_ID, primaryEvmChain } from "@/lib/chains";
 import { purchaseSparkItem } from "@/lib/spark-client";
 import {
@@ -17,13 +17,40 @@ import {
   formatShopPrice,
   SHOP_PRODUCTS,
   SHOP_PAYMENT_TOKENS,
-  SHOP_RECIPIENT_ADDRESS,
   SHOP_TOKEN_DECIMALS,
   shopPriceToAmount,
   type ShopPaymentToken,
   type ShopProductId,
   type ShopPurchaseSuccess,
 } from "@/lib/shop";
+import {
+  SPARK_REFILL_ABI,
+  SPARK_REFILL_CONTRACT_ADDRESS,
+  isSparkRefillConfigured,
+} from "@/lib/spark-refill";
+import {
+  INFINITE_SPARK_ABI,
+  INFINITE_SPARK_CONTRACT_ADDRESS,
+  isInfiniteSparkConfigured,
+} from "@/lib/infinite-spark";
+
+function shopContractForProduct(
+  productId: ShopProductId
+): { address: Address; abi: typeof SPARK_REFILL_ABI } | null {
+  if (productId === "spark-refill" && isSparkRefillConfigured()) {
+    return {
+      address: SPARK_REFILL_CONTRACT_ADDRESS,
+      abi: SPARK_REFILL_ABI,
+    };
+  }
+  if (productId === "infinite-24h" && isInfiniteSparkConfigured()) {
+    return {
+      address: INFINITE_SPARK_CONTRACT_ADDRESS,
+      abi: INFINITE_SPARK_ABI,
+    };
+  }
+  return null;
+}
 
 interface SparkShopPaymentModalProps {
   open: boolean;
@@ -65,43 +92,85 @@ export default function SparkShopPaymentModal({
   const [error, setError] = useState("");
 
   const onPrimaryChain = chainId === PRIMARY_EVM_CHAIN_ID;
+  const payContract = productId ? shopContractForProduct(productId) : null;
 
   const { data: contractData, isLoading: balancesLoading } = useReadContracts({
-    contracts: SHOP_PAYMENT_TOKENS.flatMap((token) => [
-      {
-        address: token.address,
-        abi: erc20Abi,
-        functionName: "balanceOf" as const,
-        args: [address!],
-        chainId: PRIMARY_EVM_CHAIN_ID,
-      },
-      {
-        address: token.address,
-        abi: erc20Abi,
-        functionName: "decimals" as const,
-        chainId: PRIMARY_EVM_CHAIN_ID,
-      },
-    ]),
+    contracts: [
+      ...SHOP_PAYMENT_TOKENS.flatMap((token) => [
+        {
+          address: token.address,
+          abi: erc20Abi,
+          functionName: "balanceOf" as const,
+          args: [address!],
+          chainId: PRIMARY_EVM_CHAIN_ID,
+        },
+        {
+          address: token.address,
+          abi: erc20Abi,
+          functionName: "decimals" as const,
+          chainId: PRIMARY_EVM_CHAIN_ID,
+        },
+        {
+          address: token.address,
+          abi: erc20Abi,
+          functionName: "allowance" as const,
+          args: [address!, payContract?.address ?? token.address],
+          chainId: PRIMARY_EVM_CHAIN_ID,
+        },
+      ]),
+      ...(payContract
+        ? [
+            {
+              address: payContract.address,
+              abi: payContract.abi,
+              functionName: "fee" as const,
+              chainId: PRIMARY_EVM_CHAIN_ID,
+            },
+            {
+              address: payContract.address,
+              abi: payContract.abi,
+              functionName: "paused" as const,
+              chainId: PRIMARY_EVM_CHAIN_ID,
+            },
+          ]
+        : []),
+    ],
     query: {
       enabled: open && Boolean(address) && onPrimaryChain,
     },
   });
 
+  const onChainFee =
+    payContract && contractData?.[SHOP_PAYMENT_TOKENS.length * 3]?.status === "success"
+      ? (contractData[SHOP_PAYMENT_TOKENS.length * 3]!.result as bigint)
+      : null;
+  const contractPaused =
+    payContract &&
+    contractData?.[SHOP_PAYMENT_TOKENS.length * 3 + 1]?.status === "success"
+      ? Boolean(contractData[SHOP_PAYMENT_TOKENS.length * 3 + 1]!.result)
+      : false;
+
   const tokenOptions = useMemo(() => {
     if (!product) return [];
 
     return SHOP_PAYMENT_TOKENS.map((token, index) => {
-      const balanceResult = contractData?.[index * 2];
-      const decimalsResult = contractData?.[index * 2 + 1];
+      const balanceResult = contractData?.[index * 3];
+      const decimalsResult = contractData?.[index * 3 + 1];
+      const allowanceResult = contractData?.[index * 3 + 2];
       const balance: bigint =
         balanceResult?.status === "success"
-          ? BigInt(balanceResult.result)
+          ? BigInt(balanceResult.result as bigint)
           : BigInt(0);
       const decimals =
         decimalsResult?.status === "success"
           ? Number(decimalsResult.result)
           : SHOP_TOKEN_DECIMALS;
-      const requiredAmount = shopPriceToAmount(product.priceUsd, decimals);
+      const allowance: bigint =
+        allowanceResult?.status === "success"
+          ? BigInt(allowanceResult.result as bigint)
+          : BigInt(0);
+      const requiredAmount =
+        onChainFee ?? shopPriceToAmount(product.priceUsd, decimals);
       const sufficient = balance >= requiredAmount;
 
       return {
@@ -109,11 +178,12 @@ export default function SparkShopPaymentModal({
         balance,
         decimals,
         requiredAmount,
+        allowance,
         sufficient,
         balanceLabel: formatTokenBalance(balance, decimals),
       };
     });
-  }, [contractData, product]);
+  }, [contractData, product, onChainFee]);
 
   const confirmPurchase = useCallback(
     async (
@@ -203,17 +273,36 @@ export default function SparkShopPaymentModal({
         return;
       }
 
+      const contract = shopContractForProduct(product.id);
+      if (!contract) {
+        setError("Spark payment contract is not configured.");
+        return;
+      }
+      if (contractPaused) {
+        setError("Spark purchases are temporarily paused. Try again later.");
+        return;
+      }
+
       setSelectedToken(payToken);
       setBusy(true);
       setError("");
       setStep("paying");
 
       try {
+        if (option.allowance < option.requiredAmount) {
+          await writeContractAsync({
+            address: payToken.address,
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [contract.address, maxUint256],
+            chainId: PRIMARY_EVM_CHAIN_ID,
+          });
+        }
+
         const hash = await writeContractAsync({
-          address: payToken.address,
-          abi: erc20Abi,
-          functionName: "transfer",
-          args: [SHOP_RECIPIENT_ADDRESS, option.requiredAmount],
+          address: contract.address,
+          abi: contract.abi,
+          functionName: "payWithUSDC",
           chainId: PRIMARY_EVM_CHAIN_ID,
         });
 
@@ -230,7 +319,15 @@ export default function SparkShopPaymentModal({
         setBusy(false);
       }
     },
-    [product, selectedToken, address, tokenOptions, writeContractAsync, confirmPurchase]
+    [
+      product,
+      selectedToken,
+      address,
+      tokenOptions,
+      writeContractAsync,
+      confirmPurchase,
+      contractPaused,
+    ]
   );
 
   const handleTokenSelect = useCallback(

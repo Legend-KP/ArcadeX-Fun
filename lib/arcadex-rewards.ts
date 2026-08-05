@@ -1,14 +1,19 @@
 import type { Address, Hex } from "viem";
 import { keccak256, toBytes } from "viem";
+import {
+  BASE_MAINNET_DEPLOYMENTS,
+  envAddress,
+} from "@/lib/base-deployments";
 
 /** ArcadeXRewards on Base mainnet — daily check-in is app sign-in. */
-export const ARCADEX_REWARDS_CONTRACT_ADDRESS = (
-  process.env.NEXT_PUBLIC_ARCADEX_REWARDS_CONTRACT?.trim() ||
-  "0x0000000000000000000000000000000000000000"
-) as Address;
+export const ARCADEX_REWARDS_CONTRACT_ADDRESS = envAddress(
+  process.env.NEXT_PUBLIC_ARCADEX_REWARDS_CONTRACT,
+  BASE_MAINNET_DEPLOYMENTS.arcadeXRewards
+);
 
 export const DEFAULT_STREAK_CAMPAIGN_ID = Number(
-  process.env.NEXT_PUBLIC_STREAK_CAMPAIGN_ID?.trim() || "1"
+  process.env.NEXT_PUBLIC_STREAK_CAMPAIGN_ID?.trim() ||
+    String(BASE_MAINNET_DEPLOYMENTS.streakCampaignId)
 );
 
 export const CAMPAIGN_TYPE_STREAK = 0;

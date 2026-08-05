@@ -1,6 +1,7 @@
 "use client";
 
 import type { DailyPlayConfig, DailyPlayMode } from "@/lib/daily-play-mode";
+import { BASE_MAINNET_DEPLOYMENTS } from "@/lib/base-deployments";
 
 let cached: DailyPlayConfig | null = null;
 let inflight: Promise<DailyPlayConfig> | null = null;
@@ -11,12 +12,17 @@ function fallbackConfig(): DailyPlayConfig {
   ).toLowerCase() === "shuffle"
     ? "shuffle"
     : "streak";
-  const campaignId = Number(
-    process.env.NEXT_PUBLIC_SHUFFLE_CAMPAIGN_ID?.trim() || "2"
+  const shuffleCampaignId = Number(
+    process.env.NEXT_PUBLIC_SHUFFLE_CAMPAIGN_ID?.trim() ||
+      String(BASE_MAINNET_DEPLOYMENTS.shuffleCampaignId)
+  );
+  const streakCampaignId = Number(
+    process.env.NEXT_PUBLIC_STREAK_CAMPAIGN_ID?.trim() ||
+      String(BASE_MAINNET_DEPLOYMENTS.streakCampaignId)
   );
   return {
     mode: mode as DailyPlayMode,
-    campaignId: mode === "shuffle" ? campaignId : 1,
+    campaignId: mode === "shuffle" ? shuffleCampaignId : streakCampaignId,
     shuffle: mode === "shuffle",
   };
 }

@@ -333,7 +333,11 @@ export function isShopPaymentsEnabled(
 
   if (ecosystem === "evm") {
     const key = chainId ? getChainKeyForEvmChainId(chainId) : "base";
-    if (!key) return false;
+    // Unknown EVM chainId (e.g. SIWE on Ethereum) — still allow Base shop UI;
+    // SparkShopPaymentModal will ask the user to switch to Base.
+    if (!key) {
+      return settings.base?.shopPayments !== false;
+    }
     return settings[key]?.shopPayments !== false;
   }
 
