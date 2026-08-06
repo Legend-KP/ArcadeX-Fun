@@ -101,16 +101,24 @@ export default function PlayerProfileProvider({
       const sessionChainId =
         session.chainId == null ? undefined : Number(session.chainId);
 
-      // Daily Streak is Base mainnet only — user must pick Base in network select.
+      // Daily streak ceremony is for EVM. Skip only when we know they're not on Base.
+      if (session.ecosystem !== "evm" || !isArcadeXRewardsConfigured()) {
+        setShowDailyPlay(false);
+        setStreakStatus(null);
+        return;
+      }
       if (
-        session.ecosystem !== "evm" ||
-        sessionChainId !== PRIMARY_EVM_CHAIN_ID ||
-        !isArcadeXRewardsConfigured()
+        sessionChainId != null &&
+        Number.isFinite(sessionChainId) &&
+        sessionChainId !== PRIMARY_EVM_CHAIN_ID
       ) {
         setShowDailyPlay(false);
         setStreakStatus(null);
         return;
       }
+
+      // Always show the daily streak modal after wallet auth / onboarding.
+      setShowDailyPlay(true);
 
       try {
         const config = await fetchDailyPlayConfig({ fresh: true });
@@ -119,13 +127,10 @@ export default function PlayerProfileProvider({
           fresh: true,
         });
         setStreakStatus(status);
-        setShowDailyPlay(Boolean(status.canCheckIn));
       } catch (err) {
-        // Don't open a doomed check-in UI when status is unknown — a prior
-        // check-in would make MetaMask warn "likely to fail" (TooSoon).
+        // Still keep the modal open — status can load / recover inside it.
         console.warn("[daily-play] status fetch failed", err);
         setStreakStatus(null);
-        setShowDailyPlay(false);
       }
     },
     []
@@ -188,7 +193,7 @@ export default function PlayerProfileProvider({
         setShowDailyPlay(false);
         setShowOnboarding(true);
       } else {
-        // Registered — daily streak only when they still need today's check-in.
+        // Registered — always show the daily streak ceremony next.
         setShowOnboarding(false);
         await maybePromptDailyPlay(session);
       }

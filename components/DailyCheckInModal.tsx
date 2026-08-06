@@ -129,8 +129,8 @@ export default function DailyCheckInModal({
     setLiveStatus(status);
   }, [status]);
 
-  // If the on-chain check-in already landed but session sync failed, unlock
-  // without asking the user to send another tx (which would revert TooSoon).
+  // Load fresh status on open. If already checked in, mint session but keep the
+  // streak UI visible so every user still sees the daily ceremony.
   useEffect(() => {
     if (!open || !walletAddress || recoverAttemptedRef.current) return;
     recoverAttemptedRef.current = true;
@@ -145,28 +145,22 @@ export default function DailyCheckInModal({
         if (cancelled) return;
         setLiveStatus(fresh);
 
-        // Already checked in today — mint session, don't prompt another wallet tx.
-        if (fresh.canCheckIn || fresh.lastCheckInAt <= 0) return;
-
-        setLoading(true);
-        await refreshSessionFromCheckIn(walletAddress, campaignId);
-        if (cancelled) return;
-        onComplete({
-          day: fresh.currentDay,
-          milestone: fresh.milestoneReached,
-          infiniteSparkGranted: false,
-        });
+        if (!fresh.canCheckIn && fresh.lastCheckInAt > 0) {
+          try {
+            await refreshSessionFromCheckIn(walletAddress, campaignId);
+          } catch {
+            // Session mint is best-effort; UI still shows streak progress.
+          }
+        }
       } catch {
         // Still need a check-in / user action
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [open, walletAddress, onComplete, status?.campaignId]);
+  }, [open, walletAddress, status?.campaignId]);
 
   useEffect(() => {
     if (!open) recoverAttemptedRef.current = false;
@@ -354,22 +348,32 @@ export default function DailyCheckInModal({
         <button
           type="button"
           className="daily-checkin-btn"
-          disabled={loading || !walletAddress || alreadyCheckedInToday}
-          onClick={handleCheckIn}
+          disabled={loading || !walletAddress}
+          onClick={() => {
+            if (alreadyCheckedInToday) {
+              onComplete({
+                day: currentDay,
+                milestone: Boolean(view?.milestoneReached),
+                infiniteSparkGranted: false,
+              });
+              return;
+            }
+            void handleCheckIn();
+          }}
         >
           <span className="daily-checkin-btn-main">
             <ShieldCheckIcon />
             {loading
               ? "Confirming…"
               : alreadyCheckedInToday
-                ? "Already checked in today"
+                ? "Continue"
                 : "Daily Check In (Free)"}
           </span>
           <span className="daily-checkin-btn-sub">
             {loading
               ? "Syncing your Base check-in"
               : alreadyCheckedInToday
-                ? "Come back after 00:00 UTC"
+                ? "Come back after 00:00 UTC for the next day"
                 : "Non-fee transaction"}
           </span>
         </button>
