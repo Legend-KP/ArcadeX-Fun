@@ -2,7 +2,6 @@
 
 import type { Hash, Hex } from "viem";
 import { base } from "@/lib/chains";
-import { waitForBaseTransactionReceipt } from "@/lib/base-public-client";
 import { createEvmWalletClient } from "@/lib/evm-wallet-client";
 import {
   ARCADEX_REWARDS_ABI,
@@ -85,20 +84,6 @@ export async function checkInOnChain(
     hash = submitted;
   }
 
-  try {
-    const receipt = await waitForBaseTransactionReceipt(hash);
-    if (receipt.status !== "success") {
-      throw new Error("Check-in transaction failed.");
-    }
-  } catch (err) {
-    if (
-      err instanceof Error &&
-      err.message.includes("Check-in transaction failed.")
-    ) {
-      throw err;
-    }
-    // Tx was submitted — sync endpoint verifies the receipt server-side.
-  }
-
+  // Do not block the UI on public-RPC receipt polling. Sync verifies on-chain.
   return { txHash: hash };
 }

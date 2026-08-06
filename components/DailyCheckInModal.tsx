@@ -121,8 +121,13 @@ export default function DailyCheckInModal({
 }: DailyCheckInModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [liveStatus, setLiveStatus] = useState<StreakStatus | null>(status);
   const infinityGradId = useId().replace(/:/g, "");
   const recoverAttemptedRef = useRef(false);
+
+  useEffect(() => {
+    setLiveStatus(status);
+  }, [status]);
 
   // If the on-chain check-in already landed but session sync failed, unlock
   // without asking the user to send another tx (which would revert TooSoon).
@@ -137,8 +142,11 @@ export default function DailyCheckInModal({
         const fresh = await fetchStreakStatus(walletAddress, campaignId, {
           fresh: true,
         });
-        // Only auto-complete when they already checked in today on this campaign.
-        if (cancelled || fresh.canCheckIn || fresh.lastCheckInAt <= 0) return;
+        if (cancelled) return;
+        setLiveStatus(fresh);
+
+        // Already checked in today — mint session, don't prompt another wallet tx.
+        if (fresh.canCheckIn || fresh.lastCheckInAt <= 0) return;
 
         setLoading(true);
         await refreshSessionFromCheckIn(walletAddress, campaignId);
@@ -166,9 +174,10 @@ export default function DailyCheckInModal({
 
   if (!open || typeof document === "undefined") return null;
 
-  const requiredDays = status?.campaign.requiredDays ?? 7;
-  const currentDay = status?.currentDay ?? 0;
-  const wouldReset = Boolean(status?.streakWouldReset);
+  const view = liveStatus ?? status;
+  const requiredDays = view?.campaign.requiredDays ?? 7;
+  const currentDay = view?.currentDay ?? 0;
+  const wouldReset = Boolean(view?.streakWouldReset);
   const checkInDay = wouldReset
     ? 1
     : currentDay === 0
@@ -177,6 +186,9 @@ export default function DailyCheckInModal({
   const displayStreak = wouldReset ? 0 : currentDay;
   const isFinalDay = checkInDay >= requiredDays;
   const days = Array.from({ length: requiredDays }, (_, i) => i + 1);
+  const alreadyCheckedInToday = Boolean(
+    view && !view.canCheckIn && view.lastCheckInAt > 0
+  );
 
   const streakHint = wouldReset
     ? "You missed a day — check in to start fresh."
@@ -204,7 +216,7 @@ export default function DailyCheckInModal({
     try {
       const result = await performDailyCheckIn(
         walletAddress,
-        status?.campaignId
+        view?.campaignId ?? status?.campaignId
       );
       onComplete({
         day: result.day,
@@ -214,11 +226,17 @@ export default function DailyCheckInModal({
     } catch (err) {
       // Tx may have landed even when the UI error path fired — recover session.
       try {
-        const fresh = await fetchStreakStatus(walletAddress, status?.campaignId, {
-          fresh: true,
-        });
+        const fresh = await fetchStreakStatus(
+          walletAddress,
+          view?.campaignId ?? status?.campaignId,
+          { fresh: true }
+        );
+        setLiveStatus(fresh);
         if (!fresh.canCheckIn && fresh.lastCheckInAt > 0) {
-          await refreshSessionFromCheckIn(walletAddress, status?.campaignId);
+          await refreshSessionFromCheckIn(
+            walletAddress,
+            view?.campaignId ?? status?.campaignId
+          );
           onComplete({
             day: fresh.currentDay,
             milestone: fresh.milestoneReached,
@@ -336,14 +354,24 @@ export default function DailyCheckInModal({
         <button
           type="button"
           className="daily-checkin-btn"
-          disabled={loading || !walletAddress}
+          disabled={loading || !walletAddress || alreadyCheckedInToday}
           onClick={handleCheckIn}
         >
           <span className="daily-checkin-btn-main">
             <ShieldCheckIcon />
-            {loading ? "Unlocking…" : "Daily Check In (Free)"}
+            {loading
+              ? "Confirming…"
+              : alreadyCheckedInToday
+                ? "Already checked in today"
+                : "Daily Check In (Free)"}
           </span>
-          <span className="daily-checkin-btn-sub">Non-fee transaction</span>
+          <span className="daily-checkin-btn-sub">
+            {loading
+              ? "Syncing your Base check-in"
+              : alreadyCheckedInToday
+                ? "Come back after 00:00 UTC"
+                : "Non-fee transaction"}
+          </span>
         </button>
       </div>
     </div>,

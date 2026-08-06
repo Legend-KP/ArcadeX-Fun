@@ -126,11 +126,11 @@ export default function PlayerProfileProvider({
         setStreakStatus(status);
         setShowDailyPlay(Boolean(status.canCheckIn));
       } catch (err) {
-        // Status RPC can flake — still show the ceremony for Base so new users
-        // are not dropped after onboarding with no daily streak UI.
-        console.warn("[daily-play] status fetch failed; showing modal anyway", err);
+        // Don't open a doomed check-in UI when status is unknown — a prior
+        // check-in would make MetaMask warn "likely to fail" (TooSoon).
+        console.warn("[daily-play] status fetch failed", err);
         setStreakStatus(null);
-        setShowDailyPlay(true);
+        setShowDailyPlay(false);
       }
     },
     []

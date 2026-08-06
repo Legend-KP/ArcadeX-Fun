@@ -214,6 +214,18 @@ export async function performDailyCheckIn(
   walletAddress: string,
   campaignId: number = DEFAULT_STREAK_CAMPAIGN_ID
 ): Promise<StreakSyncResult> {
+  // Avoid MetaMask "likely to fail" when already checked in today (TooSoon).
+  try {
+    const status = await fetchStreakStatus(walletAddress, campaignId, {
+      fresh: true,
+    });
+    if (!status.canCheckIn && status.lastCheckInAt > 0) {
+      return sessionFromExistingCheckIn(walletAddress, campaignId);
+    }
+  } catch {
+    // Proceed to wallet write; recovery paths below still apply.
+  }
+
   try {
     const { txHash } = await checkInOnChain(campaignId);
     try {
