@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatChainError } from "@/lib/base-public-client";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
+import { isAvalancheRewardsChainId } from "@/lib/arcadex-rewards";
 import {
   confirmExistingCheckIn,
   fetchStreakStatus,
@@ -179,6 +180,9 @@ export default function DailyCheckInModal({
   if (!open || typeof document === "undefined") return null;
 
   const view = liveStatus ?? status;
+  const onAvalanche = isAvalancheRewardsChainId(chainId);
+  const explorerName = onAvalanche ? "Snowtrace" : "Basescan";
+  const chainLabel = onAvalanche ? "Avalanche" : "Base";
   const requiredDays = view?.campaign.requiredDays ?? 7;
   const currentDay = view?.currentDay ?? 0;
   const wouldReset = Boolean(view?.streakWouldReset);
@@ -430,8 +434,8 @@ export default function DailyCheckInModal({
 
         {pendingTxHash && !loading ? (
           <p className="daily-checkin-streak-hint" style={{ marginBottom: 10 }}>
-            Tx {pendingTxHash.slice(0, 10)}…{pendingTxHash.slice(-8)} is on Base.
-            Confirm below — do not check in again.
+            Tx {pendingTxHash.slice(0, 10)}…{pendingTxHash.slice(-8)} is on{" "}
+            {chainLabel}. Confirm below — do not check in again.
           </p>
         ) : null}
 
@@ -467,11 +471,11 @@ export default function DailyCheckInModal({
           </span>
           <span className="daily-checkin-btn-sub">
             {loading
-              ? "Syncing your Base check-in"
+              ? `Syncing your ${chainLabel} check-in`
               : alreadyCheckedInToday
                 ? "Come back after 00:00 UTC for the next day"
                 : pendingTxHash
-                  ? "Uses your confirmed Basescan transaction"
+                  ? `Uses your confirmed ${explorerName} transaction`
                   : "Non-fee transaction"}
           </span>
         </button>

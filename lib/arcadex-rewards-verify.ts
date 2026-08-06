@@ -100,7 +100,9 @@ export async function verifyCheckInTx(
         };
 
         if (getAddress(player) !== expectedPlayer) {
-          throw new Error("Check-in wallet does not match your account.");
+          throw new Error(
+            `Check-in wallet does not match your account. Tx was from ${getAddress(player)}, but you are signed in as ${expectedPlayer}. Disconnect and reconnect with the wallet that sent the check-in, then tap Confirm.`
+          );
         }
         if (Number(campaignId) !== expectedCampaignId) {
           throw new Error("Check-in is for a different campaign.");

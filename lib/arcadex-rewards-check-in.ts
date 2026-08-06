@@ -1,6 +1,7 @@
 "use client";
 
-import type { Hash, Hex } from "viem";
+import type { Address, Hash, Hex } from "viem";
+import { getAddress } from "viem";
 import { avalanche, base } from "@/lib/chains";
 import { createEvmWalletClient } from "@/lib/evm-wallet-client";
 import {
@@ -49,7 +50,13 @@ function extractSubmittedTxHash(error: unknown): Hash | null {
  */
 export async function checkInOnChain(
   campaignId?: number,
-  opts?: { deadline?: bigint; signature?: Hex; chainId?: number }
+  opts?: {
+    deadline?: bigint;
+    signature?: Hex;
+    chainId?: number;
+    /** Session wallet — MetaMask must be this account or sync will reject the tx. */
+    expectedWallet?: string;
+  }
 ): Promise<{ txHash: Hash }> {
   const chainId = opts?.chainId;
   if (!isArcadeXRewardsConfiguredForChain(chainId)) {
@@ -65,6 +72,21 @@ export async function checkInOnChain(
   const [account] = await walletClient.getAddresses();
   if (!account) {
     throw new Error("No wallet account available.");
+  }
+
+  if (opts?.expectedWallet) {
+    try {
+      if (getAddress(account) !== getAddress(opts.expectedWallet as Address)) {
+        throw new Error(
+          `MetaMask is on ${account.slice(0, 6)}…${account.slice(-4)}, but you signed in as ${opts.expectedWallet.slice(0, 6)}…${opts.expectedWallet.slice(-4)}. Switch MetaMask to your signed-in account, then try again.`
+        );
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("MetaMask is on")) {
+        throw err;
+      }
+      // Invalid expectedWallet — server sync still enforces match.
+    }
   }
 
   const resolvedCampaignId =

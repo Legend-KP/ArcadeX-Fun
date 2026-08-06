@@ -1,0 +1,16 @@
+1.bb2c0f1e5d19fe18.js:235 Failed to fetch usage Error: HTTP status code: 403
+    at r (1.bb2c0f1e5d19fe18.js:41:4684)
+    at async s.get (1.bb2c0f1e5d19fe18.js:41:4910)
+    at async Object.fetchUsage (1.bb2c0f1e5d19fe18.js:235:3422)
+    at async po.initialize (1.bb2c0f1e5d19fe18.js:10:231050)
+inpage.js:4 StreamMiddleware - Unknown response id "4281957827"
+(index):1 
+ Failed to load resource: the server responded with a status of 500 ()
+6598.60660387e955a649.js:3 Error checking Cross-Origin-Opener-Policy: HTTP error! status: 500
+as.coinbase.com/metrics:1 
+ Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+pulse.walletconnect.…ependencies-fix.0:1 
+ Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+inpage.js:7 MetaMask - RPC Error: RPC 0xa86a Custom eth_sendRawTransaction: insufficient funds for gas * price + value: balance 0, tx cost 142115190566688, overshot 142115190566688 
+Object
+﻿

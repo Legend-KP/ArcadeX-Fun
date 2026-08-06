@@ -304,6 +304,7 @@ export async function performDailyCheckIn(
   try {
     const submitted = await checkInOnChain(resolvedCampaignId, {
       chainId: resolvedChainId,
+      expectedWallet: walletAddress,
     });
     txHash = submitted.txHash;
     try {
