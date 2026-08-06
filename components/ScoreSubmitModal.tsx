@@ -14,6 +14,7 @@ import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 import { formatChainError } from "@/lib/base-public-client";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
 import { submitPaidScore } from "@/lib/leaderboard-client";
+import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import {
   erc20Abi,
   SHOP_PAYMENT_TOKENS,
@@ -131,6 +132,7 @@ export default function ScoreSubmitModal({
   const chainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
+  const { openConnect } = usePlayerProfile();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<PaymentStep>("token");
   const [selectedToken, setSelectedToken] = useState<ShopPaymentToken | null>(
@@ -249,7 +251,7 @@ export default function ScoreSubmitModal({
         const submittedBest = await confirmScoreSubmitWithRetries({
           gameId,
           score,
-          walletAddress,
+          walletAddress: address || walletAddress,
           playerName,
           txHash: hash,
           tokenAddress: token.address,
@@ -267,7 +269,7 @@ export default function ScoreSubmitModal({
         setBusy(false);
       }
     },
-    [gameId, score, walletAddress, playerName, onSuccess, onClose]
+    [gameId, score, address, walletAddress, playerName, onSuccess, onClose]
   );
 
   useEffect(() => {
@@ -309,7 +311,13 @@ export default function ScoreSubmitModal({
   const handlePay = useCallback(
     async (token?: ShopPaymentToken) => {
       const payToken = token ?? selectedToken;
-      if (!payToken || !address) return;
+      if (!payToken) return;
+
+      if (!isConnected || !address) {
+        setError("Reconnect your wallet to approve the USDC payment.");
+        openConnect();
+        return;
+      }
 
       const option = tokenOptions.find(
         (entry) => entry.token.id === payToken.id
@@ -381,6 +389,8 @@ export default function ScoreSubmitModal({
     [
       selectedToken,
       address,
+      isConnected,
+      openConnect,
       tokenOptions,
       writeContractAsync,
       confirmSubmit,
@@ -443,12 +453,22 @@ export default function ScoreSubmitModal({
           </p>
 
           {!isConnected && (
-            <p className="spark-shop-payment__error" role="alert">
-              Connect your wallet to submit.
-            </p>
+            <div className="spark-shop-payment__section">
+              <p className="spark-shop-payment__error" role="alert">
+                Wallet disconnected. Reconnect to pay with USDC on Base.
+              </p>
+              <button
+                type="button"
+                className="spark-shop-payment__primary"
+                onClick={() => openConnect()}
+                disabled={busy}
+              >
+                Connect wallet
+              </button>
+            </div>
           )}
 
-          {step === "network" && (
+          {isConnected && step === "network" && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
                 Switch to Base to pay with USDC. Gas is paid in ETH.
@@ -464,7 +484,7 @@ export default function ScoreSubmitModal({
             </div>
           )}
 
-          {showTokenStep && (
+          {isConnected && showTokenStep && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
                 Select USDC to pay {formatScoreSubmitPrice()}.

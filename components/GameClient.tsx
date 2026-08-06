@@ -35,6 +35,7 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
   const [pendingScore, setPendingScore] = useState<{
     score: number;
     name: string;
+    walletAddress: string;
   } | null>(null);
   const leaderboardEnabled = gameHasLeaderboard(game);
   const contestLive = gameHasContestLive(game);
@@ -47,6 +48,7 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
     playerId,
     walletAddress,
     isReady,
+    openConnect,
   } = usePlayerProfile();
 
   const resolvedName = playerName || profile?.name || "";
@@ -216,19 +218,17 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
             walletAddress?: string;
           };
           const submitWallet =
-            resolvedWallet || payloadWallet || profile?.walletAddress;
+            resolvedWallet || payloadWallet || profile?.walletAddress || "";
 
           if (!submitWallet) {
-            sendToUnity(iframeRef, "OnScoreSubmitted", {
-              success: false,
-              error: "Connect your wallet to submit a score.",
-            });
-            break;
+            // Keep the score pending and prompt reconnect — don't silently fail.
+            openConnect();
           }
 
           setPendingScore({
             score,
             name: playerName || name,
+            walletAddress: submitWallet,
           });
           setScoreSubmitOpen(true);
           break;
@@ -332,6 +332,8 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
       profile?.name,
       profile?.walletAddress,
       walletAddress,
+      resolvedWallet,
+      openConnect,
       shellOrigin,
       playerId,
       resolvedPlayerId,
@@ -339,6 +341,14 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
       scheduleProgressRetries,
     ]
   );
+
+  useEffect(() => {
+    if (!pendingScore?.walletAddress && resolvedWallet) {
+      setPendingScore((prev) =>
+        prev ? { ...prev, walletAddress: resolvedWallet } : prev
+      );
+    }
+  }, [pendingScore?.walletAddress, resolvedWallet]);
 
   useEffect(() => {
     window.addEventListener("message", handleMessage);
@@ -398,13 +408,15 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
         onPlayMore={() => router.push("/")}
       />
 
-      {pendingScore && resolvedWallet && (
+      {pendingScore && (
         <ScoreSubmitModal
           open={scoreSubmitOpen}
           gameId={game.id}
           score={pendingScore.score}
           playerName={pendingScore.name}
-          walletAddress={resolvedWallet}
+          walletAddress={
+            pendingScore.walletAddress || resolvedWallet || ""
+          }
           onClose={() => {
             setScoreSubmitOpen(false);
             setPendingScore(null);
