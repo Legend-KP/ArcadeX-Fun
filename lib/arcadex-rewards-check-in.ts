@@ -66,12 +66,24 @@ export async function checkInOnChain(
   const chain = isAvalancheRewardsChainId(chainId) ? avalanche : base;
   const walletClient = createEvmWalletClient(chain);
   if (!walletClient) {
-    throw new Error("Connect your wallet to check in.");
+    throw new Error(
+      "MetaMask not found. Open MetaMask in this browser, unlock it, then try again."
+    );
   }
 
-  const [account] = await walletClient.getAddresses();
+  let [account] = await walletClient.getAddresses();
   if (!account) {
-    throw new Error("No wallet account available.");
+    try {
+      const requested = await walletClient.requestAddresses();
+      account = requested[0];
+    } catch {
+      // User rejected or provider unavailable
+    }
+  }
+  if (!account) {
+    throw new Error(
+      "No wallet account available. Unlock MetaMask, connect this site, pick your signed-in account, then try again."
+    );
   }
 
   if (opts?.expectedWallet) {
