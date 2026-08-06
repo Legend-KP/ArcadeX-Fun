@@ -6,6 +6,7 @@ import { useSparks } from "@/components/SparkProvider";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import { useChainSettings } from "@/components/ChainSettingsProvider";
 import SparkShopPaymentModal from "@/components/SparkShopPaymentModal";
+import SparkShopAvalanchePaymentModal from "@/components/SparkShopAvalanchePaymentModal";
 import SparkShopSuiPaymentModal from "@/components/SparkShopSuiPaymentModal";
 import SparkShopVaraPaymentModal from "@/components/SparkShopVaraPaymentModal";
 import SparkShopSuccessModal from "@/components/SparkShopSuccessModal";
@@ -303,7 +304,26 @@ export default function SparkBatteryBar() {
       {mounted && panel ? createPortal(panel, document.body) : null}
 
       <SparkShopPaymentModal
-        open={paymentProductId !== null && ecosystem === "evm"}
+        open={
+          paymentProductId !== null &&
+          ecosystem === "evm" &&
+          chainId !== 43114
+        }
+        productId={paymentProductId}
+        playerId={playerId}
+        onClose={() => setPaymentProductId(null)}
+        onSuccess={(purchase) => {
+          void refresh();
+          setSuccessPurchase(purchase);
+        }}
+      />
+
+      <SparkShopAvalanchePaymentModal
+        open={
+          paymentProductId !== null &&
+          ecosystem === "evm" &&
+          chainId === 43114
+        }
         productId={paymentProductId}
         playerId={playerId}
         onClose={() => setPaymentProductId(null)}

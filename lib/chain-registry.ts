@@ -54,7 +54,7 @@ export const CHAIN_REGISTRY: ChainSettingsEntry[] = [
     name: "Avalanche",
     ecosystem: "evm",
     chainId: 43114,
-    defaultShopPayments: false,
+    defaultShopPayments: true,
   },
   {
     key: "beam",

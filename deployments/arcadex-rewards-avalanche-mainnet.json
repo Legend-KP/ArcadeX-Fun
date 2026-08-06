@@ -1,0 +1,33 @@
+{
+  "contract": "ArcadeXRewards",
+  "network": "avalanche-c-chain",
+  "chainId": 43114,
+  "address": "0x978270D917D64da5DeD8030b05b3013642CD29DA",
+  "usdc": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+  "campaignId": 1,
+  "campaignType": "STREAK",
+  "requiredDays": 7,
+  "minIntervalSeconds": 86400,
+  "rewardMode": 0,
+  "rewardMeta": "0x0ab4843ee23ccd969c6d889afda5daeb2a0d59d52a8da8a2b6a3006a8906de71",
+  "resetAfterMilestone": true,
+  "requireEligibility": false,
+  "maxSinglePayout": 0,
+  "startTime": 1786049367,
+  "endTime": 1817585367,
+  "eligibilitySigner": "0x11015f39Ac7389201aEc778Be8e3D84f2aF44A70",
+  "spinResultSigner": "0x0000000000000000000000000000000000000000",
+  "constructorArgs": [
+    "0x11015f39Ac7389201aEc778Be8e3D84f2aF44A70"
+  ],
+  "deployer": "0x11015f39Ac7389201aEc778Be8e3D84f2aF44A70",
+  "deployedAt": "2026-08-06T20:49:32.813Z",
+  "txHash": "0x469e848c1fcd10a8bdf166eca026cde7433edf58462d1f9c189c211fd692e94a",
+  "setCampaignTxHash": "0x08b879cf9f707eb71738124a3d41a2550d1a9dfc57f11555452f819c5eed4aea",
+  "verified": true,
+  "verifiedAt": "2026-08-06T20:50:23.294Z",
+  "verification": {
+    "snowtrace": "https://snowtrace.io/address/0x978270D917D64da5DeD8030b05b3013642CD29DA#code",
+    "sourcify": "https://repo.sourcify.dev/43114/0x978270D917D64da5DeD8030b05b3013642CD29DA"
+  }
+}

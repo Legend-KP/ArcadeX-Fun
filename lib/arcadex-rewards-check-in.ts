@@ -1,13 +1,14 @@
 "use client";
 
 import type { Hash, Hex } from "viem";
-import { base } from "@/lib/chains";
+import { avalanche, base } from "@/lib/chains";
 import { createEvmWalletClient } from "@/lib/evm-wallet-client";
 import {
   ARCADEX_REWARDS_ABI,
-  ARCADEX_REWARDS_CONTRACT_ADDRESS,
-  DEFAULT_STREAK_CAMPAIGN_ID,
-  isArcadeXRewardsConfigured,
+  getArcadeXRewardsAddress,
+  getStreakCampaignIdForChain,
+  isArcadeXRewardsConfiguredForChain,
+  isAvalancheRewardsChainId,
 } from "@/lib/arcadex-rewards";
 
 /** Pull a tx hash out of viem/MetaMask errors when the wallet already broadcast. */
@@ -40,21 +41,23 @@ function extractSubmittedTxHash(error: unknown): Hash | null {
 }
 
 /**
- * Wallet write of ArcadeXRewards.checkIn on Base
+ * Wallet write of ArcadeXRewards.checkIn (Base or Avalanche)
  * (campaigns without eligibility use deadline=0, signature=0x).
  *
  * Returns the tx hash even when local receipt polling flakes — `/api/streak/sync`
- * re-verifies on the server so a Basescan-confirmed check-in still unlocks the app.
+ * re-verifies on the server so a confirmed check-in still unlocks the app.
  */
 export async function checkInOnChain(
-  campaignId: number = DEFAULT_STREAK_CAMPAIGN_ID,
-  opts?: { deadline?: bigint; signature?: Hex }
+  campaignId?: number,
+  opts?: { deadline?: bigint; signature?: Hex; chainId?: number }
 ): Promise<{ txHash: Hash }> {
-  if (!isArcadeXRewardsConfigured()) {
+  const chainId = opts?.chainId;
+  if (!isArcadeXRewardsConfiguredForChain(chainId)) {
     throw new Error("ArcadeXRewards is not configured yet.");
   }
 
-  const walletClient = createEvmWalletClient();
+  const chain = isAvalancheRewardsChainId(chainId) ? avalanche : base;
+  const walletClient = createEvmWalletClient(chain);
   if (!walletClient) {
     throw new Error("Connect your wallet to check in.");
   }
@@ -64,6 +67,9 @@ export async function checkInOnChain(
     throw new Error("No wallet account available.");
   }
 
+  const resolvedCampaignId =
+    campaignId ?? getStreakCampaignIdForChain(chainId);
+
   // Campaigns without requireEligibility ignore these (pass 0 / 0x).
   const deadline = opts?.deadline ?? BigInt(0);
   const signature = opts?.signature ?? ("0x" as Hex);
@@ -72,11 +78,11 @@ export async function checkInOnChain(
   try {
     hash = await walletClient.writeContract({
       account,
-      chain: base,
-      address: ARCADEX_REWARDS_CONTRACT_ADDRESS,
+      chain,
+      address: getArcadeXRewardsAddress(chainId),
       abi: ARCADEX_REWARDS_ABI,
       functionName: "checkIn",
-      args: [BigInt(campaignId), deadline, signature],
+      args: [BigInt(resolvedCampaignId), deadline, signature],
     });
   } catch (err) {
     const submitted = extractSubmittedTxHash(err);

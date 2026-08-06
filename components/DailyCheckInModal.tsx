@@ -15,6 +15,7 @@ import {
 interface DailyCheckInModalProps {
   open: boolean;
   walletAddress: string;
+  chainId?: number;
   status: StreakStatus | null;
   onComplete: (result: {
     day: number;
@@ -118,6 +119,7 @@ function dayNodeState(
 export default function DailyCheckInModal({
   open,
   walletAddress,
+  chainId,
   status,
   onComplete,
 }: DailyCheckInModalProps) {
@@ -144,13 +146,14 @@ export default function DailyCheckInModal({
       try {
         const fresh = await fetchStreakStatus(walletAddress, campaignId, {
           fresh: true,
+          chainId,
         });
         if (cancelled) return;
         setLiveStatus(fresh);
 
         if (!fresh.canCheckIn && fresh.lastCheckInAt > 0) {
           try {
-            await refreshSessionFromCheckIn(walletAddress, campaignId);
+            await refreshSessionFromCheckIn(walletAddress, campaignId, chainId);
           } catch {
             // Session mint is best-effort; UI still shows streak progress.
           }
@@ -163,7 +166,7 @@ export default function DailyCheckInModal({
     return () => {
       cancelled = true;
     };
-  }, [open, walletAddress, status?.campaignId]);
+  }, [open, walletAddress, status?.campaignId, chainId]);
 
   useEffect(() => {
     if (!open) {
@@ -226,7 +229,8 @@ export default function DailyCheckInModal({
     try {
       const result = await performDailyCheckIn(
         walletAddress,
-        view?.campaignId ?? status?.campaignId
+        view?.campaignId ?? status?.campaignId,
+        chainId
       );
       await finishWithResult({
         day: result.day,
@@ -247,13 +251,14 @@ export default function DailyCheckInModal({
         const fresh = await fetchStreakStatus(
           walletAddress,
           view?.campaignId ?? status?.campaignId,
-          { fresh: true }
+          { fresh: true, chainId }
         );
         setLiveStatus(fresh);
         if (!fresh.canCheckIn && fresh.lastCheckInAt > 0) {
           await refreshSessionFromCheckIn(
             walletAddress,
-            view?.campaignId ?? status?.campaignId
+            view?.campaignId ?? status?.campaignId,
+            chainId
           );
           await finishWithResult({
             day: fresh.currentDay,
@@ -267,7 +272,7 @@ export default function DailyCheckInModal({
       }
       setError(
         isPaymentStillConfirmingError(err)
-          ? "Check-in is on Base. Sync is catching up — tap Confirm check-in (do not send another tx)."
+          ? "Check-in submitted on-chain. Sync is catching up — tap Confirm check-in (do not send another tx)."
           : formatChainError(err) || "Check-in failed. Try again."
       );
     } finally {
@@ -283,7 +288,8 @@ export default function DailyCheckInModal({
       const result = await confirmExistingCheckIn(
         walletAddress,
         pendingTxHash,
-        view?.campaignId ?? status?.campaignId
+        view?.campaignId ?? status?.campaignId,
+        chainId
       );
       await finishWithResult({
         day: result.day,
@@ -295,13 +301,14 @@ export default function DailyCheckInModal({
         const fresh = await fetchStreakStatus(
           walletAddress,
           view?.campaignId ?? status?.campaignId,
-          { fresh: true }
+          { fresh: true, chainId }
         );
         setLiveStatus(fresh);
         if (!fresh.canCheckIn && fresh.lastCheckInAt > 0) {
           await refreshSessionFromCheckIn(
             walletAddress,
-            view?.campaignId ?? status?.campaignId
+            view?.campaignId ?? status?.campaignId,
+            chainId
           );
           await finishWithResult({
             day: fresh.currentDay,
@@ -315,7 +322,7 @@ export default function DailyCheckInModal({
       }
       setError(
         isPaymentStillConfirmingError(err)
-          ? "Still syncing with Base. Wait a few seconds and tap Confirm check-in again."
+          ? "Still syncing your check-in. Wait a few seconds and tap Confirm check-in again."
           : formatChainError(err) || "Could not sync check-in."
       );
     } finally {

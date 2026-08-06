@@ -13,6 +13,12 @@ import {
   isBlockOutOfRangeError,
   waitForBaseTransactionReceipt,
 } from "@/lib/base-public-client";
+import {
+  getAvalanchePublicClient,
+  resetAvalanchePublicClient,
+  waitForAvalancheTransactionReceipt,
+} from "@/lib/avalanche-public-client";
+import { isAvalancheRewardsChainId } from "@/lib/arcadex-rewards";
 
 function collectErrorText(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
@@ -58,8 +64,43 @@ function isTransientReceiptError(error: unknown): boolean {
  * RPC rate limits cannot stall Spark Refill / Infinite Spark confirmation.
  */
 export async function getPaymentTransactionReceipt(
-  txHash: Hash
+  txHash: Hash,
+  chainId?: number | null
 ): Promise<TransactionReceipt> {
+  if (isAvalancheRewardsChainId(chainId)) {
+    let lastError: unknown;
+
+    try {
+      return await waitForAvalancheTransactionReceipt(txHash, {
+        confirmations: 1,
+        timeoutMs: 12_000,
+      });
+    } catch (error) {
+      lastError = error;
+      if (!isTransientReceiptError(error)) throw error;
+    }
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 800 + attempt * 400));
+      resetAvalanchePublicClient();
+      try {
+        const receipt = await getAvalanchePublicClient().getTransactionReceipt({
+          hash: txHash,
+        });
+        if (receipt) return receipt;
+      } catch (err) {
+        lastError = err;
+        if (!isTransientReceiptError(err)) throw err;
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(
+          "Payment is still confirming on Avalanche. Wait a moment, then tap Confirm payment."
+        );
+  }
+
   let lastError: unknown;
 
   // Fast path: short wait on rotating public clients.

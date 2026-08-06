@@ -7,16 +7,15 @@ import {
 } from "viem";
 import {
   ARCADEX_REWARDS_ABI,
-  ARCADEX_REWARDS_CONTRACT_ADDRESS,
   DEFAULT_STREAK_CAMPAIGN_ID,
   INFINITE_SPARK_REWARD_META,
   REWARD_OFFCHAIN,
-  isArcadeXRewardsConfigured,
+  getArcadeXRewardsAddress,
+  isArcadeXRewardsConfiguredForChain,
+  isAvalancheRewardsChainId,
 } from "@/lib/arcadex-rewards";
-import {
-  getBasePublicClient,
-  readBaseContractWithFailover,
-} from "@/lib/base-public-client";
+import { readBaseContractWithFailover } from "@/lib/base-public-client";
+import { readAvalancheContractWithFailover } from "@/lib/avalanche-public-client";
 import { getPaymentTransactionReceipt } from "@/lib/payment-tx-verify";
 
 export interface VerifiedCheckIn {
@@ -36,30 +35,44 @@ export interface VerifiedMilestone {
   timestamp: bigint;
 }
 
-function assertConfigured(): void {
-  if (!isArcadeXRewardsConfigured()) {
+function assertConfigured(chainId?: number | null): void {
+  if (!isArcadeXRewardsConfiguredForChain(chainId)) {
     throw new Error("ArcadeXRewards contract address is not configured.");
   }
+}
+
+async function readRewardsContractWithFailover<T>(
+  chainId: number | null | undefined,
+  params: {
+    address: Address;
+    abi: typeof ARCADEX_REWARDS_ABI;
+    functionName: string;
+    args: readonly unknown[];
+  }
+): Promise<T> {
+  if (isAvalancheRewardsChainId(chainId)) {
+    return readAvalancheContractWithFailover<T>(params as never);
+  }
+  return readBaseContractWithFailover<T>(params as never);
 }
 
 export async function verifyCheckInTx(
   walletAddress: string,
   txHash: Hash,
-  expectedCampaignId: number = DEFAULT_STREAK_CAMPAIGN_ID
+  expectedCampaignId: number = DEFAULT_STREAK_CAMPAIGN_ID,
+  chainId?: number | null
 ): Promise<VerifiedCheckIn> {
-  assertConfigured();
+  assertConfigured(chainId);
+  const rewardsAddress = getArcadeXRewardsAddress(chainId);
   const expectedPlayer = getAddress(walletAddress);
   // Fast receipt poll (same path as Spark payments) — long waitFor hangs Workers.
-  const receipt = await getPaymentTransactionReceipt(txHash);
+  const receipt = await getPaymentTransactionReceipt(txHash, chainId);
 
   if (receipt.status !== "success") {
     throw new Error("Check-in transaction did not succeed.");
   }
 
-  if (
-    receipt.to?.toLowerCase() !==
-    ARCADEX_REWARDS_CONTRACT_ADDRESS.toLowerCase()
-  ) {
+  if (receipt.to?.toLowerCase() !== rewardsAddress.toLowerCase()) {
     throw new Error("Transaction was not sent to ArcadeXRewards.");
   }
 
@@ -67,10 +80,7 @@ export async function verifyCheckInTx(
   let milestone: VerifiedMilestone | null = null;
 
   for (const log of receipt.logs) {
-    if (
-      log.address.toLowerCase() !==
-      ARCADEX_REWARDS_CONTRACT_ADDRESS.toLowerCase()
-    ) {
+    if (log.address.toLowerCase() !== rewardsAddress.toLowerCase()) {
       continue;
     }
 
@@ -154,12 +164,14 @@ export async function verifyCheckInTx(
 export async function verifyOffchainMilestoneTx(
   walletAddress: string,
   txHash: Hash,
-  expectedCampaignId: number = DEFAULT_STREAK_CAMPAIGN_ID
+  expectedCampaignId: number = DEFAULT_STREAK_CAMPAIGN_ID,
+  chainId?: number | null
 ): Promise<VerifiedMilestone> {
   const checkIn = await verifyCheckInTx(
     walletAddress,
     txHash,
-    expectedCampaignId
+    expectedCampaignId,
+    chainId
   );
 
   if (!checkIn.milestone) {
@@ -182,21 +194,23 @@ export async function verifyOffchainMilestoneTx(
 
 export async function readStreakProgress(
   walletAddress: string,
-  campaignId: number = DEFAULT_STREAK_CAMPAIGN_ID
+  campaignId: number = DEFAULT_STREAK_CAMPAIGN_ID,
+  chainId?: number | null
 ) {
-  assertConfigured();
+  assertConfigured(chainId);
   const player = getAddress(walletAddress);
+  const rewardsAddress = getArcadeXRewardsAddress(chainId);
 
   const [progress, campaign] = await Promise.all([
-    readBaseContractWithFailover<
+    readRewardsContractWithFailover<
       readonly [number, bigint, boolean, boolean, boolean, boolean, boolean]
-    >({
-      address: ARCADEX_REWARDS_CONTRACT_ADDRESS,
+    >(chainId, {
+      address: rewardsAddress,
       abi: ARCADEX_REWARDS_ABI,
       functionName: "getProgress",
       args: [player, BigInt(campaignId)],
     }),
-    readBaseContractWithFailover<
+    readRewardsContractWithFailover<
       readonly [
         boolean,
         boolean,
@@ -214,8 +228,8 @@ export async function readStreakProgress(
         boolean,
         bigint,
       ]
-    >({
-      address: ARCADEX_REWARDS_CONTRACT_ADDRESS,
+    >(chainId, {
+      address: rewardsAddress,
       abi: ARCADEX_REWARDS_ABI,
       functionName: "getCampaign",
       args: [BigInt(campaignId)],
@@ -291,30 +305,26 @@ export interface VerifiedSpin {
 export async function verifySpinTx(
   walletAddress: string,
   txHash: Hash,
-  expectedCampaignId: number
+  expectedCampaignId: number,
+  chainId?: number | null
 ): Promise<VerifiedSpin> {
-  assertConfigured();
+  assertConfigured(chainId);
+  const rewardsAddress = getArcadeXRewardsAddress(chainId);
   const expectedPlayer = getAddress(walletAddress);
-  const receipt = await getPaymentTransactionReceipt(txHash);
+  const receipt = await getPaymentTransactionReceipt(txHash, chainId);
 
   if (receipt.status !== "success") {
     throw new Error("Spin transaction did not succeed.");
   }
 
-  if (
-    receipt.to?.toLowerCase() !==
-    ARCADEX_REWARDS_CONTRACT_ADDRESS.toLowerCase()
-  ) {
+  if (receipt.to?.toLowerCase() !== rewardsAddress.toLowerCase()) {
     throw new Error("Transaction was not sent to ArcadeXRewards.");
   }
 
   let spin: VerifiedSpin | null = null;
 
   for (const log of receipt.logs) {
-    if (
-      log.address.toLowerCase() !==
-      ARCADEX_REWARDS_CONTRACT_ADDRESS.toLowerCase()
-    ) {
+    if (log.address.toLowerCase() !== rewardsAddress.toLowerCase()) {
       continue;
     }
 
@@ -371,13 +381,13 @@ export async function verifySpinTx(
 
 export async function readSpinNonce(
   walletAddress: string,
-  campaignId: number
+  campaignId: number,
+  chainId?: number | null
 ): Promise<bigint> {
-  assertConfigured();
+  assertConfigured(chainId);
   const player = getAddress(walletAddress);
-  const publicClient = getBasePublicClient();
-  return publicClient.readContract({
-    address: ARCADEX_REWARDS_CONTRACT_ADDRESS,
+  return readRewardsContractWithFailover<bigint>(chainId, {
+    address: getArcadeXRewardsAddress(chainId),
     abi: ARCADEX_REWARDS_ABI,
     functionName: "spinNonce",
     args: [player, BigInt(campaignId)],

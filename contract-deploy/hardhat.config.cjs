@@ -29,9 +29,31 @@ module.exports = {
       chainId: 8453,
       accounts: privateKey ? [privateKey] : [],
     },
+    avalanche: {
+      url:
+        process.env.AVALANCHE_RPC_URL ||
+        "https://api.avax.network/ext/bc/C/rpc",
+      chainId: 43114,
+      accounts: privateKey ? [privateKey] : [],
+    },
   },
   etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY || process.env.BASESCAN_API_KEY || "",
+    // Etherscan API V2 — one key works across supported chains (incl. Avalanche 43114).
+    apiKey:
+      process.env.ETHERSCAN_API_KEY ||
+      process.env.SNOWTRACE_API_KEY ||
+      process.env.BASESCAN_API_KEY ||
+      "",
+    customChains: [
+      {
+        network: "avalanche",
+        chainId: 43114,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=43114",
+          browserURL: "https://snowtrace.io",
+        },
+      },
+    ],
   },
   sourcify: {
     enabled: false,

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
-  DEFAULT_STREAK_CAMPAIGN_ID,
-  isArcadeXRewardsConfigured,
+  getStreakCampaignIdForChain,
+  isArcadeXRewardsConfiguredForChain,
 } from "@/lib/arcadex-rewards";
 import { verifyCheckInTx } from "@/lib/arcadex-rewards-verify";
 import {
@@ -18,6 +18,7 @@ import {
 import { isWalletAddress, normalizeWalletAddress } from "@/lib/wallet-address";
 import { invalidateStreakProgressCache } from "@/lib/streak-progress-cache";
 import { createWalletSessionToken } from "@/lib/wallet-session";
+import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 import type { Hash } from "viem";
 
 export const dynamic = "force-dynamic";
@@ -27,12 +28,6 @@ const SESSION_TTL_SEC = 24 * 60 * 60;
 /**
  * Verify an on-chain checkIn tx, bind a session JWT to that wallet, and
  * auto-grant Infinite Spark if the same tx emitted MilestoneReached.
- *
- * Attack surface closed by:
- * - on-chain msg.sender must match body wallet (via event)
- * - tx must hit ArcadeXRewards and include CheckedIn
- * - txHash can only be synced once per wallet (RTDB replay guard)
- * - JWT cannot be minted for another wallet without their private key / tx
  */
 export async function POST(request: Request) {
   const ip = getClientIp(request);
@@ -41,25 +36,30 @@ export async function POST(request: Request) {
   }
 
   try {
-    if (!isArcadeXRewardsConfigured()) {
+    const body = (await request.json()) as {
+      walletAddress?: string;
+      txHash?: string;
+      campaignId?: number;
+      chainId?: number;
+    };
+
+    const rawWallet = body.walletAddress?.trim() ?? "";
+    const txHash = body.txHash?.trim() ?? "";
+    const chainId =
+      typeof body.chainId === "number" && Number.isFinite(body.chainId)
+        ? body.chainId
+        : PRIMARY_EVM_CHAIN_ID;
+    const campaignId =
+      typeof body.campaignId === "number" && Number.isFinite(body.campaignId)
+        ? body.campaignId
+        : getStreakCampaignIdForChain(chainId);
+
+    if (!isArcadeXRewardsConfiguredForChain(chainId)) {
       return NextResponse.json(
         { error: "Streak rewards are not configured yet.", code: "NOT_CONFIGURED" },
         { status: 503 }
       );
     }
-
-    const body = (await request.json()) as {
-      walletAddress?: string;
-      txHash?: string;
-      campaignId?: number;
-    };
-
-    const rawWallet = body.walletAddress?.trim() ?? "";
-    const txHash = body.txHash?.trim() ?? "";
-    const campaignId =
-      typeof body.campaignId === "number" && Number.isFinite(body.campaignId)
-        ? body.campaignId
-        : DEFAULT_STREAK_CAMPAIGN_ID;
 
     if (!rawWallet || !isWalletAddress(rawWallet)) {
       return NextResponse.json(
@@ -79,7 +79,12 @@ export async function POST(request: Request) {
 
     let verified;
     try {
-      verified = await verifyCheckInTx(wallet, txHash as Hash, campaignId);
+      verified = await verifyCheckInTx(
+        wallet,
+        txHash as Hash,
+        campaignId,
+        chainId
+      );
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Invalid check-in transaction.";
@@ -90,7 +95,7 @@ export async function POST(request: Request) {
     }
 
     await recordCheckInTxOnServer(wallet, txHash, verified.day, campaignId);
-    await invalidateStreakProgressCache(wallet, campaignId);
+    await invalidateStreakProgressCache(wallet, campaignId, chainId);
 
     const token = await createWalletSessionToken(wallet);
 
@@ -128,6 +133,7 @@ export async function POST(request: Request) {
       walletAddress: wallet,
       day: verified.day,
       campaignId,
+      chainId,
       milestone: Boolean(verified.milestone),
       token,
       expiresIn: SESSION_TTL_SEC,

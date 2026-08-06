@@ -10,7 +10,7 @@ import {
   useWriteContract,
 } from "wagmi";
 import { formatUnits, maxUint256, type Hash } from "viem";
-import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
+import { avalanche, PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 import { formatChainError } from "@/lib/base-public-client";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
 import { submitPaidScore } from "@/lib/leaderboard-client";
@@ -21,12 +21,20 @@ import {
   SHOP_TOKEN_DECIMALS,
   type ShopPaymentToken,
 } from "@/lib/shop";
+import {
+  AVALANCHE_SHOP_PAYMENT_TOKENS,
+  AVALANCHE_SHOP_RECIPIENT_ADDRESS,
+  AVALANCHE_SHOP_TOKEN_DECIMALS,
+  type AvalancheShopPaymentToken,
+} from "@/lib/shop-avalanche";
 import { formatScoreSubmitPrice, scoreSubmitPriceToAmount } from "@/lib/score-submit";
 import {
   isScoreSubmitContractConfigured,
   SCORE_SUBMIT_ABI,
   SCORE_SUBMIT_CONTRACT_ADDRESS,
 } from "@/lib/score-submit-contract";
+
+const AVALANCHE_CHAIN_ID = avalanche.id;
 
 interface ScoreSubmitModalProps {
   open: boolean;
@@ -39,6 +47,7 @@ interface ScoreSubmitModalProps {
 }
 
 type PaymentStep = "network" | "token" | "paying" | "confirming";
+type PaymentToken = ShopPaymentToken | AvalancheShopPaymentToken;
 
 function formatTokenBalance(balance: bigint, decimals: number): string {
   const formatted = formatUnits(balance, decimals);
@@ -132,48 +141,61 @@ export default function ScoreSubmitModal({
   const chainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
-  const { openConnect } = usePlayerProfile();
+  const { openConnect, chainId: profileChainId } = usePlayerProfile();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<PaymentStep>("token");
-  const [selectedToken, setSelectedToken] = useState<ShopPaymentToken | null>(
-    null
-  );
+  const [selectedToken, setSelectedToken] = useState<PaymentToken | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const onPrimaryChain = chainId === PRIMARY_EVM_CHAIN_ID;
+  const isAvalanche = profileChainId === AVALANCHE_CHAIN_ID;
+  const targetChainId = isAvalanche ? AVALANCHE_CHAIN_ID : PRIMARY_EVM_CHAIN_ID;
+  const networkLabel = isAvalanche ? "Avalanche" : "Base";
+  const gasLabel = isAvalanche ? "AVAX" : "ETH";
+  const onTargetChain = chainId === targetChainId;
   const requiredAmount = scoreSubmitPriceToAmount();
-  const scoreContractConfigured = isScoreSubmitContractConfigured();
+  const scoreContractConfigured =
+    !isAvalanche && isScoreSubmitContractConfigured();
+  const paymentTokens = isAvalanche
+    ? AVALANCHE_SHOP_PAYMENT_TOKENS
+    : SHOP_PAYMENT_TOKENS;
+  const defaultDecimals = isAvalanche
+    ? AVALANCHE_SHOP_TOKEN_DECIMALS
+    : SHOP_TOKEN_DECIMALS;
 
   const { data: contractData, isLoading: balancesLoading } = useReadContracts({
     contracts: [
-      ...SHOP_PAYMENT_TOKENS.flatMap((token) => [
+      ...paymentTokens.flatMap((token) => [
         {
           address: token.address,
           abi: erc20Abi,
           functionName: "balanceOf" as const,
           args: [address!],
-          chainId: PRIMARY_EVM_CHAIN_ID,
+          chainId: targetChainId,
         },
         {
           address: token.address,
           abi: erc20Abi,
           functionName: "decimals" as const,
-          chainId: PRIMARY_EVM_CHAIN_ID,
+          chainId: targetChainId,
         },
-        {
-          address: token.address,
-          abi: erc20Abi,
-          functionName: "allowance" as const,
-          args: [
-            address!,
-            scoreContractConfigured
-              ? SCORE_SUBMIT_CONTRACT_ADDRESS
-              : token.address,
-          ],
-          chainId: PRIMARY_EVM_CHAIN_ID,
-        },
+        ...(isAvalanche
+          ? []
+          : [
+              {
+                address: token.address,
+                abi: erc20Abi,
+                functionName: "allowance" as const,
+                args: [
+                  address!,
+                  scoreContractConfigured
+                    ? SCORE_SUBMIT_CONTRACT_ADDRESS
+                    : token.address,
+                ],
+                chainId: targetChainId,
+              },
+            ]),
       ]),
       ...(scoreContractConfigured
         ? [
@@ -193,26 +215,32 @@ export default function ScoreSubmitModal({
         : []),
     ],
     query: {
-      enabled: open && Boolean(address) && onPrimaryChain,
+      enabled: open && Boolean(address) && onTargetChain,
     },
   });
 
+  const fieldsPerToken = isAvalanche ? 2 : 3;
   const onChainFee =
     scoreContractConfigured &&
-    contractData?.[SHOP_PAYMENT_TOKENS.length * 3]?.status === "success"
-      ? (contractData[SHOP_PAYMENT_TOKENS.length * 3]!.result as bigint)
+    contractData?.[paymentTokens.length * fieldsPerToken]?.status === "success"
+      ? (contractData[paymentTokens.length * fieldsPerToken]!.result as bigint)
       : null;
   const contractPaused =
     scoreContractConfigured &&
-    contractData?.[SHOP_PAYMENT_TOKENS.length * 3 + 1]?.status === "success"
-      ? Boolean(contractData[SHOP_PAYMENT_TOKENS.length * 3 + 1]!.result)
+    contractData?.[paymentTokens.length * fieldsPerToken + 1]?.status ===
+      "success"
+      ? Boolean(
+          contractData[paymentTokens.length * fieldsPerToken + 1]!.result
+        )
       : false;
 
   const tokenOptions = useMemo(() => {
-    return SHOP_PAYMENT_TOKENS.map((token, index) => {
-      const balanceResult = contractData?.[index * 3];
-      const decimalsResult = contractData?.[index * 3 + 1];
-      const allowanceResult = contractData?.[index * 3 + 2];
+    return paymentTokens.map((token, index) => {
+      const balanceResult = contractData?.[index * fieldsPerToken];
+      const decimalsResult = contractData?.[index * fieldsPerToken + 1];
+      const allowanceResult = isAvalanche
+        ? undefined
+        : contractData?.[index * fieldsPerToken + 2];
       const balance: bigint =
         balanceResult?.status === "success"
           ? BigInt(balanceResult.result as bigint)
@@ -220,7 +248,7 @@ export default function ScoreSubmitModal({
       const decimals =
         decimalsResult?.status === "success"
           ? Number(decimalsResult.result)
-          : SHOP_TOKEN_DECIMALS;
+          : defaultDecimals;
       const allowance: bigint =
         allowanceResult?.status === "success"
           ? BigInt(allowanceResult.result as bigint)
@@ -238,10 +266,18 @@ export default function ScoreSubmitModal({
         balanceLabel: formatTokenBalance(balance, decimals),
       };
     });
-  }, [contractData, requiredAmount, onChainFee]);
+  }, [
+    contractData,
+    requiredAmount,
+    onChainFee,
+    paymentTokens,
+    fieldsPerToken,
+    isAvalanche,
+    defaultDecimals,
+  ]);
 
   const confirmSubmit = useCallback(
-    async (hash: `0x${string}`, token: ShopPaymentToken) => {
+    async (hash: `0x${string}`, token: PaymentToken) => {
       setStep("confirming");
       setBusy(true);
       setError("");
@@ -261,7 +297,7 @@ export default function ScoreSubmitModal({
       } catch (err) {
         setError(
           isPaymentStillConfirmingError(err)
-            ? "Payment submitted on Base. Confirmation is still catching up — tap Confirm submit (do not pay again)."
+            ? `Payment submitted on ${networkLabel}. Confirmation is still catching up — tap Confirm submit (do not pay again).`
             : formatChainError(err) || "Could not submit score."
         );
         setStep("token");
@@ -269,7 +305,16 @@ export default function ScoreSubmitModal({
         setBusy(false);
       }
     },
-    [gameId, score, address, walletAddress, playerName, onSuccess, onClose]
+    [
+      gameId,
+      score,
+      address,
+      walletAddress,
+      playerName,
+      onSuccess,
+      onClose,
+      networkLabel,
+    ]
   );
 
   useEffect(() => {
@@ -288,28 +333,28 @@ export default function ScoreSubmitModal({
 
   useEffect(() => {
     if (!open) return;
-    setStep(onPrimaryChain ? "token" : "network");
-  }, [open, onPrimaryChain]);
+    setStep(onTargetChain ? "token" : "network");
+  }, [open, onTargetChain]);
 
   const handleSwitchNetwork = useCallback(async () => {
     setBusy(true);
     setError("");
     try {
-      await switchChainAsync({ chainId: PRIMARY_EVM_CHAIN_ID });
+      await switchChainAsync({ chainId: targetChainId });
       setStep("token");
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Could not switch network. Approve the switch in your wallet."
+          : `Could not switch to ${networkLabel}. Approve the switch in your wallet.`
       );
     } finally {
       setBusy(false);
     }
-  }, [switchChainAsync]);
+  }, [switchChainAsync, targetChainId, networkLabel]);
 
   const handlePay = useCallback(
-    async (token?: ShopPaymentToken) => {
+    async (token?: PaymentToken) => {
       const payToken = token ?? selectedToken;
       if (!payToken) return;
 
@@ -327,13 +372,15 @@ export default function ScoreSubmitModal({
         return;
       }
 
-      if (!isScoreSubmitContractConfigured()) {
-        setError("Score submit contract is not configured.");
-        return;
-      }
-      if (contractPaused) {
-        setError("Score submit is temporarily paused. Try again later.");
-        return;
+      if (!isAvalanche) {
+        if (!isScoreSubmitContractConfigured()) {
+          setError("Score submit contract is not configured.");
+          return;
+        }
+        if (contractPaused) {
+          setError("Score submit is temporarily paused. Try again later.");
+          return;
+        }
       }
 
       setSelectedToken(payToken);
@@ -342,22 +389,34 @@ export default function ScoreSubmitModal({
       setStep("paying");
 
       try {
-        if (option.allowance < option.requiredAmount) {
-          await writeContractAsync({
+        let hash: Hash;
+
+        if (isAvalanche) {
+          hash = await writeContractAsync({
             address: payToken.address,
             abi: erc20Abi,
-            functionName: "approve",
-            args: [SCORE_SUBMIT_CONTRACT_ADDRESS, maxUint256],
+            functionName: "transfer",
+            args: [AVALANCHE_SHOP_RECIPIENT_ADDRESS, option.requiredAmount],
+            chainId: AVALANCHE_CHAIN_ID,
+          });
+        } else {
+          if (option.allowance < option.requiredAmount) {
+            await writeContractAsync({
+              address: payToken.address,
+              abi: erc20Abi,
+              functionName: "approve",
+              args: [SCORE_SUBMIT_CONTRACT_ADDRESS, maxUint256],
+              chainId: PRIMARY_EVM_CHAIN_ID,
+            });
+          }
+
+          hash = await writeContractAsync({
+            address: SCORE_SUBMIT_CONTRACT_ADDRESS,
+            abi: SCORE_SUBMIT_ABI,
+            functionName: "payWithUSDC",
             chainId: PRIMARY_EVM_CHAIN_ID,
           });
         }
-
-        const hash = await writeContractAsync({
-          address: SCORE_SUBMIT_CONTRACT_ADDRESS,
-          abi: SCORE_SUBMIT_ABI,
-          functionName: "payWithUSDC",
-          chainId: PRIMARY_EVM_CHAIN_ID,
-        });
 
         setTxHash(hash);
         await confirmSubmit(hash, payToken);
@@ -372,7 +431,7 @@ export default function ScoreSubmitModal({
             setStep("token");
             setError(
               isPaymentStillConfirmingError(confirmErr)
-                ? "Payment submitted on Base. Confirmation is still catching up — tap Confirm submit (do not pay again)."
+                ? `Payment submitted on ${networkLabel}. Confirmation is still catching up — tap Confirm submit (do not pay again).`
                 : formatChainError(confirmErr) || "Could not submit score."
             );
             return;
@@ -395,6 +454,8 @@ export default function ScoreSubmitModal({
       writeContractAsync,
       confirmSubmit,
       contractPaused,
+      isAvalanche,
+      networkLabel,
     ]
   );
 
@@ -404,7 +465,7 @@ export default function ScoreSubmitModal({
   }, [selectedToken, txHash, confirmSubmit]);
 
   const handleTokenSelect = useCallback(
-    (token: ShopPaymentToken, sufficient: boolean) => {
+    (token: PaymentToken, sufficient: boolean) => {
       if (!sufficient || busy) return;
       setSelectedToken(token);
       setError("");
@@ -415,7 +476,7 @@ export default function ScoreSubmitModal({
 
   if (!open || !mounted) return null;
 
-  const showTokenStep = step === "token" && onPrimaryChain;
+  const showTokenStep = step === "token" && onTargetChain;
 
   const modal = (
     <div
@@ -445,7 +506,7 @@ export default function ScoreSubmitModal({
             Submit to Leaderboard
           </h2>
           <p className="spark-shop-payment__price">
-            Pay {formatScoreSubmitPrice()} in USDC
+            Pay {formatScoreSubmitPrice()} in USDC on {networkLabel}
           </p>
           <p className="spark-shop-payment__desc">
             Your score of <strong>{score.toLocaleString()}</strong> will appear
@@ -455,7 +516,8 @@ export default function ScoreSubmitModal({
           {!isConnected && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__error" role="alert">
-                Wallet disconnected. Reconnect to pay with USDC on Base.
+                Wallet disconnected. Reconnect to pay with USDC on{" "}
+                {networkLabel}.
               </p>
               <button
                 type="button"
@@ -471,7 +533,8 @@ export default function ScoreSubmitModal({
           {isConnected && step === "network" && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
-                Switch to Base to pay with USDC. Gas is paid in ETH.
+                Switch to {networkLabel} to pay with USDC. Gas is paid in{" "}
+                {gasLabel}.
               </p>
               <button
                 type="button"
@@ -479,7 +542,7 @@ export default function ScoreSubmitModal({
                 onClick={() => void handleSwitchNetwork()}
                 disabled={busy}
               >
-                Switch to Base
+                Switch to {networkLabel}
               </button>
             </div>
           )}
@@ -487,7 +550,9 @@ export default function ScoreSubmitModal({
           {isConnected && showTokenStep && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
-                Select USDC to pay {formatScoreSubmitPrice()}.
+                {isAvalanche
+                  ? `Select USDC to transfer ${formatScoreSubmitPrice()} on Avalanche. Gas is paid in AVAX.`
+                  : `Select USDC to pay ${formatScoreSubmitPrice()}.`}
               </p>
               {balancesLoading ? (
                 <p className="spark-shop-payment__hint">Loading balances…</p>

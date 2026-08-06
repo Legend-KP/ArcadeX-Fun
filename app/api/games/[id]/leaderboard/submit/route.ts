@@ -17,6 +17,7 @@ import { isWalletAddress, tryNormalizeWalletAddress } from "@/lib/wallet-address
 import { verifyScoreSubmitPayment } from "@/lib/score-submit-server";
 import { parsePlayerId, resolvePlayerId } from "@/lib/player-identity";
 import type { WalletEcosystem } from "@/lib/player-identity";
+import { readSessionFromCookies } from "@/lib/auth-session";
 
 export const dynamic = "force-dynamic";
 
@@ -93,12 +94,14 @@ export async function POST(
     }
 
     const ecosystem = resolveEcosystem(body);
+    const session = await readSessionFromCookies();
 
     await verifyScoreSubmitPayment({
       ecosystem,
       txHash,
       tokenAddress: body.tokenAddress,
       expectedFrom: wallet,
+      chainId: session?.chainId,
     });
 
     const contestStartedAt =

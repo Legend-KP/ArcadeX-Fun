@@ -29,7 +29,7 @@ export interface ShopPurchaseSuccess {
   productId: ShopProductId;
   txHash: string;
   tokenSymbol: string;
-  network: "base" | "megaeth" | "sui" | "vara";
+  network: "base" | "megaeth" | "avalanche" | "sui" | "vara";
 }
 
 export const SHOP_TOKEN_DECIMALS = 6;

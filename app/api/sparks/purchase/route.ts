@@ -12,12 +12,16 @@ import {
   type ShopProductId,
 } from "@/lib/shop";
 import { verifyShopPaymentTx } from "@/lib/shop-server";
+import { findAvalancheShopPaymentToken } from "@/lib/shop-avalanche";
+import { verifyAvalancheShopPaymentTx } from "@/lib/shop-avalanche-server";
 import { isValidSuiTxDigest } from "@/lib/shop-sui";
 import { verifySuiShopPaymentTx } from "@/lib/shop-sui-server";
 import { findVaraShopPaymentToken, isValidVaraExtrinsicHash } from "@/lib/shop-vara";
 import { verifyVaraShopPaymentTx } from "@/lib/shop-vara-server";
 import { fetchChainSettingsFromServer } from "@/lib/chain-settings-server";
 import { isShopPaymentsEnabled } from "@/lib/chain-registry";
+
+const AVALANCHE_C_CHAIN_ID = 43114;
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +60,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Shop purchases require an EVM wallet on Base, a Sui wallet, or a Vara wallet.",
+            "Shop purchases require an EVM wallet on Base or Avalanche, a Sui wallet, or a Vara wallet.",
           code: "UNSUPPORTED_WALLET",
         },
         { status: 400 }
@@ -94,6 +98,35 @@ export async function POST(request: Request) {
           { error: "A valid transaction hash is required.", code: "INVALID_TX" },
           { status: 400 }
         );
+      }
+
+      if (session.chainId === AVALANCHE_C_CHAIN_ID) {
+        const token = findAvalancheShopPaymentToken(body.tokenAddress ?? "");
+        if (!token) {
+          return NextResponse.json(
+            {
+              error: "Unsupported Avalanche payment token.",
+              code: "INVALID_TOKEN",
+            },
+            { status: 400 }
+          );
+        }
+
+        await verifyAvalancheShopPaymentTx({
+          txHash: txId as Hash,
+          productId: productId as ShopProductId,
+          tokenAddress: getAddress(token.address),
+          expectedFrom: session.address,
+        });
+
+        const result = await applyShopPurchaseOnServer(
+          playerId,
+          productId as ShopProductId,
+          txId,
+          "evm"
+        );
+
+        return NextResponse.json(result);
       }
 
       const token = findShopPaymentToken(body.tokenAddress ?? "");

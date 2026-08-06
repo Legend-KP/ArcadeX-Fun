@@ -1,5 +1,6 @@
 import { readStreakProgress } from "@/lib/arcadex-rewards-verify";
 import { getWorkerKv } from "@/lib/worker-kv";
+import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 
 /** On-chain streak reads are expensive — cache per wallet to cut Worker CPU. */
 export const STREAK_PROGRESS_CACHE_MS = 5 * 60 * 1000;
@@ -11,16 +12,22 @@ type CacheEntry = { value: StreakProgress; expiresAt: number };
 
 const memoryCache = new Map<string, CacheEntry>();
 
-function cacheKey(wallet: string, campaignId: number): string {
-  return `${wallet.toLowerCase()}:${campaignId}`;
+function cacheKey(
+  wallet: string,
+  campaignId: number,
+  chainId?: number | null
+): string {
+  const chain = chainId == null ? PRIMARY_EVM_CHAIN_ID : Number(chainId);
+  return `${chain}:${wallet.toLowerCase()}:${campaignId}`;
 }
 
 export async function getStreakProgressCached(
   wallet: string,
   campaignId: number,
-  opts?: { fresh?: boolean }
+  opts?: { fresh?: boolean; chainId?: number | null }
 ): Promise<StreakProgress> {
-  const key = cacheKey(wallet, campaignId);
+  const chainId = opts?.chainId;
+  const key = cacheKey(wallet, campaignId, chainId);
   const now = Date.now();
 
   if (!opts?.fresh) {
@@ -48,7 +55,7 @@ export async function getStreakProgressCached(
     memoryCache.delete(key);
   }
 
-  const value = await readStreakProgress(wallet, campaignId);
+  const value = await readStreakProgress(wallet, campaignId, chainId);
   const entry: CacheEntry = {
     value,
     expiresAt: now + STREAK_PROGRESS_CACHE_MS,
@@ -71,9 +78,10 @@ export async function getStreakProgressCached(
 
 export async function invalidateStreakProgressCache(
   wallet: string,
-  campaignId: number
+  campaignId: number,
+  chainId?: number | null
 ): Promise<void> {
-  const key = cacheKey(wallet, campaignId);
+  const key = cacheKey(wallet, campaignId, chainId);
   memoryCache.delete(key);
 
   const kv = await getWorkerKv();

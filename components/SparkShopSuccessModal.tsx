@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { megaeth } from "@/lib/chains";
 import { SUI_SHOP_EXPLORER_TX_URL } from "@/lib/shop-sui";
 import { VARA_SHOP_EXPLORER_TX_URL } from "@/lib/shop-vara";
+import { AVALANCHE_SHOP_EXPLORER_TX_URL } from "@/lib/shop-avalanche";
 import {
   formatShopPrice,
   SHOP_PRODUCTS,
@@ -41,9 +42,13 @@ export default function SparkShopSuccessModal({
       ? `${SUI_SHOP_EXPLORER_TX_URL}/${purchase.txHash}`
       : purchase.network === "vara"
         ? `${VARA_SHOP_EXPLORER_TX_URL}/${purchase.txHash}`
-      : megaeth.blockExplorers?.default.url
-        ? `${megaeth.blockExplorers.default.url}/tx/${purchase.txHash}`
-        : null;
+        : purchase.network === "avalanche"
+          ? `${AVALANCHE_SHOP_EXPLORER_TX_URL}/${purchase.txHash}`
+          : purchase.network === "base"
+            ? `https://basescan.org/tx/${purchase.txHash}`
+            : megaeth.blockExplorers?.default.url
+              ? `${megaeth.blockExplorers.default.url}/tx/${purchase.txHash}`
+              : null;
 
   const modal = (
     <div

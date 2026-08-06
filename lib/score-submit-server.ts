@@ -14,7 +14,11 @@ import { isValidVaraExtrinsicHash } from "@/lib/shop-vara";
 import { verifyScoreSubmitContractPaymentTx } from "@/lib/score-submit-contract-verify";
 import { isScoreSubmitContractConfigured } from "@/lib/score-submit-contract";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
+import { findAvalancheShopPaymentToken } from "@/lib/shop-avalanche";
+import { verifyAvalancheScoreSubmitPayment } from "@/lib/shop-avalanche-server";
 import type { WalletEcosystem } from "@/lib/player-identity";
+
+const AVALANCHE_C_CHAIN_ID = 43114;
 
 /** Fixed-amount payment verification for public score submit. */
 export async function verifyScoreSubmitPayment(params: {
@@ -22,10 +26,23 @@ export async function verifyScoreSubmitPayment(params: {
   txHash: string;
   tokenAddress?: string;
   expectedFrom: string;
+  chainId?: number;
 }): Promise<void> {
   const requiredAmount = scoreSubmitPriceToAmount();
 
   if (params.ecosystem === "evm") {
+    if (params.chainId === AVALANCHE_C_CHAIN_ID) {
+      const token = findAvalancheShopPaymentToken(params.tokenAddress ?? "");
+      if (!token) throw new Error("Unsupported Avalanche payment token.");
+
+      await verifyAvalancheScoreSubmitPayment({
+        txHash: params.txHash as Hash,
+        tokenAddress: getAddress(token.address),
+        expectedFrom: params.expectedFrom,
+      });
+      return;
+    }
+
     const token = findShopPaymentToken(params.tokenAddress ?? "");
     if (!token) throw new Error("Unsupported payment token.");
 

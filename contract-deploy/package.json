@@ -8,10 +8,12 @@
     "deploy:score-submit": "hardhat run scripts/deploy-score-submit.cjs --network base",
     "deploy:infinite-spark": "hardhat run scripts/deploy-infinite-spark.cjs --network base",
     "deploy:arcadex-rewards": "hardhat run scripts/deploy-arcadex-rewards.cjs --network base",
+    "deploy:arcadex-rewards:avalanche": "hardhat run scripts/deploy-arcadex-rewards-avalanche.cjs --network avalanche",
     "verify:spark-refill": "node scripts/verify-spark-refill.cjs",
     "verify:score-submit": "node scripts/verify-score-submit.cjs",
     "verify:infinite-spark": "node scripts/verify-infinite-spark.cjs",
     "verify:arcadex-rewards": "node scripts/verify-arcadex-rewards.cjs",
+    "verify:arcadex-rewards:avalanche": "node scripts/verify-arcadex-rewards-avalanche.cjs",
     "verify:all": "node scripts/verify-all-base.cjs"
   },
   "devDependencies": {

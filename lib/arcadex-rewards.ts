@@ -4,6 +4,11 @@ import {
   BASE_MAINNET_DEPLOYMENTS,
   envAddress,
 } from "@/lib/base-deployments";
+import {
+  AVALANCHE_MAINNET_DEPLOYMENTS,
+  avalancheEnvAddress,
+} from "@/lib/avalanche-deployments";
+import { avalanche, base, PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 
 /** ArcadeXRewards on Base mainnet — daily check-in is app sign-in. */
 export const ARCADEX_REWARDS_CONTRACT_ADDRESS = envAddress(
@@ -11,10 +16,64 @@ export const ARCADEX_REWARDS_CONTRACT_ADDRESS = envAddress(
   BASE_MAINNET_DEPLOYMENTS.arcadeXRewards
 );
 
+/** ArcadeXRewards on Avalanche C-Chain — parallel streak check-in. */
+export const AVALANCHE_ARCADEX_REWARDS_CONTRACT_ADDRESS = avalancheEnvAddress(
+  process.env.NEXT_PUBLIC_AVALANCHE_ARCADEX_REWARDS_CONTRACT,
+  AVALANCHE_MAINNET_DEPLOYMENTS.arcadeXRewards
+);
+
 export const DEFAULT_STREAK_CAMPAIGN_ID = Number(
   process.env.NEXT_PUBLIC_STREAK_CAMPAIGN_ID?.trim() ||
     String(BASE_MAINNET_DEPLOYMENTS.streakCampaignId)
 );
+
+export const AVALANCHE_STREAK_CAMPAIGN_ID = Number(
+  process.env.NEXT_PUBLIC_AVALANCHE_STREAK_CAMPAIGN_ID?.trim() ||
+    String(AVALANCHE_MAINNET_DEPLOYMENTS.streakCampaignId)
+);
+
+export const AVALANCHE_CHAIN_ID = avalanche.id;
+
+export function isAvalancheRewardsChainId(chainId?: number | null): boolean {
+  return Number(chainId) === AVALANCHE_CHAIN_ID;
+}
+
+export function getArcadeXRewardsAddress(
+  chainId?: number | null
+): Address {
+  if (isAvalancheRewardsChainId(chainId)) {
+    return AVALANCHE_ARCADEX_REWARDS_CONTRACT_ADDRESS;
+  }
+  return ARCADEX_REWARDS_CONTRACT_ADDRESS;
+}
+
+export function getStreakCampaignIdForChain(
+  chainId?: number | null
+): number {
+  if (isAvalancheRewardsChainId(chainId)) {
+    return AVALANCHE_STREAK_CAMPAIGN_ID;
+  }
+  return DEFAULT_STREAK_CAMPAIGN_ID;
+}
+
+export function isArcadeXRewardsConfiguredForChain(
+  chainId?: number | null
+): boolean {
+  if (isAvalancheRewardsChainId(chainId)) {
+    return (
+      AVALANCHE_ARCADEX_REWARDS_CONTRACT_ADDRESS !==
+      "0x0000000000000000000000000000000000000000"
+    );
+  }
+  if (
+    chainId == null ||
+    Number(chainId) === PRIMARY_EVM_CHAIN_ID ||
+    Number(chainId) === base.id
+  ) {
+    return isArcadeXRewardsConfigured();
+  }
+  return false;
+}
 
 export const CAMPAIGN_TYPE_STREAK = 0;
 export const CAMPAIGN_TYPE_SHUFFLE = 1;
@@ -401,5 +460,12 @@ export function isArcadeXRewardsConfigured(): boolean {
   return (
     ARCADEX_REWARDS_CONTRACT_ADDRESS !==
     "0x0000000000000000000000000000000000000000"
+  );
+}
+
+export function isAnyArcadeXRewardsConfigured(): boolean {
+  return (
+    isArcadeXRewardsConfigured() ||
+    isArcadeXRewardsConfiguredForChain(AVALANCHE_CHAIN_ID)
   );
 }

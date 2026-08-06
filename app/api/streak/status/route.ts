@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import {
-  isArcadeXRewardsConfigured,
+  isArcadeXRewardsConfiguredForChain,
+  getStreakCampaignIdForChain,
 } from "@/lib/arcadex-rewards";
-import { getDailyCampaignId } from "@/lib/daily-play-mode";
 import { STREAK_PROGRESS_CACHE_MS, getStreakProgressCached } from "@/lib/streak-progress-cache";
 import {
   checkRateLimit,
@@ -10,6 +10,7 @@ import {
   rateLimitResponse,
 } from "@/lib/rate-limit";
 import { isWalletAddress, normalizeWalletAddress } from "@/lib/wallet-address";
+import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 
 export const dynamic = "force-dynamic";
 
@@ -20,18 +21,23 @@ export async function GET(request: Request) {
   }
 
   try {
-    if (!isArcadeXRewardsConfigured()) {
+    const { searchParams } = new URL(request.url);
+    const rawWallet = searchParams.get("walletAddress")?.trim() ?? "";
+    const chainIdRaw = searchParams.get("chainId");
+    const chainId =
+      chainIdRaw != null && chainIdRaw !== ""
+        ? Number(chainIdRaw)
+        : PRIMARY_EVM_CHAIN_ID;
+    const campaignId = Number(
+      searchParams.get("campaignId") ?? getStreakCampaignIdForChain(chainId)
+    );
+
+    if (!isArcadeXRewardsConfiguredForChain(chainId)) {
       return NextResponse.json(
         { error: "Streak rewards are not configured yet.", configured: false },
         { status: 503 }
       );
     }
-
-    const { searchParams } = new URL(request.url);
-    const rawWallet = searchParams.get("walletAddress")?.trim() ?? "";
-    const campaignId = Number(
-      searchParams.get("campaignId") ?? getDailyCampaignId()
-    );
 
     if (!rawWallet || !isWalletAddress(rawWallet)) {
       return NextResponse.json(
@@ -47,15 +53,23 @@ export async function GET(request: Request) {
       );
     }
 
+    if (!Number.isFinite(chainId)) {
+      return NextResponse.json(
+        { error: "Invalid chainId." },
+        { status: 400 }
+      );
+    }
+
     const wallet = normalizeWalletAddress(rawWallet);
     const fresh = searchParams.get("fresh") === "1";
     const status = await getStreakProgressCached(wallet, campaignId, {
       fresh,
+      chainId,
     });
     const maxAgeSec = fresh ? 0 : Math.floor(STREAK_PROGRESS_CACHE_MS / 1000);
 
     return NextResponse.json(
-      { configured: true, ...status },
+      { configured: true, chainId, ...status },
       {
         headers: {
           "Cache-Control": fresh

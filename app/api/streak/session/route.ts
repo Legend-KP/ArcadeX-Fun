@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import {
-  isArcadeXRewardsConfigured,
+  getStreakCampaignIdForChain,
+  isArcadeXRewardsConfiguredForChain,
 } from "@/lib/arcadex-rewards";
-import { getDailyCampaignId } from "@/lib/daily-play-mode";
 import { getStreakProgressCached } from "@/lib/streak-progress-cache";
 import {
   checkRateLimit,
@@ -11,6 +11,7 @@ import {
 } from "@/lib/rate-limit";
 import { isWalletAddress, normalizeWalletAddress } from "@/lib/wallet-address";
 import { createWalletSessionToken } from "@/lib/wallet-session";
+import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 
 export const dynamic = "force-dynamic";
 
@@ -28,23 +29,28 @@ export async function POST(request: Request) {
   }
 
   try {
-    if (!isArcadeXRewardsConfigured()) {
+    const body = (await request.json()) as {
+      walletAddress?: string;
+      campaignId?: number;
+      chainId?: number;
+    };
+
+    const rawWallet = body.walletAddress?.trim() ?? "";
+    const chainId =
+      typeof body.chainId === "number" && Number.isFinite(body.chainId)
+        ? body.chainId
+        : PRIMARY_EVM_CHAIN_ID;
+    const campaignId =
+      typeof body.campaignId === "number" && Number.isFinite(body.campaignId)
+        ? body.campaignId
+        : getStreakCampaignIdForChain(chainId);
+
+    if (!isArcadeXRewardsConfiguredForChain(chainId)) {
       return NextResponse.json(
         { error: "Streak rewards are not configured yet.", code: "NOT_CONFIGURED" },
         { status: 503 }
       );
     }
-
-    const body = (await request.json()) as {
-      walletAddress?: string;
-      campaignId?: number;
-    };
-
-    const rawWallet = body.walletAddress?.trim() ?? "";
-    const campaignId =
-      typeof body.campaignId === "number" && Number.isFinite(body.campaignId)
-        ? body.campaignId
-        : getDailyCampaignId();
 
     if (!rawWallet || !isWalletAddress(rawWallet)) {
       return NextResponse.json(
@@ -68,6 +74,7 @@ export async function POST(request: Request) {
     // Auth gate must not use a stale canCheckIn after an on-chain check-in.
     const status = await getStreakProgressCached(wallet, campaignId, {
       fresh: true,
+      chainId,
     });
     const nowSec = Math.floor(Date.now() / 1000);
     const lastCheckInAt = Number(status.lastCheckInAt) || 0;
@@ -98,6 +105,7 @@ export async function POST(request: Request) {
       ok: true,
       token,
       walletAddress: wallet,
+      chainId,
       expiresIn: SESSION_TTL_SEC,
       lastCheckInAt,
     });
