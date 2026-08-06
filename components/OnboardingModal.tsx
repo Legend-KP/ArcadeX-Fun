@@ -11,6 +11,7 @@ interface OnboardingModalProps {
   defaultName?: string;
   defaultEmail?: string;
   onSubmit: (data: { name: string; email?: string }) => void;
+  onChangeWallet?: () => void;
 }
 
 export default function OnboardingModal({
@@ -20,6 +21,7 @@ export default function OnboardingModal({
   defaultName = "",
   defaultEmail = "",
   onSubmit,
+  onChangeWallet,
 }: OnboardingModalProps) {
   const [name, setName] = useState(defaultName);
   const [email, setEmail] = useState(defaultEmail);
@@ -100,6 +102,17 @@ export default function OnboardingModal({
           >
             {saving ? "Saving..." : "Continue"}
           </button>
+
+          {onChangeWallet ? (
+            <button
+              type="button"
+              className="network-switch-back"
+              disabled={saving}
+              onClick={onChangeWallet}
+            >
+              Choose a different network / wallet
+            </button>
+          ) : null}
         </form>
       </div>
     </div>

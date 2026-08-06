@@ -13,10 +13,10 @@ import { disconnect as disconnectStarknet } from "starknetkit";
 import { disconnectSlushWallet } from "@/lib/sui-wallet-client";
 import { disconnectPetraWallet } from "@/lib/aptos-wallet-client";
 import { disconnectMovementWallet } from "@/lib/movement-wallet-client";
-import dynamic from "next/dynamic";
 import OnboardingModal from "@/components/OnboardingModal";
 import DailyCheckInModal from "@/components/DailyCheckInModal";
 import DailyShuffleModal from "@/components/DailyShuffleModal";
+import ConnectWalletModal from "@/components/ConnectWalletModal";
 import { isArcadeXRewardsConfigured } from "@/lib/arcadex-rewards";
 import { fetchDailyPlayConfig } from "@/lib/daily-play-config-client";
 import type { DailyPlayMode } from "@/lib/daily-play-mode";
@@ -39,11 +39,6 @@ import {
 } from "@/lib/player-id";
 import { WalletEcosystem } from "@/lib/player-identity";
 import { PlayerProfile } from "@/types";
-
-const ConnectWalletModal = dynamic(
-  () => import("@/components/ConnectWalletModal"),
-  { ssr: false }
-);
 
 interface PlayerProfileContextValue {
   playerId: string;
@@ -171,6 +166,8 @@ export default function PlayerProfileProvider({
       setChainId(session.chainId);
       setCachedSession(session.ecosystem, session.address, session.playerId);
       setIsAuthenticated(true);
+      // Wallet is connected — never keep the connect modal open under onboarding.
+      setShowConnect(false);
 
       let user = await bootstrapPlayerProfile(session.playerId, {
         walletAddress: session.address,
@@ -186,9 +183,12 @@ export default function PlayerProfileProvider({
       setProfile(user);
 
       if (!hasPlayerName(user)) {
+        // New / incomplete profile — only after network + wallet sign-in.
         clearCachedPlayerName();
+        setShowDailyPlay(false);
         setShowOnboarding(true);
       } else {
+        // Registered — daily streak only when they still need today's check-in.
         setShowOnboarding(false);
         await maybePromptDailyPlay(session);
       }
@@ -206,7 +206,10 @@ export default function PlayerProfileProvider({
         if (cancelled) return;
 
         if (!session) {
+          // Step 1: choose network → connect wallet (no profile / streak yet).
           setIsAuthenticated(false);
+          setShowOnboarding(false);
+          setShowDailyPlay(false);
           setShowConnect(true);
           return;
         }
@@ -219,6 +222,8 @@ export default function PlayerProfileProvider({
             ? err.message
             : "Could not load your profile. Please try again."
         );
+        setShowOnboarding(false);
+        setShowDailyPlay(false);
         setShowConnect(true);
       } finally {
         if (!cancelled) setIsReady(true);
@@ -232,18 +237,20 @@ export default function PlayerProfileProvider({
   }, [loadProfileForSession]);
 
   const handleSignedIn = useCallback(async () => {
-    setShowConnect(false);
     setError("");
     try {
       const session = await fetchAuthSession();
       if (!session) {
         throw new Error("Sign-in did not complete.");
       }
+      // loadProfileForSession closes connect, then opens onboarding or daily.
       await loadProfileForSession(session);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Could not complete sign-in."
       );
+      setShowOnboarding(false);
+      setShowDailyPlay(false);
       setShowConnect(true);
     }
   }, [loadProfileForSession]);
@@ -342,7 +349,11 @@ export default function PlayerProfileProvider({
       isAuthenticated,
       streakStatus,
       refreshStreakStatus,
-      openConnect: () => setShowConnect(true),
+      openConnect: () => {
+        setShowOnboarding(false);
+        setShowDailyPlay(false);
+        setShowConnect(true);
+      },
       logout,
     }),
     [
@@ -359,30 +370,41 @@ export default function PlayerProfileProvider({
     ]
   );
 
+  // Strict order: connect (network → wallet) → onboarding (new) → daily (if needed).
+  const connectOpen = showConnect;
+  const onboardingOpen =
+    showOnboarding && !showConnect && isAuthenticated && Boolean(walletAddress);
+  const dailyOpen =
+    showDailyPlay && !showConnect && !showOnboarding && isAuthenticated;
+
   return (
     <PlayerProfileContext.Provider value={value}>
       {children}
       <ConnectWalletModal
-        open={showConnect}
+        open={connectOpen}
         error={error}
         onSignedIn={handleSignedIn}
       />
       <OnboardingModal
-        open={showOnboarding && !showDailyPlay}
+        open={onboardingOpen}
         saving={saving}
         error={error}
         defaultName={profile?.name ?? ""}
         defaultEmail={profile?.email ?? ""}
         onSubmit={handleOnboardingSubmit}
+        onChangeWallet={async () => {
+          setShowOnboarding(false);
+          await logout();
+        }}
       />
       <DailyCheckInModal
-        open={showDailyPlay && dailyPlayMode !== "shuffle"}
+        open={dailyOpen && dailyPlayMode !== "shuffle"}
         walletAddress={walletAddress}
         status={streakStatus}
         onComplete={handleDailyPlayComplete}
       />
       <DailyShuffleModal
-        open={showDailyPlay && dailyPlayMode === "shuffle"}
+        open={dailyOpen && dailyPlayMode === "shuffle"}
         walletAddress={walletAddress}
         status={streakStatus}
         onComplete={handleDailyPlayComplete}
