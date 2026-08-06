@@ -16,6 +16,9 @@ import { disconnectMovementWallet } from "@/lib/movement-wallet-client";
 import OnboardingModal from "@/components/OnboardingModal";
 import DailyCheckInModal from "@/components/DailyCheckInModal";
 import DailyShuffleModal from "@/components/DailyShuffleModal";
+import DailyStreakSuccessModal, {
+  type DailyStreakSuccess,
+} from "@/components/DailyStreakSuccessModal";
 import ConnectWalletModal from "@/components/ConnectWalletModal";
 import { isArcadeXRewardsConfigured } from "@/lib/arcadex-rewards";
 import { fetchDailyPlayConfig } from "@/lib/daily-play-config-client";
@@ -89,6 +92,9 @@ export default function PlayerProfileProvider({
   const [showDailyPlay, setShowDailyPlay] = useState(false);
   const [dailyPlayMode, setDailyPlayMode] = useState<DailyPlayMode>("streak");
   const [streakStatus, setStreakStatus] = useState<StreakStatus | null>(null);
+  const [streakSuccess, setStreakSuccess] = useState<DailyStreakSuccess | null>(
+    null
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -297,10 +303,25 @@ export default function PlayerProfileProvider({
     [playerId, walletAddress, ecosystem, chainId, maybePromptDailyPlay]
   );
 
-  const handleDailyPlayComplete = useCallback(async () => {
-    setShowDailyPlay(false);
-    await refreshStreakStatus();
-  }, [refreshStreakStatus]);
+  const handleDailyPlayComplete = useCallback(
+    async (result?: {
+      day: number;
+      milestone: boolean;
+      infiniteSparkGranted: boolean;
+    }) => {
+      setShowDailyPlay(false);
+      if (result && dailyPlayMode !== "shuffle") {
+        setStreakSuccess({
+          day: result.day,
+          milestone: result.milestone,
+          infiniteSparkGranted: result.infiniteSparkGranted,
+          requiredDays: streakStatus?.campaign.requiredDays ?? 7,
+        });
+      }
+      await refreshStreakStatus();
+    },
+    [dailyPlayMode, streakStatus?.campaign.requiredDays, refreshStreakStatus]
+  );
 
   const logout = useCallback(async () => {
     try {
@@ -339,6 +360,7 @@ export default function PlayerProfileProvider({
     setShowOnboarding(false);
     setShowDailyPlay(false);
     setStreakStatus(null);
+    setStreakSuccess(null);
     setShowConnect(true);
   }, [disconnectAsync]);
 
@@ -413,6 +435,11 @@ export default function PlayerProfileProvider({
         walletAddress={walletAddress}
         status={streakStatus}
         onComplete={handleDailyPlayComplete}
+      />
+      <DailyStreakSuccessModal
+        open={Boolean(streakSuccess)}
+        result={streakSuccess}
+        onClose={() => setStreakSuccess(null)}
       />
     </PlayerProfileContext.Provider>
   );

@@ -5,6 +5,7 @@ import {
 } from "@/lib/arcadex-rewards";
 import { getDailyCampaignId } from "@/lib/daily-play-mode";
 import { checkInOnChain } from "@/lib/arcadex-rewards-check-in";
+import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
 import {
   clearCachedStreakStatus,
   readCachedStreakStatus,
@@ -116,28 +117,54 @@ export async function syncStreakCheckIn(opts: {
   txHash: string;
   campaignId?: number;
 }): Promise<StreakSyncResult> {
-  const res = await fetch("/api/streak/sync", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      walletAddress: opts.walletAddress,
-      txHash: opts.txHash,
-      campaignId: opts.campaignId ?? DEFAULT_STREAK_CAMPAIGN_ID,
-    }),
-    cache: "no-store",
-  });
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 1200 + attempt * 600));
+    }
+    try {
+      const res = await fetch("/api/streak/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          walletAddress: opts.walletAddress,
+          txHash: opts.txHash,
+          campaignId: opts.campaignId ?? DEFAULT_STREAK_CAMPAIGN_ID,
+        }),
+        cache: "no-store",
+      });
 
-  const data = (await res.json().catch(() => ({}))) as StreakSyncResult & {
-    error?: string;
-  };
+      const data = (await res.json().catch(() => ({}))) as StreakSyncResult & {
+        error?: string;
+      };
 
-  if (!res.ok || !data.token) {
-    throw new Error(data.error ?? "Could not sync check-in.");
+      if (!res.ok || !data.token) {
+        throw new Error(data.error ?? "Could not sync check-in.");
+      }
+
+      setWalletSessionToken(data.token);
+      clearCachedStreakStatus();
+      return data;
+    } catch (err) {
+      lastError = err;
+      if (isPaymentStillConfirmingError(err)) continue;
+      const msg = err instanceof Error ? err.message.toLowerCase() : "";
+      if (
+        msg.includes("network") ||
+        msg.includes("failed to fetch") ||
+        msg.includes("rate limit") ||
+        msg.includes("could not confirm") ||
+        msg.includes("still confirming") ||
+        msg.includes("no checkedin event")
+      ) {
+        continue;
+      }
+      if (attempt >= 2) throw err;
+    }
   }
-
-  setWalletSessionToken(data.token);
-  clearCachedStreakStatus();
-  return data;
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Could not sync check-in yet. Tap Confirm check-in to retry.");
 }
 
 export class SessionRefreshError extends Error {
@@ -226,8 +253,10 @@ export async function performDailyCheckIn(
     // Proceed to wallet write; recovery paths below still apply.
   }
 
+  let txHash: string | undefined;
   try {
-    const { txHash } = await checkInOnChain(campaignId);
+    const submitted = await checkInOnChain(campaignId);
+    txHash = submitted.txHash;
     try {
       return await syncStreakCheckIn({ walletAddress, txHash, campaignId });
     } catch (syncErr) {
@@ -235,7 +264,9 @@ export async function performDailyCheckIn(
       try {
         return await sessionFromExistingCheckIn(walletAddress, campaignId);
       } catch {
-        throw syncErr;
+        const err = syncErr instanceof Error ? syncErr : new Error(String(syncErr));
+        (err as Error & { txHash?: string }).txHash = txHash;
+        throw err;
       }
     }
   } catch (err) {
@@ -256,7 +287,27 @@ export async function performDailyCheckIn(
       // Fall through to original error
     }
 
+    if (txHash && err instanceof Error) {
+      (err as Error & { txHash?: string }).txHash = txHash;
+    }
     throw err;
+  }
+}
+
+/** Re-sync a Basescan-confirmed check-in without sending another tx. */
+export async function confirmExistingCheckIn(
+  walletAddress: string,
+  txHash: string,
+  campaignId: number = DEFAULT_STREAK_CAMPAIGN_ID
+): Promise<StreakSyncResult> {
+  try {
+    return await syncStreakCheckIn({ walletAddress, txHash, campaignId });
+  } catch (syncErr) {
+    try {
+      return await sessionFromExistingCheckIn(walletAddress, campaignId);
+    } catch {
+      throw syncErr;
+    }
   }
 }
 

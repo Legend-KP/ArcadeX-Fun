@@ -16,8 +16,8 @@ import {
 import {
   getBasePublicClient,
   readBaseContractWithFailover,
-  waitForBaseTransactionReceipt,
 } from "@/lib/base-public-client";
+import { getPaymentTransactionReceipt } from "@/lib/payment-tx-verify";
 
 export interface VerifiedCheckIn {
   player: Address;
@@ -49,9 +49,8 @@ export async function verifyCheckInTx(
 ): Promise<VerifiedCheckIn> {
   assertConfigured();
   const expectedPlayer = getAddress(walletAddress);
-  const receipt = await waitForBaseTransactionReceipt(txHash, {
-    timeoutMs: 20_000,
-  });
+  // Fast receipt poll (same path as Spark payments) — long waitFor hangs Workers.
+  const receipt = await getPaymentTransactionReceipt(txHash);
 
   if (receipt.status !== "success") {
     throw new Error("Check-in transaction did not succeed.");
@@ -296,9 +295,7 @@ export async function verifySpinTx(
 ): Promise<VerifiedSpin> {
   assertConfigured();
   const expectedPlayer = getAddress(walletAddress);
-  const receipt = await waitForBaseTransactionReceipt(txHash, {
-    timeoutMs: 20_000,
-  });
+  const receipt = await getPaymentTransactionReceipt(txHash);
 
   if (receipt.status !== "success") {
     throw new Error("Spin transaction did not succeed.");

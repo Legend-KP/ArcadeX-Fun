@@ -3,7 +3,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatChainError } from "@/lib/base-public-client";
+import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
 import {
+  confirmExistingCheckIn,
   fetchStreakStatus,
   performDailyCheckIn,
   refreshSessionFromCheckIn,
@@ -122,6 +124,7 @@ export default function DailyCheckInModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [liveStatus, setLiveStatus] = useState<StreakStatus | null>(status);
+  const [pendingTxHash, setPendingTxHash] = useState<string | null>(null);
   const infinityGradId = useId().replace(/:/g, "");
   const recoverAttemptedRef = useRef(false);
 
@@ -163,7 +166,11 @@ export default function DailyCheckInModal({
   }, [open, walletAddress, status?.campaignId]);
 
   useEffect(() => {
-    if (!open) recoverAttemptedRef.current = false;
+    if (!open) {
+      recoverAttemptedRef.current = false;
+      setPendingTxHash(null);
+      setError("");
+    }
   }, [open]);
 
   if (!open || typeof document === "undefined") return null;
@@ -204,6 +211,15 @@ export default function DailyCheckInModal({
       ? `${requiredDays - displayStreak} days left`
       : `Day ${requiredDays}`;
 
+  async function finishWithResult(result: {
+    day: number;
+    milestone: boolean;
+    infiniteSparkGranted: boolean;
+  }) {
+    setPendingTxHash(null);
+    onComplete(result);
+  }
+
   async function handleCheckIn() {
     setLoading(true);
     setError("");
@@ -212,12 +228,20 @@ export default function DailyCheckInModal({
         walletAddress,
         view?.campaignId ?? status?.campaignId
       );
-      onComplete({
+      await finishWithResult({
         day: result.day,
         milestone: result.milestone,
         infiniteSparkGranted: Boolean(result.reward?.granted),
       });
     } catch (err) {
+      const maybeHash =
+        err && typeof err === "object" && "txHash" in err
+          ? String((err as { txHash?: string }).txHash ?? "")
+          : "";
+      if (maybeHash && /^0x[a-fA-F0-9]{64}$/.test(maybeHash)) {
+        setPendingTxHash(maybeHash);
+      }
+
       // Tx may have landed even when the UI error path fired — recover session.
       try {
         const fresh = await fetchStreakStatus(
@@ -231,7 +255,7 @@ export default function DailyCheckInModal({
             walletAddress,
             view?.campaignId ?? status?.campaignId
           );
-          onComplete({
+          await finishWithResult({
             day: fresh.currentDay,
             milestone: fresh.milestoneReached,
             infiniteSparkGranted: false,
@@ -241,7 +265,59 @@ export default function DailyCheckInModal({
       } catch {
         // Keep original error for the user.
       }
-      setError(formatChainError(err) || "Check-in failed. Try again.");
+      setError(
+        isPaymentStillConfirmingError(err)
+          ? "Check-in is on Base. Sync is catching up — tap Confirm check-in (do not send another tx)."
+          : formatChainError(err) || "Check-in failed. Try again."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleConfirmPendingTx() {
+    if (!pendingTxHash) return;
+    setLoading(true);
+    setError("");
+    try {
+      const result = await confirmExistingCheckIn(
+        walletAddress,
+        pendingTxHash,
+        view?.campaignId ?? status?.campaignId
+      );
+      await finishWithResult({
+        day: result.day,
+        milestone: result.milestone,
+        infiniteSparkGranted: Boolean(result.reward?.granted),
+      });
+    } catch (err) {
+      try {
+        const fresh = await fetchStreakStatus(
+          walletAddress,
+          view?.campaignId ?? status?.campaignId,
+          { fresh: true }
+        );
+        setLiveStatus(fresh);
+        if (!fresh.canCheckIn && fresh.lastCheckInAt > 0) {
+          await refreshSessionFromCheckIn(
+            walletAddress,
+            view?.campaignId ?? status?.campaignId
+          );
+          await finishWithResult({
+            day: fresh.currentDay,
+            milestone: fresh.milestoneReached,
+            infiniteSparkGranted: false,
+          });
+          return;
+        }
+      } catch {
+        // keep error
+      }
+      setError(
+        isPaymentStillConfirmingError(err)
+          ? "Still syncing with Base. Wait a few seconds and tap Confirm check-in again."
+          : formatChainError(err) || "Could not sync check-in."
+      );
     } finally {
       setLoading(false);
     }
@@ -345,6 +421,13 @@ export default function DailyCheckInModal({
 
         {error ? <p className="daily-checkin-error">{error}</p> : null}
 
+        {pendingTxHash && !loading ? (
+          <p className="daily-checkin-streak-hint" style={{ marginBottom: 10 }}>
+            Tx {pendingTxHash.slice(0, 10)}…{pendingTxHash.slice(-8)} is on Base.
+            Confirm below — do not check in again.
+          </p>
+        ) : null}
+
         <button
           type="button"
           className="daily-checkin-btn"
@@ -358,6 +441,10 @@ export default function DailyCheckInModal({
               });
               return;
             }
+            if (pendingTxHash) {
+              void handleConfirmPendingTx();
+              return;
+            }
             void handleCheckIn();
           }}
         >
@@ -367,14 +454,18 @@ export default function DailyCheckInModal({
               ? "Confirming…"
               : alreadyCheckedInToday
                 ? "Continue"
-                : "Daily Check In (Free)"}
+                : pendingTxHash
+                  ? "Confirm check-in (no extra tx)"
+                  : "Daily Check In (Free)"}
           </span>
           <span className="daily-checkin-btn-sub">
             {loading
               ? "Syncing your Base check-in"
               : alreadyCheckedInToday
                 ? "Come back after 00:00 UTC for the next day"
-                : "Non-fee transaction"}
+                : pendingTxHash
+                  ? "Uses your confirmed Basescan transaction"
+                  : "Non-fee transaction"}
           </span>
         </button>
       </div>
