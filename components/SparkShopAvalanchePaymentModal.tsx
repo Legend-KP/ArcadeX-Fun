@@ -9,7 +9,7 @@ import {
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
-import { formatUnits, type Hash } from "viem";
+import { formatUnits, getAddress, type Hash } from "viem";
 import { avalanche } from "@/lib/chains";
 import { formatChainError } from "@/lib/base-public-client";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
@@ -110,6 +110,8 @@ interface SparkShopAvalanchePaymentModalProps {
   open: boolean;
   productId: ShopProductId | null;
   playerId: string;
+  /** ArcadeX session wallet — MetaMask must match this for verify to succeed. */
+  walletAddress: string;
   onClose: () => void;
   onSuccess: (purchase: ShopPurchaseSuccess) => void;
 }
@@ -128,6 +130,7 @@ export default function SparkShopAvalanchePaymentModal({
   open,
   productId,
   playerId,
+  walletAddress,
   onClose,
   onSuccess,
 }: SparkShopAvalanchePaymentModalProps) {
@@ -145,6 +148,14 @@ export default function SparkShopAvalanchePaymentModal({
   const [error, setError] = useState("");
 
   const onAvalanche = chainId === AVALANCHE_CHAIN_ID;
+  const sessionMatchesWallet = (() => {
+    if (!address || !walletAddress) return false;
+    try {
+      return getAddress(address) === getAddress(walletAddress);
+    } catch {
+      return false;
+    }
+  })();
 
   const { data: contractData, isLoading: balancesLoading } = useReadContracts({
     contracts: AVALANCHE_SHOP_PAYMENT_TOKENS.flatMap((token) => [
@@ -277,11 +288,20 @@ export default function SparkShopAvalanchePaymentModal({
       const payToken = token ?? selectedToken;
       if (!product || !productId || !payToken || !address) return;
 
+      if (!sessionMatchesWallet) {
+        setError(
+          `MetaMask is on ${address.slice(0, 6)}…${address.slice(-4)}, but you signed in as ${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}. Switch MetaMask to your signed-in account (and Avalanche), then try again.`
+        );
+        return;
+      }
+
       const option = tokenOptions.find(
         (entry) => entry.token.id === payToken.id
       );
       if (!option?.sufficient) {
-        setError(`Not enough ${payToken.symbol} for this purchase.`);
+        setError(
+          `Not enough ${payToken.symbol} on Avalanche. You need ${formatShopPrice(product.priceUsd)} USDC in this wallet plus AVAX for gas.`
+        );
         return;
       }
 
@@ -329,6 +349,8 @@ export default function SparkShopAvalanchePaymentModal({
       productId,
       selectedToken,
       address,
+      walletAddress,
+      sessionMatchesWallet,
       tokenOptions,
       writeContractAsync,
       confirmPurchase,
@@ -397,6 +419,15 @@ export default function SparkShopAvalanchePaymentModal({
           {!isConnected && (
             <p className="spark-shop-payment__error" role="alert">
               Connect your wallet to continue.
+            </p>
+          )}
+
+          {isConnected && address && !sessionMatchesWallet && (
+            <p className="spark-shop-payment__error" role="alert">
+              MetaMask is on {address.slice(0, 6)}…{address.slice(-4)}, but you
+              signed in as {walletAddress.slice(0, 6)}…
+              {walletAddress.slice(-4)}. Switch MetaMask to your signed-in
+              account on Avalanche.
             </p>
           )}
 

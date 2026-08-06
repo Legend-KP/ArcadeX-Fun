@@ -31,13 +31,18 @@ export async function verifyScoreSubmitPayment(params: {
   const requiredAmount = scoreSubmitPriceToAmount();
 
   if (params.ecosystem === "evm") {
-    if (params.chainId === AVALANCHE_C_CHAIN_ID) {
-      const token = findAvalancheShopPaymentToken(params.tokenAddress ?? "");
-      if (!token) throw new Error("Unsupported Avalanche payment token.");
+    const avalancheToken = findAvalancheShopPaymentToken(
+      params.tokenAddress ?? ""
+    );
+    const useAvalanche =
+      params.chainId === AVALANCHE_C_CHAIN_ID || Boolean(avalancheToken);
+
+    if (useAvalanche) {
+      if (!avalancheToken) throw new Error("Unsupported Avalanche payment token.");
 
       await verifyAvalancheScoreSubmitPayment({
         txHash: params.txHash as Hash,
-        tokenAddress: getAddress(token.address),
+        tokenAddress: getAddress(avalancheToken.address),
         expectedFrom: params.expectedFrom,
       });
       return;

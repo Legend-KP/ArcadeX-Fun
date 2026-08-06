@@ -100,9 +100,14 @@ export async function POST(request: Request) {
         );
       }
 
-      if (session.chainId === AVALANCHE_C_CHAIN_ID) {
-        const token = findAvalancheShopPaymentToken(body.tokenAddress ?? "");
-        if (!token) {
+      const avalancheToken = findAvalancheShopPaymentToken(
+        body.tokenAddress ?? ""
+      );
+      const useAvalanche =
+        session.chainId === AVALANCHE_C_CHAIN_ID || Boolean(avalancheToken);
+
+      if (useAvalanche) {
+        if (!avalancheToken) {
           return NextResponse.json(
             {
               error: "Unsupported Avalanche payment token.",
@@ -115,7 +120,7 @@ export async function POST(request: Request) {
         await verifyAvalancheShopPaymentTx({
           txHash: txId as Hash,
           productId: productId as ShopProductId,
-          tokenAddress: getAddress(token.address),
+          tokenAddress: getAddress(avalancheToken.address),
           expectedFrom: session.address,
         });
 

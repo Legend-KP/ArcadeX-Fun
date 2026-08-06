@@ -60,7 +60,7 @@ export function getShopPanelCopy(
         paymentHint: `Pay with USDC on ${networkLabel}.`,
         priceSuffix: `on ${networkLabel}`,
         disabledHint: `Shop purchases on ${networkLabel} are currently unavailable.`,
-        unsupportedHint: `Shop purchases are available with an EVM wallet on Base.`,
+        unsupportedHint: `Shop purchases are available with an EVM wallet on Base or Avalanche.`,
         getBuyButtonLabel: buyButtonLabel,
       };
     }

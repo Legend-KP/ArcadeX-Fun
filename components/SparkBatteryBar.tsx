@@ -326,6 +326,7 @@ export default function SparkBatteryBar() {
         }
         productId={paymentProductId}
         playerId={playerId}
+        walletAddress={walletAddress}
         onClose={() => setPaymentProductId(null)}
         onSuccess={(purchase) => {
           void refresh();

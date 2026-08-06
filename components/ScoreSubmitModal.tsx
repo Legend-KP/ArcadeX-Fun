@@ -9,7 +9,7 @@ import {
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
-import { formatUnits, maxUint256, type Hash } from "viem";
+import { formatUnits, getAddress, maxUint256, type Hash } from "viem";
 import { avalanche, PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 import { formatChainError } from "@/lib/base-public-client";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
@@ -361,6 +361,16 @@ export default function ScoreSubmitModal({
       if (!isConnected || !address) {
         setError("Reconnect your wallet to approve the USDC payment.");
         openConnect();
+        return;
+      }
+
+      if (
+        walletAddress &&
+        getAddress(address) !== getAddress(walletAddress as `0x${string}`)
+      ) {
+        setError(
+          `MetaMask is on ${address.slice(0, 6)}…${address.slice(-4)}, but you signed in as ${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}. Switch MetaMask to your signed-in account, then try again.`
+        );
         return;
       }
 
