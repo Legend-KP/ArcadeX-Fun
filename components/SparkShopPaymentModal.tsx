@@ -11,10 +11,8 @@ import {
 } from "wagmi";
 import { formatUnits, maxUint256, type Address, type Hash } from "viem";
 import { PRIMARY_EVM_CHAIN_ID, primaryEvmChain } from "@/lib/chains";
-import {
-  formatChainError,
-  waitForBaseTransactionReceipt,
-} from "@/lib/base-public-client";
+import { formatChainError } from "@/lib/base-public-client";
+import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
 import { purchaseSparkItem } from "@/lib/spark-client";
 import {
   erc20Abi,
@@ -56,18 +54,39 @@ function shopContractForProduct(
   return null;
 }
 
-function isReceiptPendingError(error: unknown): boolean {
-  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
-  return (
-    message.includes("could not be found") ||
-    message.includes("not be found") ||
-    message.includes("not mined") ||
-    message.includes("still confirming") ||
-    message.includes("timed out waiting") ||
-    message.includes("transaction receipt")
-  );
+/** Pull a tx hash if wagmi/MetaMask threw after the wallet already broadcast. */
+function extractSubmittedTxHash(error: unknown): Hash | null {
+  const candidates: unknown[] = [];
+  let current: unknown = error;
+  for (let i = 0; i < 6 && current; i++) {
+    candidates.push(current);
+    if (current && typeof current === "object") {
+      const obj = current as Record<string, unknown>;
+      if ("hash" in obj) candidates.push(obj.hash);
+      if ("transactionHash" in obj) candidates.push(obj.transactionHash);
+      if ("cause" in obj) current = obj.cause;
+      else break;
+    } else break;
+  }
+
+  for (const value of candidates) {
+    if (typeof value === "string" && /^0x[a-fA-F0-9]{64}$/.test(value)) {
+      return value as Hash;
+    }
+  }
+
+  const text =
+    error instanceof Error
+      ? `${error.message} ${error.cause instanceof Error ? error.cause.message : ""}`
+      : String(error);
+  const match = text.match(/0x[a-fA-F0-9]{64}/);
+  return match ? (match[0] as Hash) : null;
 }
 
+/**
+ * Credit Sparks via API as soon as we have a hash.
+ * Server verifies EntryPaid — do not block the UI on public-RPC receipt waits.
+ */
 async function confirmPurchaseWithRetries(params: {
   playerId: string;
   productId: ShopProductId;
@@ -75,16 +94,11 @@ async function confirmPurchaseWithRetries(params: {
   tokenAddress: string;
 }): Promise<void> {
   let lastError: unknown;
-  for (let attempt = 0; attempt < 5; attempt++) {
+  for (let attempt = 0; attempt < 8; attempt++) {
     if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, 1500 * attempt));
+      await new Promise((r) => setTimeout(r, 1200 + attempt * 600));
     }
     try {
-      // Wait until at least one public RPC can see the receipt.
-      await waitForBaseTransactionReceipt(params.txHash, {
-        confirmations: 1,
-        timeoutMs: 45_000,
-      });
       await purchaseSparkItem({
         playerId: params.playerId,
         productId: params.productId,
@@ -94,14 +108,24 @@ async function confirmPurchaseWithRetries(params: {
       return;
     } catch (err) {
       lastError = err;
-      if (!isReceiptPendingError(err) && attempt >= 1) {
-        // Non-receipt errors after first try (e.g. auth) — stop early.
+      if (!isPaymentStillConfirmingError(err)) {
+        // Auth / validation errors should stop immediately.
         if (
           err instanceof Error &&
-          !isReceiptPendingError(err) &&
-          !err.message.toLowerCase().includes("network")
+          (err.message.includes("Sign in") ||
+            err.message.includes("session") ||
+            err.message.includes("Unsupported") ||
+            err.message.includes("Unknown shop") ||
+            err.message.includes("does not match"))
         ) {
           throw err;
+        }
+        // Keep retrying soft network failures a couple times.
+        if (attempt >= 2 && !isPaymentStillConfirmingError(err)) {
+          const msg = err instanceof Error ? err.message.toLowerCase() : "";
+          if (!msg.includes("network") && !msg.includes("failed to fetch")) {
+            throw err;
+          }
         }
       }
     }
@@ -272,7 +296,7 @@ export default function SparkShopPaymentModal({
         onClose();
       } catch (err) {
         setError(
-          isReceiptPendingError(err)
+          isPaymentStillConfirmingError(err)
             ? "Payment submitted on Base. Confirmation is still catching up — tap Confirm payment (do not pay again)."
             : formatChainError(err) || "Could not confirm purchase."
         );
@@ -371,6 +395,22 @@ export default function SparkShopPaymentModal({
         setTxHash(hash);
         await confirmPurchase(hash, payToken, product);
       } catch (err) {
+        const submitted = extractSubmittedTxHash(err);
+        if (submitted) {
+          setTxHash(submitted);
+          try {
+            await confirmPurchase(submitted, payToken, product);
+            return;
+          } catch (confirmErr) {
+            setStep("token");
+            setError(
+              isPaymentStillConfirmingError(confirmErr)
+                ? "Payment submitted on Base. Confirmation is still catching up — tap Confirm payment (do not pay again)."
+                : formatChainError(confirmErr) || "Could not confirm purchase."
+            );
+            return;
+          }
+        }
         setStep("token");
         setError(
           formatChainError(err) || "Payment was cancelled or failed."

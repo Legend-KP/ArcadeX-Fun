@@ -95,6 +95,8 @@ function isTransientRpcError(error: unknown): boolean {
     message.includes("429") ||
     message.includes("rate limit") ||
     message.includes("over rate limit") ||
+    message.includes("missing or invalid parameters") ||
+    message.includes("invalid parameters") ||
     message.includes("503") ||
     message.includes("502") ||
     message.includes("524") ||
@@ -234,11 +236,14 @@ export async function waitForBaseTransactionReceipt(
   let lastError: unknown;
   const timeout = opts?.timeoutMs ?? 45_000;
   const confirmations = opts?.confirmations ?? 1;
+  // Keep total wait bounded: short per-attempt timeouts when caller wants speed.
+  const attemptTimeout = Math.min(timeout, 12_000);
+  const maxAttempts = timeout <= 15_000 ? 3 : RECEIPT_RETRY_DELAYS_MS.length;
 
-  for (let attempt = 0; attempt < RECEIPT_RETRY_DELAYS_MS.length; attempt++) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
       await new Promise((resolve) =>
-        setTimeout(resolve, RECEIPT_RETRY_DELAYS_MS[attempt])
+        setTimeout(resolve, RECEIPT_RETRY_DELAYS_MS[attempt] ?? 1000)
       );
       resetBasePublicClient();
     }
@@ -247,7 +252,7 @@ export async function waitForBaseTransactionReceipt(
       return await getBasePublicClient().waitForTransactionReceipt({
         hash,
         confirmations,
-        timeout,
+        timeout: attemptTimeout,
       });
     } catch (error) {
       lastError = error;
@@ -260,7 +265,7 @@ export async function waitForBaseTransactionReceipt(
       return await createHttpClient(rpcUrl).waitForTransactionReceipt({
         hash,
         confirmations,
-        timeout: Math.min(timeout, 20_000),
+        timeout: Math.min(attemptTimeout, 10_000),
       });
     } catch (error) {
       lastError = error;

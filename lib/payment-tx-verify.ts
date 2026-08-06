@@ -8,6 +8,7 @@ import {
 } from "viem";
 import {
   getBasePublicClient,
+  readBaseContractWithFailover,
   resetBasePublicClient,
   isBlockOutOfRangeError,
   waitForBaseTransactionReceipt,
@@ -24,56 +25,74 @@ function collectErrorText(error: unknown): string {
   return parts.join(" ");
 }
 
-function isTransientReceiptError(error: unknown): boolean {
+export function isPaymentStillConfirmingError(error: unknown): boolean {
   const message = collectErrorText(error).toLowerCase();
   return (
     isBlockOutOfRangeError(error) ||
     message.includes("could not be found") ||
-    message.includes("not found") ||
+    message.includes("not be found") ||
+    message.includes("not mined") ||
+    message.includes("still confirming") ||
+    message.includes("timed out") ||
     message.includes("timeout") ||
-    message.includes("fetch failed") ||
-    message.includes("network") ||
-    message.includes("429") ||
+    message.includes("transaction receipt") ||
     message.includes("rate limit") ||
+    message.includes("over rate limit") ||
+    message.includes("missing or invalid parameters") ||
+    message.includes("invalid parameters") ||
+    message.includes("429") ||
     message.includes("503") ||
-    message.includes("502")
+    message.includes("502") ||
+    message.includes("network") ||
+    message.includes("fetch failed")
   );
 }
 
+function isTransientReceiptError(error: unknown): boolean {
+  return isPaymentStillConfirmingError(error);
+}
+
 /**
- * Fetch a receipt with long polling + RPC rotation.
- * Wallets often report "submitted" before public RPCs index the tx.
+ * Fetch a receipt with polling + RPC rotation.
+ * Prefer getTransactionReceipt over long waitForTransactionReceipt so public
+ * RPC rate limits cannot stall Spark Refill / Infinite Spark confirmation.
  */
 export async function getPaymentTransactionReceipt(
   txHash: Hash
 ): Promise<TransactionReceipt> {
+  let lastError: unknown;
+
+  // Fast path: short wait on rotating public clients.
   try {
     return await waitForBaseTransactionReceipt(txHash, {
       confirmations: 1,
-      timeoutMs: 90_000,
+      timeoutMs: 12_000,
     });
   } catch (error) {
-    // Final direct reads across rotated RPCs.
-    let lastError: unknown = error;
-    for (let attempt = 0; attempt < 6; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, 1_000 + attempt * 750));
-      resetBasePublicClient();
-      try {
-        const receipt = await getBasePublicClient().getTransactionReceipt({
-          hash: txHash,
-        });
-        if (receipt) return receipt;
-      } catch (err) {
-        lastError = err;
-        if (!isTransientReceiptError(err)) throw err;
-      }
-    }
-    throw lastError instanceof Error
-      ? lastError
-      : new Error(
-          "Payment is still confirming on Base. Wait a moment, then tap Confirm payment."
-        );
+    lastError = error;
+    if (!isTransientReceiptError(error)) throw error;
   }
+
+  // Poll getTransactionReceipt across RPCs — cheaper than long eth_getLogs waits.
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 800 + attempt * 400));
+    resetBasePublicClient();
+    try {
+      const receipt = await getBasePublicClient().getTransactionReceipt({
+        hash: txHash,
+      });
+      if (receipt) return receipt;
+    } catch (err) {
+      lastError = err;
+      if (!isTransientReceiptError(err)) throw err;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(
+        "Payment is still confirming on Base. Wait a moment, then tap Confirm payment."
+      );
 }
 
 export type StablePaymentToken = "USDC";
@@ -111,27 +130,11 @@ export async function verifyEntryPaidPaymentTx(options: {
   }
 
   // Prefer latest fee — historical block reads are slow / fail on many RPCs.
-  let fee: bigint;
-  try {
-    fee = (await getBasePublicClient().readContract({
-      address: contractAddress,
-      abi,
-      functionName: "fee",
-      blockTag: "latest",
-    })) as bigint;
-  } catch (error) {
-    if (isBlockOutOfRangeError(error) || isTransientReceiptError(error)) {
-      resetBasePublicClient();
-      fee = (await getBasePublicClient().readContract({
-        address: contractAddress,
-        abi,
-        functionName: "fee",
-        blockTag: "latest",
-      })) as bigint;
-    } else {
-      throw error;
-    }
-  }
+  const fee = await readBaseContractWithFailover<bigint>({
+    address: contractAddress,
+    abi,
+    functionName: "fee",
+  });
 
   for (const log of receipt.logs) {
     if (log.address.toLowerCase() !== contractAddress.toLowerCase()) {

@@ -5,6 +5,7 @@ import {
 } from "viem";
 import {
   getPaymentTransactionReceipt,
+  isPaymentStillConfirmingError,
 } from "@/lib/payment-tx-verify";
 import { verifySparkRefillPaymentTx } from "@/lib/spark-refill-verify";
 import { verifyInfiniteSparkPaymentTx } from "@/lib/infinite-spark-verify";
@@ -48,7 +49,9 @@ export async function verifyShopPaymentTx(params: {
       try {
         await verifySparkRefillPaymentTx(params.expectedFrom, params.txHash);
         return;
-      } catch {
+      } catch (err) {
+        // Receipt not indexed yet — bubble up so the client can retry.
+        if (isPaymentStillConfirmingError(err)) throw err;
         // Fall through to legacy transfer verification.
       }
     }
@@ -57,7 +60,8 @@ export async function verifyShopPaymentTx(params: {
       try {
         await verifyInfiniteSparkPaymentTx(params.expectedFrom, params.txHash);
         return;
-      } catch {
+      } catch (err) {
+        if (isPaymentStillConfirmingError(err)) throw err;
         // Fall through to legacy transfer verification.
       }
     }
