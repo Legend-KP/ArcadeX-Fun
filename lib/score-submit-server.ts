@@ -13,6 +13,7 @@ import { isValidSuiTxDigest } from "@/lib/shop-sui";
 import { isValidVaraExtrinsicHash } from "@/lib/shop-vara";
 import { verifyScoreSubmitContractPaymentTx } from "@/lib/score-submit-contract-verify";
 import { isScoreSubmitContractConfigured } from "@/lib/score-submit-contract";
+import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
 import type { WalletEcosystem } from "@/lib/player-identity";
 
 /** Fixed-amount payment verification for public score submit. */
@@ -35,7 +36,9 @@ export async function verifyScoreSubmitPayment(params: {
           params.txHash as Hash
         );
         return;
-      } catch {
+      } catch (err) {
+        // Receipt not indexed yet — client should retry, don't fall through.
+        if (isPaymentStillConfirmingError(err)) throw err;
         // Fall through to legacy USDC transfer verification.
       }
     }

@@ -9,8 +9,10 @@ import {
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
-import { formatUnits, maxUint256 } from "viem";
+import { formatUnits, maxUint256, type Hash } from "viem";
 import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
+import { formatChainError } from "@/lib/base-public-client";
+import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
 import { submitPaidScore } from "@/lib/leaderboard-client";
 import {
   erc20Abi,
@@ -45,6 +47,77 @@ function formatTokenBalance(balance: bigint, decimals: number): string {
   return value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
 }
 
+/** Pull a tx hash if wagmi/MetaMask threw after the wallet already broadcast. */
+function extractSubmittedTxHash(error: unknown): Hash | null {
+  const candidates: unknown[] = [];
+  let current: unknown = error;
+  for (let i = 0; i < 6 && current; i++) {
+    candidates.push(current);
+    if (current && typeof current === "object") {
+      const obj = current as Record<string, unknown>;
+      if ("hash" in obj) candidates.push(obj.hash);
+      if ("transactionHash" in obj) candidates.push(obj.transactionHash);
+      if ("cause" in obj) current = obj.cause;
+      else break;
+    } else break;
+  }
+
+  for (const value of candidates) {
+    if (typeof value === "string" && /^0x[a-fA-F0-9]{64}$/.test(value)) {
+      return value as Hash;
+    }
+  }
+
+  const text =
+    error instanceof Error
+      ? `${error.message} ${error.cause instanceof Error ? error.cause.message : ""}`
+      : String(error);
+  const match = text.match(/0x[a-fA-F0-9]{64}/);
+  return match ? (match[0] as Hash) : null;
+}
+
+async function confirmScoreSubmitWithRetries(params: {
+  gameId: string;
+  score: number;
+  walletAddress: string;
+  playerName: string;
+  txHash: Hash;
+  tokenAddress: string;
+}): Promise<number> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 1200 + attempt * 600));
+    }
+    try {
+      const { submittedBest } = await submitPaidScore(params.gameId, {
+        score: params.score,
+        walletAddress: params.walletAddress,
+        txHash: params.txHash,
+        name: params.playerName,
+        tokenAddress: params.tokenAddress,
+        ecosystem: "evm",
+      });
+      return submittedBest;
+    } catch (err) {
+      lastError = err;
+      if (isPaymentStillConfirmingError(err)) continue;
+      const msg = err instanceof Error ? err.message.toLowerCase() : "";
+      if (
+        msg.includes("network") ||
+        msg.includes("failed to fetch") ||
+        msg.includes("rate limit")
+      ) {
+        continue;
+      }
+      if (attempt >= 2) throw err;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Could not confirm payment yet. Tap Confirm submit to retry.");
+}
+
 export default function ScoreSubmitModal({
   open,
   gameId,
@@ -63,6 +136,7 @@ export default function ScoreSubmitModal({
   const [selectedToken, setSelectedToken] = useState<ShopPaymentToken | null>(
     null
   );
+  const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -169,21 +243,24 @@ export default function ScoreSubmitModal({
       setStep("confirming");
       setBusy(true);
       setError("");
+      setTxHash(hash);
 
       try {
-        const { submittedBest } = await submitPaidScore(gameId, {
+        const submittedBest = await confirmScoreSubmitWithRetries({
+          gameId,
           score,
           walletAddress,
+          playerName,
           txHash: hash,
-          name: playerName,
           tokenAddress: token.address,
-          ecosystem: "evm",
         });
         onSuccess(submittedBest);
         onClose();
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Could not submit score."
+          isPaymentStillConfirmingError(err)
+            ? "Payment submitted on Base. Confirmation is still catching up — tap Confirm submit (do not pay again)."
+            : formatChainError(err) || "Could not submit score."
         );
         setStep("token");
       } finally {
@@ -201,6 +278,7 @@ export default function ScoreSubmitModal({
     if (!open) {
       setStep("token");
       setSelectedToken(null);
+      setTxHash(undefined);
       setBusy(false);
       setError("");
     }
@@ -273,13 +351,28 @@ export default function ScoreSubmitModal({
           chainId: PRIMARY_EVM_CHAIN_ID,
         });
 
+        setTxHash(hash);
         await confirmSubmit(hash, payToken);
       } catch (err) {
+        const submitted = extractSubmittedTxHash(err);
+        if (submitted) {
+          setTxHash(submitted);
+          try {
+            await confirmSubmit(submitted, payToken);
+            return;
+          } catch (confirmErr) {
+            setStep("token");
+            setError(
+              isPaymentStillConfirmingError(confirmErr)
+                ? "Payment submitted on Base. Confirmation is still catching up — tap Confirm submit (do not pay again)."
+                : formatChainError(confirmErr) || "Could not submit score."
+            );
+            return;
+          }
+        }
         setStep("token");
         setError(
-          err instanceof Error
-            ? err.message
-            : "Payment was cancelled or failed."
+          formatChainError(err) || "Payment was cancelled or failed."
         );
       } finally {
         setBusy(false);
@@ -294,6 +387,11 @@ export default function ScoreSubmitModal({
       contractPaused,
     ]
   );
+
+  const handleConfirmPendingTx = useCallback(async () => {
+    if (!selectedToken || !txHash) return;
+    await confirmSubmit(txHash, selectedToken);
+  }, [selectedToken, txHash, confirmSubmit]);
 
   const handleTokenSelect = useCallback(
     (token: ShopPaymentToken, sufficient: boolean) => {
@@ -410,7 +508,7 @@ export default function ScoreSubmitModal({
               <p className="spark-shop-payment__hint">
                 {step === "paying"
                   ? "Confirm the payment in your wallet…"
-                  : "Confirming on chain…"}
+                  : "Submitting score…"}
               </p>
             </div>
           )}
@@ -420,6 +518,21 @@ export default function ScoreSubmitModal({
               {error}
             </p>
           )}
+
+          {txHash && showTokenStep && !busy ? (
+            <div className="spark-shop-payment__section">
+              <p className="spark-shop-payment__hint">
+                Payment hash: {txHash.slice(0, 10)}…{txHash.slice(-8)}
+              </p>
+              <button
+                type="button"
+                className="spark-shop-payment__primary"
+                onClick={() => void handleConfirmPendingTx()}
+              >
+                Confirm submit (no extra charge)
+              </button>
+            </div>
+          ) : null}
 
           <div className="spark-shop-payment__footer">
             <button
