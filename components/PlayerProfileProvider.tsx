@@ -23,11 +23,13 @@ import ConnectWalletModal from "@/components/ConnectWalletModal";
 import {
   isArcadeXRewardsConfiguredForChain,
   isAvalancheRewardsChainId,
+  getStreakCampaignIdForChain,
 } from "@/lib/arcadex-rewards";
 import { fetchDailyPlayConfig } from "@/lib/daily-play-config-client";
 import type { DailyPlayMode } from "@/lib/daily-play-mode";
 import {
   fetchStreakStatus,
+  refreshSessionFromCheckIn,
   type StreakStatus,
 } from "@/lib/streak-client";
 import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
@@ -130,21 +132,42 @@ export default function PlayerProfileProvider({
         return;
       }
 
-      // Always show the daily streak modal after wallet auth / onboarding.
-      setShowDailyPlay(true);
-
       try {
         const config = await fetchDailyPlayConfig({ fresh: true });
         setDailyPlayMode(config.mode);
-        const status = await fetchStreakStatus(session.address, config.campaignId, {
+        // Default missing chainId to Base mainnet (8453).
+        const resolvedChainId = sessionChainId ?? PRIMARY_EVM_CHAIN_ID;
+        const campaignId =
+          config.mode === "shuffle"
+            ? config.campaignId
+            : getStreakCampaignIdForChain(resolvedChainId);
+        const status = await fetchStreakStatus(session.address, campaignId, {
           fresh: true,
-          chainId: sessionChainId ?? PRIMARY_EVM_CHAIN_ID,
+          chainId: resolvedChainId,
         });
         setStreakStatus(status);
+
+        // Already checked in today on this chain — mint session, skip popup.
+        if (!status.canCheckIn && status.lastCheckInAt > 0) {
+          try {
+            await refreshSessionFromCheckIn(
+              session.address,
+              campaignId,
+              resolvedChainId
+            );
+          } catch (err) {
+            console.warn("[daily-play] session mint from check-in failed", err);
+          }
+          setShowDailyPlay(false);
+          return;
+        }
+
+        setShowDailyPlay(true);
       } catch (err) {
-        // Still keep the modal open — status can load / recover inside it.
+        // Status unknown — still prompt so the user can check in / recover.
         console.warn("[daily-play] status fetch failed", err);
         setStreakStatus(null);
+        setShowDailyPlay(true);
       }
     },
     []
@@ -165,7 +188,11 @@ export default function PlayerProfileProvider({
     try {
       const config = await fetchDailyPlayConfig();
       setDailyPlayMode(config.mode);
-      const status = await fetchStreakStatus(walletAddress, config.campaignId, {
+      const campaignId =
+        config.mode === "shuffle"
+          ? config.campaignId
+          : getStreakCampaignIdForChain(chainId);
+      const status = await fetchStreakStatus(walletAddress, campaignId, {
         fresh: true,
         chainId,
       });
@@ -210,7 +237,7 @@ export default function PlayerProfileProvider({
         setShowDailyPlay(false);
         setShowOnboarding(true);
       } else {
-        // Registered — always show the daily streak ceremony next.
+        // Registered — prompt daily play only if they still need today's check-in.
         setShowOnboarding(false);
         await maybePromptDailyPlay(session);
       }

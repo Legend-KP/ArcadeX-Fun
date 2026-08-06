@@ -18,7 +18,7 @@ interface DailyCheckInModalProps {
   walletAddress: string;
   chainId?: number;
   status: StreakStatus | null;
-  onComplete: (result: {
+  onComplete: (result?: {
     day: number;
     milestone: boolean;
     infiniteSparkGranted: boolean;
@@ -135,8 +135,7 @@ export default function DailyCheckInModal({
     setLiveStatus(status);
   }, [status]);
 
-  // Load fresh status on open. If already checked in, mint session but keep the
-  // streak UI visible so every user still sees the daily ceremony.
+  // Load fresh status on open. If already checked in, mint session and dismiss.
   useEffect(() => {
     if (!open || !walletAddress || recoverAttemptedRef.current) return;
     recoverAttemptedRef.current = true;
@@ -156,8 +155,9 @@ export default function DailyCheckInModal({
           try {
             await refreshSessionFromCheckIn(walletAddress, campaignId, chainId);
           } catch {
-            // Session mint is best-effort; UI still shows streak progress.
+            // Session mint is best-effort; still dismiss the ceremony.
           }
+          if (!cancelled) onComplete();
         }
       } catch {
         // Still need a check-in / user action
@@ -167,7 +167,7 @@ export default function DailyCheckInModal({
     return () => {
       cancelled = true;
     };
-  }, [open, walletAddress, status?.campaignId, chainId]);
+  }, [open, walletAddress, status?.campaignId, chainId, onComplete]);
 
   useEffect(() => {
     if (!open) {
@@ -445,11 +445,7 @@ export default function DailyCheckInModal({
           disabled={loading || !walletAddress}
           onClick={() => {
             if (alreadyCheckedInToday) {
-              onComplete({
-                day: currentDay,
-                milestone: Boolean(view?.milestoneReached),
-                infiniteSparkGranted: false,
-              });
+              onComplete();
               return;
             }
             if (pendingTxHash) {
