@@ -338,6 +338,7 @@ export function isShopPaymentsEnabled(
     if (!key) {
       return settings.base?.shopPayments !== false;
     }
+    // Avalanche shop is on by default for this rollout; Firestore Off still wins.
     return settings[key]?.shopPayments !== false;
   }
 
