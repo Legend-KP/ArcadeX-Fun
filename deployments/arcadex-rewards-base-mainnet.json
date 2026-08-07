@@ -29,5 +29,10 @@
   "verification": {
     "basescan": "https://basescan.org/address/0xa3ff9C5f592e2891279b83f9017C00733A3F19fC#code",
     "sourcify": "https://repo.sourcify.dev/8453/0xa3ff9C5f592e2891279b83f9017C00733A3F19fC"
-  }
+  },
+  "activeStreakCampaignId": 3,
+  "cancelledCampaignIds": [
+    1
+  ],
+  "note": "Campaign 1 cancelled; app must use campaign 3"
 }
