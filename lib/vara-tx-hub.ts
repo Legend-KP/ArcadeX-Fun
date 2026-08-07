@@ -7,18 +7,25 @@ import { blake2b } from "@noble/hashes/blake2b";
 import { stringToU8a, u8aToHex } from "@polkadot/util";
 import type { HexString } from "@/lib/shop-vara";
 import { VARA_RPC_URL } from "@/lib/shop-vara";
+import {
+  envProgramId,
+  VARA_MAINNET_DEPLOYMENTS,
+} from "@/lib/vara-deployments";
 
 export const VARA_TX_HUB_EXPLORER_TX_URL = "https://vara.subscan.io/extrinsic";
 
-export const VARA_TX_HUB_PROGRAM_ID = (process.env
-  .NEXT_PUBLIC_VARA_ARCADEX_TX_HUB_PROGRAM?.trim() || "") as HexString | "";
+/** Prefer env; fall back to checked-in mainnet Program ID (Cloudflare-safe). */
+export const VARA_TX_HUB_PROGRAM_ID: HexString = envProgramId(
+  process.env.NEXT_PUBLIC_VARA_ARCADEX_TX_HUB_PROGRAM,
+  VARA_MAINNET_DEPLOYMENTS.txHubProgramId
+);
 
 /** Sails service + method routes (PascalCase), matching the on-chain program. */
 export const VARA_TX_HUB_SERVICE = "ArcadeXTxHub";
 export const VARA_TX_HUB_SIGN_IN_METHOD = "SignIn";
 
 export function getVaraTxHubProgramId(): HexString {
-  if (!VARA_TX_HUB_PROGRAM_ID || !/^0x[0-9a-fA-F]{64}$/.test(VARA_TX_HUB_PROGRAM_ID)) {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(VARA_TX_HUB_PROGRAM_ID)) {
     throw new Error(
       "Vara TxHub program is not configured. Set NEXT_PUBLIC_VARA_ARCADEX_TX_HUB_PROGRAM."
     );
@@ -32,9 +39,7 @@ export function assertVaraTxHubConfigured(): HexString {
 }
 
 export function isVaraTxHubConfigured(): boolean {
-  return Boolean(
-    VARA_TX_HUB_PROGRAM_ID && /^0x[0-9a-fA-F]{64}$/.test(VARA_TX_HUB_PROGRAM_ID)
-  );
+  return /^0x[0-9a-fA-F]{64}$/.test(VARA_TX_HUB_PROGRAM_ID);
 }
 
 /**
