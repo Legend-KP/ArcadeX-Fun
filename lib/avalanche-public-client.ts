@@ -9,8 +9,9 @@ import { avalanche } from "@/lib/chains";
 const DEFAULT_RPC_URLS = [
   "https://api.avax.network/ext/bc/C/rpc",
   "https://avalanche-c-chain-rpc.publicnode.com",
-  "https://1rpc.io/avax/c",
   "https://avax.meowrpc.com",
+  // 1rpc free tier rate-limits hard — keep last as fallback only.
+  "https://1rpc.io/avax/c",
 ] as const;
 
 function getRpcUrls(): string[] {
@@ -84,8 +85,11 @@ function isTransientRpcError(error: unknown): boolean {
     message.includes("fetch failed") ||
     message.includes("network") ||
     message.includes("429") ||
+    message.includes("403") ||
     message.includes("rate limit") ||
     message.includes("over rate limit") ||
+    message.includes("usage limit") ||
+    message.includes("requested resource not found") ||
     message.includes("503") ||
     message.includes("502")
   );
