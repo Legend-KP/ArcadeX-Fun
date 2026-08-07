@@ -1,7 +1,7 @@
 "use client";
 
 import type { SubmittableExtrinsic } from "@polkadot/api/types";
-import { web3Enable, web3FromAddress } from "@polkadot/extension-dapp";
+import { web3FromAddress } from "@polkadot/extension-dapp";
 import {
   assertVaraShopRecipientConfigured,
   findVaraShopPaymentToken,
@@ -20,8 +20,7 @@ import {
   calculateVftTransferGas,
 } from "@/lib/vara-http-rpc";
 import { toVaraActorId } from "@/lib/vara-address";
-
-const VARA_APP_NAME = "ArcadeX";
+import { resolveVaraSigningAddress } from "@/lib/vara-tx-hub-client";
 
 export async function transferVaraVftTokenOnClient(params: {
   tokenProgramId: string;
@@ -39,12 +38,8 @@ export async function transferVaraVftTokenOnClient(params: {
     throw new Error("Unsupported payment token.");
   }
 
-  const extensions = await web3Enable(VARA_APP_NAME);
-  if (!extensions.length) {
-    throw new Error("Polkadot.js extension not found.");
-  }
-
-  const injector = await web3FromAddress(params.fromAddress);
+  const signingAddress = await resolveVaraSigningAddress(params.fromAddress);
+  const injector = await web3FromAddress(signingAddress);
   if (!injector.signer) {
     throw new Error("Selected account cannot sign transactions.");
   }
@@ -57,7 +52,7 @@ export async function transferVaraVftTokenOnClient(params: {
   const payload = buildVftTransferPayload(toActorId, amount);
   const gasLimit = await calculateVftTransferGas({
     programId: token.programId,
-    fromAddress: params.fromAddress,
+    fromAddress: signingAddress,
     toActorId,
     amount,
   });
@@ -79,7 +74,7 @@ export async function transferVaraVftTokenOnClient(params: {
     const txHash = await new Promise<string>((resolve, reject) => {
       extrinsic
         .signAndSend(
-          params.fromAddress,
+          signingAddress,
           { signer: injector.signer },
           (result) => {
             if (result.status.isInBlock || result.status.isFinalized) {

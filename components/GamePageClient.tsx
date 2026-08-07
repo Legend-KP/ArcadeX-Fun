@@ -121,11 +121,15 @@ export default function GamePageClient() {
     setSpending(true);
     try {
       if (ecosystem === "vara" && isVaraTxHubConfigured()) {
+        setSparkError("Approve free play sign-in in SubWallet…");
         const txHash = await signInOnVaraTxHub({
           fromAddress: walletAddress,
           gameId: game.id,
+          onStatus: (message) => setSparkError(message),
         });
+        setSparkError("Confirming sign-in…");
         await verifyVaraPlaySignIn({ txHash, gameId: game.id });
+        setSparkError("");
       }
 
       await spendForGame();
