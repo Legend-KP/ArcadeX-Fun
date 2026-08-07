@@ -250,8 +250,12 @@ async function verifyVaraAuth(body: VerifyBody): Promise<{ address: string }> {
     throw new Error("Invalid sign-in message.");
   }
 
-  const signer = normalizeAddress("vara", address);
-  if (!verifyVaraSignature(message, signature, signer)) {
+  const rawAddress = address.trim();
+  const signer = normalizeAddress("vara", rawAddress);
+  const valid =
+    (await verifyVaraSignature(message, signature, signer)) ||
+    (await verifyVaraSignature(message, signature, rawAddress));
+  if (!valid) {
     throw new Error("Invalid Vara signature.");
   }
 

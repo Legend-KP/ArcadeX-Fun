@@ -1,11 +1,19 @@
-import { signatureVerify } from "@polkadot/util-crypto";
+import { cryptoWaitReady, signatureVerify } from "@polkadot/util-crypto";
 
-export function verifyVaraSignature(
+let ready: Promise<boolean> | null = null;
+
+function ensureReady(): Promise<boolean> {
+  if (!ready) ready = cryptoWaitReady();
+  return ready;
+}
+
+export async function verifyVaraSignature(
   message: string,
   signature: string,
   address: string
-): boolean {
+): Promise<boolean> {
   try {
+    await ensureReady();
     const { isValid } = signatureVerify(message, signature, address);
     return isValid;
   } catch {
