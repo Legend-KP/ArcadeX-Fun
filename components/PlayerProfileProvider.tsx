@@ -202,13 +202,36 @@ export default function PlayerProfileProvider({
     }
   }, [ecosystem, chainId, walletAddress]);
 
+  const resetToConnect = useCallback(async () => {
+    await logoutSession().catch(() => undefined);
+    clearCachedSession();
+    clearCachedPlayerName();
+    setPlayerId("");
+    setProfile(null);
+    setWalletAddress("");
+    setEcosystem(null);
+    setChainId(undefined);
+    setIsAuthenticated(false);
+    setShowOnboarding(false);
+    setShowDailyPlay(false);
+    setStreakStatus(null);
+    setStreakSuccess(null);
+    setShowConnect(true);
+  }, []);
+
   const loadProfileForSession = useCallback(
-    async (session: {
-      playerId: string;
-      address: string;
-      ecosystem: WalletEcosystem;
-      chainId?: number;
-    }) => {
+    async (
+      session: {
+        playerId: string;
+        address: string;
+        ecosystem: WalletEcosystem;
+        chainId?: number;
+      },
+      opts?: {
+        /** Cold reopen: incomplete profiles must reconnect (name panel is post-sign-in only). */
+        fromColdStart?: boolean;
+      }
+    ) => {
       setPlayerId(session.playerId);
       setWalletAddress(session.address);
       setEcosystem(session.ecosystem);
@@ -232,7 +255,13 @@ export default function PlayerProfileProvider({
       setProfile(user);
 
       if (!hasPlayerName(user)) {
-        // New / incomplete profile — only after network + wallet sign-in.
+        if (opts?.fromColdStart) {
+          // Abandoned / incomplete signup — do not reopen the name panel.
+          // Always start from network → wallet connect on a fresh visit.
+          await resetToConnect();
+          return;
+        }
+        // New user right after wallet sign-in — collect name.
         clearCachedPlayerName();
         setShowDailyPlay(false);
         setShowOnboarding(true);
@@ -242,7 +271,7 @@ export default function PlayerProfileProvider({
         await maybePromptDailyPlay(session);
       }
     },
-    [maybePromptDailyPlay]
+    [maybePromptDailyPlay, resetToConnect]
   );
 
   useEffect(() => {
@@ -263,7 +292,7 @@ export default function PlayerProfileProvider({
           return;
         }
 
-        await loadProfileForSession(session);
+        await loadProfileForSession(session, { fromColdStart: true });
       } catch (err) {
         if (cancelled) return;
         setError(
@@ -387,20 +416,8 @@ export default function PlayerProfileProvider({
     } catch {
       // ignore
     }
-    await logoutSession();
-    clearCachedSession();
-    setPlayerId("");
-    setProfile(null);
-    setWalletAddress("");
-    setEcosystem(null);
-    setChainId(undefined);
-    setIsAuthenticated(false);
-    setShowOnboarding(false);
-    setShowDailyPlay(false);
-    setStreakStatus(null);
-    setStreakSuccess(null);
-    setShowConnect(true);
-  }, [disconnectAsync]);
+    await resetToConnect();
+  }, [disconnectAsync, resetToConnect]);
 
   const value = useMemo(
     () => ({

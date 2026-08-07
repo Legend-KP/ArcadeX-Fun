@@ -93,7 +93,10 @@ export async function fetchAuthSession(): Promise<{
   ecosystem: WalletEcosystem;
   chainId?: number;
 } | null> {
-  const res = await fetch("/api/auth/session", { cache: "no-store" });
+  const res = await fetch("/api/auth/session", {
+    cache: "no-store",
+    credentials: "include",
+  });
   const data = (await res.json()) as {
     session?: {
       playerId: string;
@@ -112,5 +115,9 @@ export async function fetchAuthSession(): Promise<{
 }
 
 export async function logoutSession(): Promise<void> {
-  await fetch("/api/auth/logout", { method: "POST" });
+  await fetch("/api/auth/logout", {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+  });
 }
