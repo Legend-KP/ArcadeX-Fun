@@ -13,7 +13,6 @@ import {
   assertVaraTxHubConfigured,
   playPurpose,
   purposeBytes,
-  VARA_TX_HUB_PROGRAM_ID,
   VARA_TX_HUB_SERVICE,
   VARA_TX_HUB_SIGN_IN_METHOD,
 } from "@/lib/vara-tx-hub";
@@ -124,7 +123,7 @@ export async function verifyVaraTxHubSignIn(params: {
   expectedFrom: string;
   gameId: string;
 }): Promise<{ purpose: HexString; programId: HexString }> {
-  assertVaraTxHubConfigured();
+  const programIdHex = assertVaraTxHubConfigured();
 
   if (!isValidVaraExtrinsicHash(String(params.txHash))) {
     throw new Error("Invalid Vara extrinsic hash.");
@@ -135,7 +134,7 @@ export async function verifyVaraTxHubSignIn(params: {
   const { extrinsicHex } = await waitForExtrinsic(params.txHash);
   const bytes = hexToBytes(extrinsicHex);
 
-  const programId = hexToBytes(VARA_TX_HUB_PROGRAM_ID.toLowerCase());
+  const programId = hexToBytes(programIdHex.toLowerCase());
   if (!includesBytes(bytes, programId)) {
     throw new Error("Sign-in transaction does not target ArcadeXTxHub.");
   }
@@ -160,6 +159,6 @@ export async function verifyVaraTxHubSignIn(params: {
 
   return {
     purpose,
-    programId: VARA_TX_HUB_PROGRAM_ID as HexString,
+    programId: programIdHex,
   };
 }

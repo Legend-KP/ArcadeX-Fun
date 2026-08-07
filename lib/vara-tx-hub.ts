@@ -17,12 +17,18 @@ export const VARA_TX_HUB_PROGRAM_ID = (process.env
 export const VARA_TX_HUB_SERVICE = "ArcadeXTxHub";
 export const VARA_TX_HUB_SIGN_IN_METHOD = "SignIn";
 
-export function assertVaraTxHubConfigured(): asserts VARA_TX_HUB_PROGRAM_ID is HexString {
+export function getVaraTxHubProgramId(): HexString {
   if (!VARA_TX_HUB_PROGRAM_ID || !/^0x[0-9a-fA-F]{64}$/.test(VARA_TX_HUB_PROGRAM_ID)) {
     throw new Error(
       "Vara TxHub program is not configured. Set NEXT_PUBLIC_VARA_ARCADEX_TX_HUB_PROGRAM."
     );
   }
+  return VARA_TX_HUB_PROGRAM_ID;
+}
+
+/** @deprecated Prefer getVaraTxHubProgramId() */
+export function assertVaraTxHubConfigured(): HexString {
+  return getVaraTxHubProgramId();
 }
 
 export function isVaraTxHubConfigured(): boolean {

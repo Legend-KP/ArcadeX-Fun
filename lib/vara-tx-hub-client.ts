@@ -6,7 +6,6 @@ import {
   assertVaraTxHubConfigured,
   playPurpose,
   VARA_RPC_URL,
-  VARA_TX_HUB_PROGRAM_ID,
 } from "@/lib/vara-tx-hub";
 import { encodeTxHubSignInPayload } from "@/lib/vara-tx-hub-codec";
 import { toVaraActorId } from "@/lib/vara-address";
@@ -58,7 +57,7 @@ export async function signInOnVaraTxHub(params: {
   fromAddress: string;
   gameId: string;
 }): Promise<string> {
-  assertVaraTxHubConfigured();
+  const programId = assertVaraTxHubConfigured();
 
   const extensions = await web3Enable(VARA_APP_NAME);
   if (!extensions.length) {
@@ -72,7 +71,6 @@ export async function signInOnVaraTxHub(params: {
 
   const purpose = playPurpose(params.gameId);
   const payload = encodeTxHubSignInPayload(purpose);
-  const programId = VARA_TX_HUB_PROGRAM_ID;
   const gasLimit = await calculateSignInGas({
     programId,
     fromAddress: params.fromAddress,
