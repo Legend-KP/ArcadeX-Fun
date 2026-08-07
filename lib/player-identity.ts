@@ -1,5 +1,10 @@
 import { getAddress, isAddress } from "viem";
 import { isValidSuiAddress, normalizeSuiAddress } from "@mysten/sui/utils";
+import {
+  isVaraWalletAddress,
+  normalizeVaraAddressPair,
+  toVaraSs58,
+} from "@/lib/vara-address";
 
 export type WalletEcosystem =
   | "evm"
@@ -13,7 +18,6 @@ export type WalletEcosystem =
 const STARKNET_ADDRESS_RE = /^0x[0-9a-fA-F]{1,64}$/;
 const APTOS_ADDRESS_RE = /^0x[0-9a-fA-F]{1,64}$/;
 const STELLAR_ADDRESS_RE = /^G[A-Z2-7]{55}$/;
-const VARA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{47,48}$/;
 
 export function isEvmAddress(value: string | null | undefined): boolean {
   if (!value?.trim()) return false;
@@ -45,8 +49,7 @@ export function isStellarAddress(value: string | null | undefined): boolean {
 }
 
 export function isVaraAddress(value: string | null | undefined): boolean {
-  if (!value?.trim()) return false;
-  return VARA_ADDRESS_RE.test(value.trim());
+  return isVaraWalletAddress(value);
 }
 
 export function normalizeEvmAddress(address: string): string {
@@ -97,13 +100,20 @@ export function normalizeStellarAddress(address: string): string {
   return trimmed;
 }
 
+/**
+ * Canonical Vara address for playerId / RTDB: SS58 (prefix 137).
+ * Accepts SS58 or ActorId hex; always re-encodes to Vara SS58.
+ * Use `normalizeVaraAddressPair` when you also need the ActorId hex.
+ */
 export function normalizeVaraAddress(address: string): string {
   const trimmed = address.trim();
   if (!isVaraAddress(trimmed)) {
     throw new Error("Invalid Vara wallet address");
   }
-  return trimmed;
+  return toVaraSs58(trimmed);
 }
+
+export { normalizeVaraAddressPair };
 
 export function normalizeAddress(
   ecosystem: WalletEcosystem,

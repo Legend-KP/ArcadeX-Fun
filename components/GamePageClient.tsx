@@ -11,12 +11,21 @@ import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import { useSparks } from "@/components/SparkProvider";
 import { SparkClientError } from "@/lib/spark-client";
 import { formatSparkCountdown } from "@/lib/spark";
+import { isVaraTxHubConfigured } from "@/lib/vara-tx-hub";
+import { signInOnVaraTxHub } from "@/lib/vara-tx-hub-client";
+import { verifyVaraPlaySignIn } from "@/lib/vara-tx-hub-api";
 
 export default function GamePageClient() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { walletAddress, isAuthenticated, openConnect, playerId, playerName } =
-    usePlayerProfile();
+  const {
+    walletAddress,
+    isAuthenticated,
+    openConnect,
+    playerId,
+    playerName,
+    ecosystem,
+  } = usePlayerProfile();
   const { sparks, spendForGame } = useSparks();
   const [game, setGame] = useState<Game | null>(null);
   const [started, setStarted] = useState(false);
@@ -79,7 +88,9 @@ export default function GamePageClient() {
     return (
       <div className="coming-soon-screen">
         <p className="coming-soon-screen__title">Coming Soon</p>
-        <p className="coming-soon-screen__subtitle">{game.name} is not available yet.</p>
+        <p className="coming-soon-screen__subtitle">
+          {game.name} is not available yet.
+        </p>
         <button
           type="button"
           className="game-menu-btn game-menu-btn--back"
@@ -109,6 +120,14 @@ export default function GamePageClient() {
 
     setSpending(true);
     try {
+      if (ecosystem === "vara" && isVaraTxHubConfigured()) {
+        const txHash = await signInOnVaraTxHub({
+          fromAddress: walletAddress,
+          gameId: game.id,
+        });
+        await verifyVaraPlaySignIn({ txHash, gameId: game.id });
+      }
+
       await spendForGame();
       setStarted(true);
     } catch (err) {

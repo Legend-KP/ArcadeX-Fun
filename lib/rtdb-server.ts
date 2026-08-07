@@ -33,6 +33,7 @@ import {
 } from "@/lib/spark";
 import { INFINITE_SPARKS_MS, type ShopProductId } from "@/lib/shop";
 import { isWalletAddress, normalizeWalletAddress } from "@/lib/wallet-address";
+import { toVaraActorId, toVaraSs58 } from "@/lib/vara-address";
 import { SHUFFLE_DAILY_USDC_BUDGET_MICRO } from "@/lib/shuffle-outcomes";
 
 type StoredUser = Omit<PlayerProfile, "id">;
@@ -406,30 +407,57 @@ export async function bootstrapUserOnServer(
 
 // ─── Game play counts ──────────────────────────────────────────────────────────
 
+/** Normalize a play-count leaf (number, or legacy push-map from mistaken POSTs). */
+function coercePlayCount(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  if (value && typeof value === "object") {
+    // Legacy bug: POST created push children like { "-Nxxx": 1, ... }
+    let total = 0;
+    for (const child of Object.values(value as Record<string, unknown>)) {
+      if (typeof child === "number" && Number.isFinite(child)) {
+        total += Math.max(0, Math.floor(child));
+      } else {
+        total += 1;
+      }
+    }
+    return total;
+  }
+  return 0;
+}
+
 export async function fetchAllGamePlayCounts(): Promise<Record<string, number>> {
   return cachedFetchAllPlayCounts(async () => {
-    const data = await readPath<Record<string, number>>("gamePlays");
+    const data = await readPath<Record<string, unknown>>("gamePlays");
     if (!data) return {};
 
     const counts: Record<string, number> = {};
     for (const [gameId, value] of Object.entries(data)) {
-      counts[gameId] = typeof value === "number" ? value : 0;
+      counts[gameId] = coercePlayCount(value);
     }
     return counts;
   });
 }
 
 export async function fetchGamePlayCount(gameId: string): Promise<number> {
-  const count = await readPath<number>(`gamePlays/${gameId}`);
-  return typeof count === "number" ? count : 0;
+  const count = await readPath<unknown>(`gamePlays/${gameId}`);
+  return coercePlayCount(count);
 }
 
 export async function incrementGamePlayCount(gameId: string): Promise<number> {
-  // Atomic server-side increment — no read-modify-write race.
+  // Repair legacy push-map nodes (created by mistaken POST increments) into a number.
+  const existing = await readPath<unknown>(`gamePlays/${gameId}`);
+  if (existing && typeof existing === "object") {
+    const repaired = coercePlayCount(existing);
+    await writePath(`gamePlays/${gameId}`, repaired);
+  }
+
+  // Atomic server-side increment — PUT at the leaf (POST would push a child key).
   const auth = getRtdbAuthQuery();
   const url = `${getDatabaseUrl()}/${encodeRtdbPath(`gamePlays/${gameId}`)}.json?${auth}`;
   const res = await fetch(url, {
-    method: "POST",
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ".sv": { increment: 1 } }),
     cache: "no-store",
@@ -448,7 +476,7 @@ export async function incrementGamePlayCount(gameId: string): Promise<number> {
   bumpCachedPlayCount(gameId);
 
   const body = (await res.json()) as number | null;
-  return typeof body === "number" ? body : 0;
+  return typeof body === "number" ? body : await fetchGamePlayCount(gameId);
 }
 
 // ─── Leaderboard ─────────────────────────────────────────────────────────────
@@ -1212,6 +1240,98 @@ export async function recordCheckInTxOnServer(
   }
 
   return { reused: claim.status === "exists" };
+}
+
+export class VaraTxHubSignInError extends Error {
+  constructor(
+    message: string,
+    readonly code?: "INVALID_TX" | "TX_ALREADY_USED" | "NO_WALLET"
+  ) {
+    super(message);
+    this.name = "VaraTxHubSignInError";
+  }
+}
+
+function varaTxHubSignInPath(txHash: string): string {
+  return `vara/txHub/signIns/${txHash}`;
+}
+
+/** Replay-protect free ArcadeXTxHub sign_in extrinsics. */
+export async function recordVaraTxHubSignInOnServer(params: {
+  walletAddress: string;
+  txHash: string;
+  gameId: string;
+  purpose: string;
+}): Promise<{ reused: boolean }> {
+  let actorId: string;
+  let ss58: string;
+  try {
+    actorId = toVaraActorId(params.walletAddress);
+    ss58 = toVaraSs58(params.walletAddress);
+  } catch {
+    throw new VaraTxHubSignInError(
+      "A valid Vara wallet address is required.",
+      "NO_WALLET"
+    );
+  }
+
+  const normalizedTxHash = params.txHash.trim().toLowerCase();
+  if (!/^0x[0-9a-f]{64}$/.test(normalizedTxHash)) {
+    throw new VaraTxHubSignInError(
+      "A valid transaction hash is required.",
+      "INVALID_TX"
+    );
+  }
+
+  type SignInRecord = {
+    wallet: string;
+    actorId: string;
+    gameId: string;
+    purpose: string;
+    syncedAt: number;
+  };
+
+  let reused = false;
+  let conflict = false;
+
+  const { committed } = await runRtdbTransaction<SignInRecord>(
+    varaTxHubSignInPath(normalizedTxHash),
+    (current) => {
+      if (current?.actorId || current?.wallet) {
+        let existing = (current.actorId || "").toLowerCase();
+        if (!existing && current.wallet) {
+          try {
+            existing = toVaraActorId(String(current.wallet));
+          } catch {
+            existing = "";
+          }
+        }
+        if (existing === actorId) {
+          reused = true;
+          return undefined;
+        }
+        conflict = true;
+        return undefined;
+      }
+
+      return {
+        wallet: ss58,
+        actorId,
+        gameId: params.gameId.trim(),
+        purpose: params.purpose.trim().toLowerCase(),
+        syncedAt: Date.now(),
+      };
+    }
+  );
+
+  if (conflict) {
+    throw new VaraTxHubSignInError(
+      "This transaction was already used.",
+      "TX_ALREADY_USED"
+    );
+  }
+
+  return { reused: reused || !committed };
 }
 
 /**

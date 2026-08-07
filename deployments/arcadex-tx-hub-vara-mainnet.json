@@ -1,0 +1,17 @@
+{
+  "contract": "ArcadeXTxHub",
+  "network": "vara-mainnet",
+  "programId": "0xa9a4530247fde6fa0839602d419086c9a643b766fc186b7fd0f7d637e776e16c",
+  "codeId": "0x65ce4e85f8afd2b58a88f3f15423527d422f59b4bfcc50ab2761c4b9fdb12235",
+  "owner": "",
+  "deployedAt": "2026-08-07",
+  "notes": {
+    "playPurpose": "blake2b-256(UTF-8 \"PLAY:{gameId}\")",
+    "serviceRoute": "ArcadeXTxHub",
+    "signInMethod": "SignIn",
+    "deploy": "Upload target/wasm32-gear/release/arcadex_tx_hub.opt.wasm via Gear IDEA, then create program with New(), attach idl/arcadex_tx_hub.idl",
+    "env": "NEXT_PUBLIC_VARA_ARCADEX_TX_HUB_PROGRAM=<programId>"
+  },
+  "wUSDT": "0x4255ff4a87a4c13dc39f74ace8c4948bbef2f75fb639d66639a1cfcc99e6243e",
+  "wUSDC": "0xd1de816d7dce6439504552686ab333e5b7302b1549763656b30af1f8a5871b6a"
+}

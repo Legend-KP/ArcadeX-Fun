@@ -1,0 +1,31 @@
+// IDL sketch for ArcadeXTxHub (sails-rs 0.9.x).
+// Regenerate after `cargo build --release` and copy from
+// contracts-vara/arcadex-tx-hub/arcadex_tx_hub.idl if the builder emits one.
+
+constructor {
+  New : ();
+};
+
+service ArcadeXTxHub {
+  events {
+    SignedIn: struct { player: actor_id, purpose: [u8; 32], timestamp: u64 };
+    Paused: null;
+    Unpaused: null;
+    OwnershipTransferStarted: struct { previous_owner: actor_id, new_owner: actor_id };
+    OwnershipTransferred: struct { previous_owner: actor_id, new_owner: actor_id };
+    FeeUpdated: struct { purpose: [u8; 32], fee: u128 };
+  };
+
+  SignIn : (purpose: [u8; 32]) -> null;
+  Pause : () -> null;
+  Unpause : () -> null;
+  TransferOwnership : (new_owner: actor_id) -> null;
+  AcceptOwnership : () -> null;
+  SetFee : (purpose: [u8; 32], fee: u128) -> null;
+
+  query Owner : () -> actor_id;
+  query PendingOwner : () -> opt actor_id;
+  query Paused : () -> bool;
+  query SignInCount : () -> u64;
+  query FeeOf : (purpose: [u8; 32]) -> u128;
+};
