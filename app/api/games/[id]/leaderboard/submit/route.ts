@@ -13,10 +13,14 @@ import {
   gameHasLeaderboard,
   LeaderboardEntry,
 } from "@/types";
-import { isWalletAddress, tryNormalizeWalletAddress } from "@/lib/wallet-address";
 import { verifyScoreSubmitPayment } from "@/lib/score-submit-server";
-import { parsePlayerId, resolvePlayerId } from "@/lib/player-identity";
-import type { WalletEcosystem } from "@/lib/player-identity";
+import {
+  isValidAddress,
+  normalizeAddress,
+  parsePlayerId,
+  resolvePlayerId,
+  type WalletEcosystem,
+} from "@/lib/player-identity";
 import { readSessionFromCookies } from "@/lib/auth-session";
 
 export const dynamic = "force-dynamic";
@@ -75,14 +79,16 @@ export async function POST(
       );
     }
 
-    const wallet = tryNormalizeWalletAddress(body.walletAddress);
-    if (!wallet || !isWalletAddress(wallet)) {
+    const ecosystem = resolveEcosystem(body);
+    const rawWallet = body.walletAddress?.trim() ?? "";
+    if (!isValidAddress(ecosystem, rawWallet)) {
       return corsJsonResponse(
         request,
         { error: "walletAddress is required." },
         { status: 400 }
       );
     }
+    const wallet = normalizeAddress(ecosystem, rawWallet);
 
     let name = body.name?.trim() || body.playerName?.trim() || "";
     if (!name) {
@@ -93,7 +99,6 @@ export async function POST(
       name = `${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
     }
 
-    const ecosystem = resolveEcosystem(body);
     const session = await readSessionFromCookies();
 
     await verifyScoreSubmitPayment({

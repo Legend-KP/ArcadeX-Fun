@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import ExitGameModal from "@/components/ExitGameModal";
 import LoadingScreen from "@/components/LoadingScreen";
 import ScoreSubmitModal from "@/components/ScoreSubmitModal";
+import ScoreSubmitVaraPaymentModal from "@/components/ScoreSubmitVaraPaymentModal";
 import { sendToUnity, UnityMessage } from "@/lib/bridge";
 import { getLeaderboard } from "@/lib/firebase";
 import { getGameProgress, saveGameProgress } from "@/lib/game-progress-client";
@@ -47,6 +48,7 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
     profile,
     playerId,
     walletAddress,
+    ecosystem,
     isReady,
     openConnect,
   } = usePlayerProfile();
@@ -408,7 +410,36 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
         onPlayMore={() => router.push("/")}
       />
 
-      {pendingScore && (
+      {pendingScore && ecosystem === "vara" && (
+        <ScoreSubmitVaraPaymentModal
+          open={scoreSubmitOpen}
+          gameId={game.id}
+          score={pendingScore.score}
+          playerName={pendingScore.name}
+          walletAddress={
+            pendingScore.walletAddress || resolvedWallet || ""
+          }
+          onClose={() => {
+            setScoreSubmitOpen(false);
+            setPendingScore(null);
+            sendToUnity(iframeRef, "OnScoreSubmitted", {
+              success: false,
+              error: "Score submission cancelled.",
+            });
+          }}
+          onSuccess={(submittedBest) => {
+            setScoreSubmitOpen(false);
+            setPendingScore(null);
+            sendToUnity(iframeRef, "OnScoreSubmitted", {
+              success: true,
+              highScore: submittedBest,
+            });
+            onScoreSubmitted?.();
+          }}
+        />
+      )}
+
+      {pendingScore && ecosystem !== "vara" && (
         <ScoreSubmitModal
           open={scoreSubmitOpen}
           gameId={game.id}
