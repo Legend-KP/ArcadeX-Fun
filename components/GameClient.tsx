@@ -12,8 +12,6 @@ import { getGameProgress, saveGameProgress } from "@/lib/game-progress-client";
 import { buildGameIframeUrl, getShellOrigin } from "@/lib/game-iframe-url";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import { getGameTheme } from "@/lib/game-themes";
-import { parsePlayerId } from "@/lib/player-identity";
-import { isVaraWalletAddress } from "@/lib/vara-address";
 import { Game, gameHasContestLive, gameHasLeaderboard } from "@/types";
 
 interface GameClientProps {
@@ -58,10 +56,6 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
   const resolvedName = playerName || profile?.name || "";
   const resolvedWallet = walletAddress || profile?.walletAddress || "";
   const resolvedPlayerId = playerId || profile?.id || "";
-  const isVaraSession =
-    ecosystem === "vara" ||
-    parsePlayerId(resolvedPlayerId)?.ecosystem === "vara" ||
-    isVaraWalletAddress(resolvedWallet);
 
   const iframeSrc = useMemo(() => {
     if (!isReady) return null;
@@ -151,14 +145,7 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
   const handleMessage = useCallback(
     async (event: MessageEvent) => {
       const msg = event.data as UnityMessage;
-      // GAME_LEADERBOARD_SUBMIT is a legacy alias (does not use MINIPAY_ prefix).
-      if (
-        !msg?.type ||
-        (!msg.type.startsWith("MINIPAY_") &&
-          msg.type !== "GAME_LEADERBOARD_SUBMIT")
-      ) {
-        return;
-      }
+      if (!msg?.type?.startsWith("MINIPAY_")) return;
 
       switch (msg.type) {
         case "MINIPAY_BOOTSTRAP": {
@@ -423,7 +410,7 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
         onPlayMore={() => router.push("/")}
       />
 
-      {pendingScore && isVaraSession && (
+      {pendingScore && ecosystem === "vara" && (
         <ScoreSubmitVaraPaymentModal
           open={scoreSubmitOpen}
           gameId={game.id}
@@ -452,7 +439,7 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
         />
       )}
 
-      {pendingScore && !isVaraSession && (
+      {pendingScore && ecosystem !== "vara" && (
         <ScoreSubmitModal
           open={scoreSubmitOpen}
           gameId={game.id}

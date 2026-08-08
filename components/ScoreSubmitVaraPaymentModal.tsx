@@ -190,14 +190,8 @@ export default function ScoreSubmitVaraPaymentModal({
       return;
     }
 
-    if (!programConfigured) {
-      setError(
-        "Score submit program is not configured. Redeploy with NEXT_PUBLIC_VARA_SCORE_SUBMIT_PROGRAM."
-      );
-    }
-
     void loadBalances();
-  }, [open, loadBalances, programConfigured]);
+  }, [open, loadBalances]);
 
   const handlePay = useCallback(
     async (token?: VaraShopPaymentToken) => {
