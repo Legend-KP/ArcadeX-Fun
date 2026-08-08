@@ -19,8 +19,12 @@ import {
   invalidateContestLeaderboardTopCache,
 } from "@/lib/rtdb-cache";
 import {
+  isEvmAddress,
   isValidAddress,
+  isVaraAddress,
   normalizeAddress,
+  normalizeEvmAddress,
+  normalizeVaraAddress,
   parsePlayerId,
   resolvePlayerId,
   WalletEcosystem,
@@ -35,6 +39,18 @@ import { INFINITE_SPARKS_MS, type ShopProductId } from "@/lib/shop";
 import { isWalletAddress, normalizeWalletAddress } from "@/lib/wallet-address";
 import { toVaraActorId, toVaraSs58 } from "@/lib/vara-address";
 import { SHUFFLE_DAILY_USDC_BUDGET_MICRO } from "@/lib/shuffle-outcomes";
+
+/** EVM checksum or Vara SS58 — for streak/shuffle RTDB keys. */
+function normalizeRewardsWallet(walletAddress: string): string {
+  const trimmed = walletAddress.trim();
+  if (isEvmAddress(trimmed)) return normalizeEvmAddress(trimmed);
+  if (isVaraAddress(trimmed)) return normalizeVaraAddress(trimmed);
+  throw new Error("Invalid wallet address");
+}
+
+function isRewardsWallet(walletAddress: string | null | undefined): boolean {
+  return isEvmAddress(walletAddress) || isVaraAddress(walletAddress);
+}
 
 type StoredUser = Omit<PlayerProfile, "id">;
 type LeaderboardMap = Record<string, LeaderboardEntry>;
@@ -1207,11 +1223,10 @@ export async function recordCheckInTxOnServer(
   day: number,
   campaignId: number
 ): Promise<{ reused: boolean }> {
-  if (!isWalletAddress(walletAddress)) {
+  if (!isRewardsWallet(walletAddress)) {
     throw new StreakSyncError("A valid wallet address is required.", "NO_WALLET");
   }
-
-  const wallet = normalizeWalletAddress(walletAddress);
+  const wallet = normalizeRewardsWallet(walletAddress);
   const normalizedTxHash = txHash.trim().toLowerCase();
 
   if (!/^0x[0-9a-f]{64}$/.test(normalizedTxHash)) {
@@ -1340,20 +1355,21 @@ export async function recordVaraTxHubSignInOnServer(params: {
 export async function grantStreakInfiniteSparkOnServer(
   walletAddress: string,
   txHash: string,
-  campaignId: number
+  campaignId: number,
+  chainId?: number | null
 ): Promise<{
   state: StoredSparkState;
   sparks: SparkSnapshot;
   granted: boolean;
 }> {
-  if (!isWalletAddress(walletAddress)) {
+  if (!isRewardsWallet(walletAddress)) {
     throw new StreakRewardError(
       "A valid wallet address is required.",
       "NO_WALLET"
     );
   }
 
-  const wallet = normalizeWalletAddress(walletAddress);
+  const wallet = normalizeRewardsWallet(walletAddress);
   const playerId = walletToPlayerId(wallet);
   const normalizedTxHash = txHash.trim().toLowerCase();
 
@@ -1368,7 +1384,7 @@ export async function grantStreakInfiniteSparkOnServer(
   const existingGrant = await readPath<{ wallet?: string }>(guardPath);
 
   if (existingGrant?.wallet) {
-    const recorded = normalizeWalletAddress(existingGrant.wallet);
+    const recorded = normalizeRewardsWallet(existingGrant.wallet);
     if (recorded !== wallet) {
       throw new StreakRewardError(
         "This reward was already used by another wallet.",
@@ -1388,7 +1404,8 @@ export async function grantStreakInfiniteSparkOnServer(
     await verifyOffchainMilestoneTx(
       wallet,
       normalizedTxHash as Hash,
-      campaignId
+      campaignId,
+      chainId
     );
   } catch (err) {
     const message =
@@ -1541,7 +1558,7 @@ export function shuffleUsdcReservationKey(
   campaignId: number,
   nonce: number
 ): string {
-  return `${normalizeWalletAddress(walletAddress)}_${campaignId}_${nonce}`;
+  return `${normalizeRewardsWallet(walletAddress)}_${campaignId}_${nonce}`;
 }
 
 /** @deprecated Use shuffleUsdcReservationKey */
@@ -1712,7 +1729,7 @@ export async function getShufflePending(
   campaignId: number,
   nonce: number
 ): Promise<ShufflePendingRecord | null> {
-  const wallet = normalizeWalletAddress(walletAddress);
+  const wallet = normalizeRewardsWallet(walletAddress);
   return readPath<ShufflePendingRecord>(
     shufflePendingPath(wallet, campaignId, nonce)
   );
@@ -1724,7 +1741,7 @@ export async function markShufflePendingConsumed(
   nonce: number,
   txHash: string
 ): Promise<void> {
-  const wallet = normalizeWalletAddress(walletAddress);
+  const wallet = normalizeRewardsWallet(walletAddress);
   const path = shufflePendingPath(wallet, campaignId, nonce);
   const existing = await readPath<ShufflePendingRecord>(path);
   if (!existing) return;
@@ -1740,11 +1757,11 @@ export async function recordSpinTxOnServer(
   campaignId: number,
   outcomeId: string
 ): Promise<{ reused: boolean }> {
-  if (!isWalletAddress(walletAddress)) {
+  if (!isRewardsWallet(walletAddress)) {
     throw new StreakSyncError("A valid wallet address is required.", "NO_WALLET");
   }
 
-  const wallet = normalizeWalletAddress(walletAddress);
+  const wallet = normalizeRewardsWallet(walletAddress);
   const normalizedTxHash = txHash.trim().toLowerCase();
 
   if (!/^0x[0-9a-f]{64}$/.test(normalizedTxHash)) {
@@ -1783,21 +1800,21 @@ export async function grantShuffleInfiniteSparkOnServer(
   sparks: SparkSnapshot;
   granted: boolean;
 }> {
-  if (!isWalletAddress(walletAddress)) {
+  if (!isRewardsWallet(walletAddress)) {
     throw new StreakRewardError(
       "A valid wallet address is required.",
       "NO_WALLET"
     );
   }
 
-  const wallet = normalizeWalletAddress(walletAddress);
+  const wallet = normalizeRewardsWallet(walletAddress);
   const playerId = walletToPlayerId(wallet);
   const normalizedTxHash = txHash.trim().toLowerCase();
   const guardPath = shuffleGrantPath(normalizedTxHash);
   const existingGrant = await readPath<{ wallet?: string }>(guardPath);
 
   if (existingGrant?.wallet) {
-    const recorded = normalizeWalletAddress(existingGrant.wallet);
+    const recorded = normalizeRewardsWallet(existingGrant.wallet);
     if (recorded !== wallet) {
       throw new StreakRewardError(
         "This reward was already used by another wallet.",

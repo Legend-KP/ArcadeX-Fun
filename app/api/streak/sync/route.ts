@@ -15,7 +15,10 @@ import {
   grantStreakInfiniteSparkOnServer,
   StreakRewardError,
 } from "@/lib/rtdb-server";
-import { isWalletAddress, normalizeWalletAddress } from "@/lib/wallet-address";
+import {
+  isStreakWalletAddress,
+  normalizeStreakWalletAddress,
+} from "@/lib/streak-wallet";
 import { invalidateStreakProgressCache } from "@/lib/streak-progress-cache";
 import { createWalletSessionToken } from "@/lib/wallet-session";
 import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
@@ -61,7 +64,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!rawWallet || !isWalletAddress(rawWallet)) {
+    if (!rawWallet || !isStreakWalletAddress(chainId, rawWallet)) {
       return NextResponse.json(
         { error: "walletAddress is required.", code: "NO_WALLET" },
         { status: 400 }
@@ -75,7 +78,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const wallet = normalizeWalletAddress(rawWallet);
+    const wallet = normalizeStreakWalletAddress(chainId, rawWallet);
 
     let verified;
     try {
@@ -110,7 +113,8 @@ export async function POST(request: Request) {
         const result = await grantStreakInfiniteSparkOnServer(
           wallet,
           txHash,
-          campaignId
+          campaignId,
+          chainId
         );
         reward = {
           granted: result.granted,

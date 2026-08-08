@@ -25,6 +25,7 @@ import {
   isAvalancheRewardsChainId,
   getStreakCampaignIdForChain,
 } from "@/lib/arcadex-rewards";
+import { VARA_CHAIN_ID, isVaraArcadeXRewardsConfigured } from "@/lib/vara-rewards";
 import { fetchDailyPlayConfig } from "@/lib/daily-play-config-client";
 import type { DailyPlayMode } from "@/lib/daily-play-mode";
 import {
@@ -112,16 +113,26 @@ export default function PlayerProfileProvider({
       const sessionChainId =
         session.chainId == null ? undefined : Number(session.chainId);
 
-      // Daily streak ceremony for Base + Avalanche EVM wallets.
-      if (
+      // Daily ceremony: Base + Avalanche EVM, or Vara when Rewards program is live.
+      const isVaraSession = session.ecosystem === "vara";
+      const resolvedChainId = isVaraSession
+        ? VARA_CHAIN_ID
+        : sessionChainId ?? PRIMARY_EVM_CHAIN_ID;
+
+      if (isVaraSession) {
+        if (!isVaraArcadeXRewardsConfigured()) {
+          setShowDailyPlay(false);
+          setStreakStatus(null);
+          return;
+        }
+      } else if (
         session.ecosystem !== "evm" ||
-        !isArcadeXRewardsConfiguredForChain(sessionChainId ?? PRIMARY_EVM_CHAIN_ID)
+        !isArcadeXRewardsConfiguredForChain(resolvedChainId)
       ) {
         setShowDailyPlay(false);
         setStreakStatus(null);
         return;
-      }
-      if (
+      } else if (
         sessionChainId != null &&
         Number.isFinite(sessionChainId) &&
         sessionChainId !== PRIMARY_EVM_CHAIN_ID &&
@@ -135,8 +146,6 @@ export default function PlayerProfileProvider({
       try {
         const config = await fetchDailyPlayConfig({ fresh: true });
         setDailyPlayMode(config.mode);
-        // Default missing chainId to Base mainnet (8453).
-        const resolvedChainId = sessionChainId ?? PRIMARY_EVM_CHAIN_ID;
         const campaignId =
           config.mode === "shuffle"
             ? config.campaignId
@@ -174,13 +183,17 @@ export default function PlayerProfileProvider({
   );
 
   const refreshStreakStatus = useCallback(async () => {
+    const isVara = ecosystem === "vara";
     const onSupportedChain =
-      chainId === PRIMARY_EVM_CHAIN_ID || isAvalancheRewardsChainId(chainId);
+      isVara ||
+      chainId === PRIMARY_EVM_CHAIN_ID ||
+      isAvalancheRewardsChainId(chainId);
+    const resolvedChainId = isVara ? VARA_CHAIN_ID : chainId;
     if (
-      ecosystem !== "evm" ||
+      (!isVara && ecosystem !== "evm") ||
       !onSupportedChain ||
       !walletAddress ||
-      !isArcadeXRewardsConfiguredForChain(chainId)
+      !isArcadeXRewardsConfiguredForChain(resolvedChainId)
     ) {
       setStreakStatus(null);
       return;
@@ -191,14 +204,14 @@ export default function PlayerProfileProvider({
       const campaignId =
         config.mode === "shuffle"
           ? config.campaignId
-          : getStreakCampaignIdForChain(chainId);
+          : getStreakCampaignIdForChain(resolvedChainId);
       const status = await fetchStreakStatus(walletAddress, campaignId, {
         fresh: true,
-        chainId,
+        chainId: resolvedChainId,
       });
       setStreakStatus(status);
     } catch {
-      // ignore
+      setStreakStatus(null);
     }
   }, [ecosystem, chainId, walletAddress]);
 
@@ -482,13 +495,14 @@ export default function PlayerProfileProvider({
       <DailyCheckInModal
         open={dailyOpen && dailyPlayMode !== "shuffle"}
         walletAddress={walletAddress}
-        chainId={chainId}
+        chainId={ecosystem === "vara" ? VARA_CHAIN_ID : chainId}
         status={streakStatus}
         onComplete={handleDailyPlayComplete}
       />
       <DailyShuffleModal
         open={dailyOpen && dailyPlayMode === "shuffle"}
         walletAddress={walletAddress}
+        chainId={ecosystem === "vara" ? VARA_CHAIN_ID : chainId}
         status={streakStatus}
         onComplete={handleDailyPlayComplete}
       />

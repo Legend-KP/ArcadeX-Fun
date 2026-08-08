@@ -1,0 +1,22 @@
+{
+  "contract": "ArcadeXRewards",
+  "network": "vara-mainnet",
+  "programId": "",
+  "codeId": "",
+  "owner": "",
+  "deployedAt": "",
+  "notes": {
+    "lite": "check-in + shuffle spin (OFFCHAIN only); no claim/treasury",
+    "serviceRoute": "ArcadeXRewards",
+    "checkInMethod": "CheckIn",
+    "spinMethod": "Spin",
+    "spinSigner": "SetSpinResultSigner with VARA_SPIN_RESULT_PUBLIC_KEY (32-byte sr25519)",
+    "eligibilitySigner": "optional SetEligibilitySigner with VARA_ELIGIBILITY_PUBLIC_KEY",
+    "campaigns": "SetCampaign: streak id 1 (type 0), shuffle id 2 (type 1); reward_mode must be 0 (OFFCHAIN)",
+    "deploy": "Upload target/wasm32-gear/release/arcadex_rewards.opt.wasm via Gear IDEA, create program with New(), attach idl/arcadex_rewards.idl",
+    "env": "NEXT_PUBLIC_VARA_ARCADEX_REWARDS_PROGRAM=<programId>",
+    "chainIdSentinel": 137
+  },
+  "wUSDT": "0x4255ff4a87a4c13dc39f74ace8c4948bbef2f75fb639d66639a1cfcc99e6243e",
+  "wUSDC": "0xd1de816d7dce6439504552686ab333e5b7302b1549763656b30af1f8a5871b6a"
+}

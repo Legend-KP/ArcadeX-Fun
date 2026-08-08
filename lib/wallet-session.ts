@@ -5,9 +5,26 @@ import {
 import { SignJWT, jwtVerify } from "jose";
 import { verifyMessage } from "viem";
 import { parseAuthChallengeMessage } from "@/lib/wallet-auth-message";
-import { isWalletAddress, normalizeWalletAddress } from "@/lib/wallet-address";
+import {
+  isEvmAddress,
+  isVaraAddress,
+  normalizeEvmAddress,
+  normalizeVaraAddress,
+} from "@/lib/player-identity";
 
 const SESSION_TTL_SEC = 24 * 60 * 60;
+
+/** EVM or Vara — wallet session JWT after daily check-in / shuffle. */
+function isSessionWalletAddress(value: string | null | undefined): boolean {
+  return isEvmAddress(value) || isVaraAddress(value);
+}
+
+function normalizeSessionWalletAddress(address: string): string {
+  const trimmed = address.trim();
+  if (isEvmAddress(trimmed)) return normalizeEvmAddress(trimmed);
+  if (isVaraAddress(trimmed)) return normalizeVaraAddress(trimmed);
+  throw new Error("Invalid wallet address");
+}
 
 /** True when a real session secret is present (never fail-open). */
 export function isWalletAuthEnabled(): boolean {
@@ -21,7 +38,7 @@ function getWalletSessionSecret(): Uint8Array {
 }
 
 export async function createWalletSessionToken(wallet: string): Promise<string> {
-  const normalized = normalizeWalletAddress(wallet);
+  const normalized = normalizeSessionWalletAddress(wallet);
   return new SignJWT({ wallet: normalized })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -35,8 +52,10 @@ export async function verifyWalletSessionToken(
   try {
     const { payload } = await jwtVerify(token, getWalletSessionSecret());
     const wallet = payload.wallet;
-    if (typeof wallet !== "string" || !isWalletAddress(wallet)) return null;
-    return normalizeWalletAddress(wallet);
+    if (typeof wallet !== "string" || !isSessionWalletAddress(wallet)) {
+      return null;
+    }
+    return normalizeSessionWalletAddress(wallet);
   } catch {
     return null;
   }
@@ -84,10 +103,10 @@ export async function requireWalletAuth(
   }
 
   if (walletAddress) {
-    if (!isWalletAddress(walletAddress)) {
+    if (!isSessionWalletAddress(walletAddress)) {
       return { ok: false, error: "Invalid wallet address.", status: 400 };
     }
-    const expected = normalizeWalletAddress(walletAddress);
+    const expected = normalizeSessionWalletAddress(walletAddress);
     if (sessionWallet !== expected) {
       return {
         ok: false,
@@ -108,7 +127,8 @@ export async function verifyWalletSignature(
   const parsed = parseAuthChallengeMessage(message);
   if (!parsed) return false;
 
-  const wallet = normalizeWalletAddress(walletAddress);
+  if (!isEvmAddress(walletAddress)) return false;
+  const wallet = normalizeEvmAddress(walletAddress);
   if (parsed.wallet !== wallet) return false;
 
   try {

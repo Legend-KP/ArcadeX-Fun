@@ -9,6 +9,11 @@ import {
   avalancheEnvAddress,
 } from "@/lib/avalanche-deployments";
 import { avalanche, base, PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
+import {
+  isVaraArcadeXRewardsConfigured,
+  isVaraRewardsChainId,
+  VARA_STREAK_CAMPAIGN_ID,
+} from "@/lib/vara-rewards";
 
 /** ArcadeXRewards on Base mainnet — daily check-in is app sign-in. */
 export const ARCADEX_REWARDS_CONTRACT_ADDRESS = envAddress(
@@ -50,6 +55,9 @@ export function getArcadeXRewardsAddress(
 export function getStreakCampaignIdForChain(
   chainId?: number | null
 ): number {
+  if (isVaraRewardsChainId(chainId)) {
+    return VARA_STREAK_CAMPAIGN_ID;
+  }
   if (isAvalancheRewardsChainId(chainId)) {
     return AVALANCHE_STREAK_CAMPAIGN_ID;
   }
@@ -59,6 +67,9 @@ export function getStreakCampaignIdForChain(
 export function isArcadeXRewardsConfiguredForChain(
   chainId?: number | null
 ): boolean {
+  if (isVaraRewardsChainId(chainId)) {
+    return isVaraArcadeXRewardsConfigured();
+  }
   if (isAvalancheRewardsChainId(chainId)) {
     return (
       AVALANCHE_ARCADEX_REWARDS_CONTRACT_ADDRESS !==
@@ -466,6 +477,7 @@ export function isArcadeXRewardsConfigured(): boolean {
 export function isAnyArcadeXRewardsConfigured(): boolean {
   return (
     isArcadeXRewardsConfigured() ||
-    isArcadeXRewardsConfiguredForChain(AVALANCHE_CHAIN_ID)
+    isArcadeXRewardsConfiguredForChain(AVALANCHE_CHAIN_ID) ||
+    isVaraArcadeXRewardsConfigured()
   );
 }

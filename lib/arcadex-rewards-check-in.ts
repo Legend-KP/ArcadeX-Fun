@@ -11,6 +11,7 @@ import {
   isArcadeXRewardsConfiguredForChain,
   isAvalancheRewardsChainId,
 } from "@/lib/arcadex-rewards";
+import { isVaraRewardsChainId } from "@/lib/vara-rewards";
 
 /** Pull a tx hash out of viem/MetaMask errors when the wallet already broadcast. */
 function extractSubmittedTxHash(error: unknown): Hash | null {
@@ -42,7 +43,7 @@ function extractSubmittedTxHash(error: unknown): Hash | null {
 }
 
 /**
- * Wallet write of ArcadeXRewards.checkIn (Base or Avalanche)
+ * Wallet write of ArcadeXRewards.checkIn (Base, Avalanche, or Vara)
  * (campaigns without eligibility use deadline=0, signature=0x).
  *
  * Returns the tx hash even when local receipt polling flakes — `/api/streak/sync`
@@ -61,6 +62,18 @@ export async function checkInOnChain(
   const chainId = opts?.chainId;
   if (!isArcadeXRewardsConfiguredForChain(chainId)) {
     throw new Error("ArcadeXRewards is not configured yet.");
+  }
+
+  if (isVaraRewardsChainId(chainId)) {
+    if (!opts?.expectedWallet) {
+      throw new Error("Vara check-in requires expectedWallet.");
+    }
+    const { checkInOnVara } = await import("@/lib/vara-rewards-client");
+    const { txHash } = await checkInOnVara({
+      walletAddress: opts.expectedWallet,
+      campaignId: campaignId ?? getStreakCampaignIdForChain(chainId),
+    });
+    return { txHash: txHash as Hash };
   }
 
   const chain = isAvalancheRewardsChainId(chainId) ? avalanche : base;

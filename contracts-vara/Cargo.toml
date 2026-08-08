@@ -6,6 +6,7 @@ members = [
     "spark-refill",
     "score-submit",
     "infinite-spark",
+    "arcadex-rewards",
 ]
 
 [workspace.package]

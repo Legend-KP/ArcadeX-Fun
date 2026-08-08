@@ -17,6 +17,14 @@ import {
 import { readBaseContractWithFailover } from "@/lib/base-public-client";
 import { readAvalancheContractWithFailover } from "@/lib/avalanche-public-client";
 import { getPaymentTransactionReceipt } from "@/lib/payment-tx-verify";
+import { isVaraRewardsChainId } from "@/lib/vara-rewards";
+import {
+  readVaraSpinNonce,
+  readVaraStreakProgress,
+  verifyVaraCheckInTx,
+  verifyVaraSpinTx,
+} from "@/lib/vara-rewards-server";
+import { normalizeVaraAddress } from "@/lib/player-identity";
 
 export interface VerifiedCheckIn {
   player: Address;
@@ -63,6 +71,32 @@ export async function verifyCheckInTx(
   chainId?: number | null
 ): Promise<VerifiedCheckIn> {
   assertConfigured(chainId);
+
+  if (isVaraRewardsChainId(chainId)) {
+    const verified = await verifyVaraCheckInTx({
+      txHash,
+      expectedFrom: walletAddress,
+      campaignId: expectedCampaignId,
+    });
+    const player = normalizeVaraAddress(walletAddress) as Address;
+    return {
+      player,
+      campaignId: BigInt(expectedCampaignId),
+      day: verified.day,
+      timestamp: BigInt(verified.timestamp),
+      milestone: verified.milestone
+        ? {
+            player,
+            campaignId: BigInt(expectedCampaignId),
+            day: verified.day,
+            rewardMode: verified.rewardMode,
+            rewardMeta: verified.rewardMeta as Hex,
+            timestamp: BigInt(verified.timestamp),
+          }
+        : null,
+    };
+  }
+
   const rewardsAddress = getArcadeXRewardsAddress(chainId);
   const expectedPlayer = getAddress(walletAddress);
   // Fast receipt poll (same path as Spark payments) — long waitFor hangs Workers.
@@ -200,6 +234,11 @@ export async function readStreakProgress(
   chainId?: number | null
 ) {
   assertConfigured(chainId);
+
+  if (isVaraRewardsChainId(chainId)) {
+    return readVaraStreakProgress(walletAddress, campaignId);
+  }
+
   const player = getAddress(walletAddress);
   const rewardsAddress = getArcadeXRewardsAddress(chainId);
 
@@ -308,9 +347,45 @@ export async function verifySpinTx(
   walletAddress: string,
   txHash: Hash,
   expectedCampaignId: number,
-  chainId?: number | null
+  chainId?: number | null,
+  expectedSpin?: {
+    rewardMode: number;
+    rewardAmount: bigint | string | number;
+    nonce: number | bigint;
+    deadline: number | bigint;
+    signature: string;
+    rewardTarget?: Address;
+  }
 ): Promise<VerifiedSpin> {
   assertConfigured(chainId);
+
+  if (isVaraRewardsChainId(chainId)) {
+    if (!expectedSpin) {
+      throw new Error("Vara spin verify requires prepared spin parameters.");
+    }
+    await verifyVaraSpinTx({
+      txHash,
+      expectedFrom: walletAddress,
+      campaignId: expectedCampaignId,
+      rewardMode: expectedSpin.rewardMode,
+      rewardAmount: expectedSpin.rewardAmount,
+      nonce: expectedSpin.nonce,
+      deadline: expectedSpin.deadline,
+      signature: expectedSpin.signature,
+    });
+    const player = normalizeVaraAddress(walletAddress) as Address;
+    return {
+      player,
+      campaignId: BigInt(expectedCampaignId),
+      rewardMode: expectedSpin.rewardMode,
+      rewardTarget:
+        expectedSpin.rewardTarget ??
+        ("0x0000000000000000000000000000000000000000" as Address),
+      rewardAmount: BigInt(expectedSpin.rewardAmount),
+      timestamp: BigInt(Math.floor(Date.now() / 1000)),
+    };
+  }
+
   const rewardsAddress = getArcadeXRewardsAddress(chainId);
   const expectedPlayer = getAddress(walletAddress);
   const receipt = await getPaymentTransactionReceipt(txHash, chainId);
@@ -387,6 +462,9 @@ export async function readSpinNonce(
   chainId?: number | null
 ): Promise<bigint> {
   assertConfigured(chainId);
+  if (isVaraRewardsChainId(chainId)) {
+    return readVaraSpinNonce(walletAddress, campaignId);
+  }
   const player = getAddress(walletAddress);
   return readRewardsContractWithFailover<bigint>(chainId, {
     address: getArcadeXRewardsAddress(chainId),

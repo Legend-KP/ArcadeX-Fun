@@ -9,7 +9,10 @@ import {
   getClientIp,
   rateLimitResponse,
 } from "@/lib/rate-limit";
-import { isWalletAddress, normalizeWalletAddress } from "@/lib/wallet-address";
+import {
+  isStreakWalletAddress,
+  normalizeStreakWalletAddress,
+} from "@/lib/streak-wallet";
 import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +42,7 @@ export async function GET(request: Request) {
       );
     }
 
-    if (!rawWallet || !isWalletAddress(rawWallet)) {
+    if (!rawWallet || !isStreakWalletAddress(chainId, rawWallet)) {
       return NextResponse.json(
         { error: "A valid walletAddress is required." },
         { status: 400 }
@@ -60,7 +63,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const wallet = normalizeWalletAddress(rawWallet);
+    const wallet = normalizeStreakWalletAddress(chainId, rawWallet);
     const fresh = searchParams.get("fresh") === "1";
     const status = await getStreakProgressCached(wallet, campaignId, {
       fresh,

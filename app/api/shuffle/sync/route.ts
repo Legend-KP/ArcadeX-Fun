@@ -4,6 +4,7 @@ import {
   REWARD_OFFCHAIN,
   REWARD_USDC,
   isArcadeXRewardsConfigured,
+  isArcadeXRewardsConfiguredForChain,
 } from "@/lib/arcadex-rewards";
 import { verifySpinTx } from "@/lib/arcadex-rewards-verify";
 import { DEFAULT_SHUFFLE_CAMPAIGN_ID } from "@/lib/daily-play-mode";
@@ -24,8 +25,18 @@ import {
 } from "@/lib/rtdb-server";
 import { usdcToMicro } from "@/lib/shuffle-outcomes";
 import { invalidateStreakProgressCache } from "@/lib/streak-progress-cache";
-import { isWalletAddress, normalizeWalletAddress } from "@/lib/wallet-address";
+import {
+  isStreakWalletAddress,
+  normalizeStreakWalletAddress,
+} from "@/lib/streak-wallet";
 import { createWalletSessionToken } from "@/lib/wallet-session";
+import {
+  isVaraArcadeXRewardsConfigured,
+  isVaraRewardsChainId,
+  VARA_SHUFFLE_CAMPAIGN_ID,
+} from "@/lib/vara-rewards";
+import { verifyVaraShuffleSpinSignature } from "@/lib/vara-shuffle-sign";
+import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 
 export const dynamic = "force-dynamic";
 
@@ -38,32 +49,46 @@ export async function POST(request: Request) {
   }
 
   try {
-    if (!isArcadeXRewardsConfigured()) {
+    const body = (await request.json()) as {
+      walletAddress?: string;
+      txHash?: string;
+      campaignId?: number;
+      nonce?: number;
+      chainId?: number;
+    };
+
+    const chainId =
+      typeof body.chainId === "number" && Number.isFinite(body.chainId)
+        ? body.chainId
+        : PRIMARY_EVM_CHAIN_ID;
+
+    const configured = isVaraRewardsChainId(chainId)
+      ? isVaraArcadeXRewardsConfigured()
+      : isArcadeXRewardsConfiguredForChain(chainId) ||
+        isArcadeXRewardsConfigured();
+
+    if (!configured) {
       return NextResponse.json(
         { error: "Rewards contract not configured.", code: "NOT_CONFIGURED" },
         { status: 503 }
       );
     }
 
-    const body = (await request.json()) as {
-      walletAddress?: string;
-      txHash?: string;
-      campaignId?: number;
-      nonce?: number;
-    };
-
     const rawWallet = body.walletAddress?.trim() ?? "";
     const txHash = body.txHash?.trim() ?? "";
+    const defaultCampaign = isVaraRewardsChainId(chainId)
+      ? VARA_SHUFFLE_CAMPAIGN_ID
+      : DEFAULT_SHUFFLE_CAMPAIGN_ID;
     const campaignId =
       typeof body.campaignId === "number" && Number.isFinite(body.campaignId)
         ? body.campaignId
-        : DEFAULT_SHUFFLE_CAMPAIGN_ID;
+        : defaultCampaign;
     const nonce =
       typeof body.nonce === "number" && Number.isFinite(body.nonce)
         ? body.nonce
         : -1;
 
-    if (!rawWallet || !isWalletAddress(rawWallet)) {
+    if (!rawWallet || !isStreakWalletAddress(chainId, rawWallet)) {
       return NextResponse.json(
         { error: "walletAddress is required.", code: "NO_WALLET" },
         { status: 400 }
@@ -82,7 +107,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const wallet = normalizeWalletAddress(rawWallet);
+    const wallet = normalizeStreakWalletAddress(chainId, rawWallet);
     const pending = await getShufflePending(wallet, campaignId, nonce);
     if (!pending) {
       return NextResponse.json(
@@ -91,9 +116,41 @@ export async function POST(request: Request) {
       );
     }
 
+    if (isVaraRewardsChainId(chainId)) {
+      const ok = await verifyVaraShuffleSpinSignature({
+        player: wallet,
+        campaignId,
+        rewardMode: pending.rewardMode,
+        rewardAmount: pending.rewardAmount,
+        nonce,
+        deadline: pending.deadline,
+        signature: pending.signature,
+      });
+      if (!ok) {
+        return NextResponse.json(
+          { error: "Invalid spin signature.", code: "INVALID_SIG" },
+          { status: 400 }
+        );
+      }
+    }
+
     let verified;
     try {
-      verified = await verifySpinTx(wallet, txHash as Hash, campaignId);
+      verified = await verifySpinTx(
+        wallet,
+        txHash as Hash,
+        campaignId,
+        chainId,
+        isVaraRewardsChainId(chainId)
+          ? {
+              rewardMode: pending.rewardMode,
+              rewardAmount: pending.rewardAmount,
+              nonce,
+              deadline: pending.deadline,
+              signature: pending.signature,
+            }
+          : undefined
+      );
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Invalid spin transaction.";
@@ -118,7 +175,7 @@ export async function POST(request: Request) {
 
     await recordSpinTxOnServer(wallet, txHash, campaignId, pending.outcomeId);
     await markShufflePendingConsumed(wallet, campaignId, nonce, txHash);
-    await invalidateStreakProgressCache(wallet, campaignId);
+    await invalidateStreakProgressCache(wallet, campaignId, chainId);
 
     const token = await createWalletSessionToken(wallet);
 
@@ -149,7 +206,11 @@ export async function POST(request: Request) {
       }
     }
 
-    if (pending.outcomeType === "usdc" && Number(verified.rewardMode) === REWARD_USDC) {
+    if (
+      !isVaraRewardsChainId(chainId) &&
+      pending.outcomeType === "usdc" &&
+      Number(verified.rewardMode) === REWARD_USDC
+    ) {
       const amountMicro =
         pending.displayAmount != null
           ? usdcToMicro(pending.displayAmount)
@@ -161,6 +222,7 @@ export async function POST(request: Request) {
     }
 
     const needsClaim =
+      !isVaraRewardsChainId(chainId) &&
       pending.outcomeType === "usdc" &&
       Number(verified.rewardMode) === REWARD_USDC;
 
@@ -168,6 +230,7 @@ export async function POST(request: Request) {
       ok: true,
       walletAddress: wallet,
       campaignId,
+      chainId,
       nonce,
       token,
       expiresIn: SESSION_TTL_SEC,

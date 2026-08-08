@@ -1,0 +1,73 @@
+// IDL sketch for ArcadeXRewards lite (sails-rs 0.9.x).
+// Regenerate after `cargo build --release` and copy from
+// contracts-vara/arcadex-rewards/arcadex_rewards.idl if the builder emits one.
+//
+// Lite: check-in + spin (OFFCHAIN only). No claim / treasury.
+
+constructor {
+  New : ();
+};
+
+type PublicKey = [u8; 32];
+type Signature = [u8; 64];
+type RewardMeta = [u8; 32];
+
+type Campaign = struct {
+  active: bool,
+  cancelled: bool,
+  require_eligibility: bool,
+  campaign_type: u8,
+  required_days: u16,
+  min_interval_seconds: u32,
+  max_claims: u32,
+  start_time: u64,
+  end_time: u64,
+  reward_mode: u8,
+  reward_amount: u128,
+  reward_meta: RewardMeta,
+  reset_after_milestone: bool,
+  max_single_payout: u128,
+};
+
+type Progress = struct {
+  current_day: u16,
+  last_check_in_at: u64,
+  milestone_reached: bool,
+  on_chain_claimed: bool,
+  initialized: bool,
+};
+
+service ArcadeXRewards {
+  events {
+    CheckedIn: struct { player: actor_id, campaign_id: u64, day: u16, timestamp: u64 };
+    MilestoneReached: struct { player: actor_id, campaign_id: u64, day: u16, reward_mode: u8, reward_meta: RewardMeta, timestamp: u64 };
+    StreakReset: struct { player: actor_id, campaign_id: u64, reason: str, timestamp: u64 };
+    SpinResultGranted: struct { player: actor_id, campaign_id: u64, reward_mode: u8, reward_amount: u128, timestamp: u64 };
+    CampaignUpdated: struct { campaign_id: u64 };
+    SpinResultSignerUpdated: struct { signer: PublicKey };
+    EligibilitySignerUpdated: struct { signer: PublicKey };
+    Paused: null;
+    Unpaused: null;
+    OwnershipTransferStarted: struct { previous_owner: actor_id, new_owner: actor_id };
+    OwnershipTransferred: struct { previous_owner: actor_id, new_owner: actor_id };
+  };
+
+  CheckIn : (campaign_id: u64, deadline: u64, signature: Signature) -> null;
+  Spin : (campaign_id: u64, reward_mode: u8, reward_amount: u128, nonce: u64, deadline: u64, signature: Signature) -> null;
+  SetCampaign : (campaign_id: u64, campaign_type: u8, active: bool, required_days: u16, min_interval_seconds: u32, max_claims: u32, start_time: u64, end_time: u64, reward_mode: u8, reward_amount: u128, reward_meta: RewardMeta, reset_after_milestone: bool, require_eligibility: bool, max_single_payout: u128, cancelled: bool) -> null;
+  SetSpinResultSigner : (signer: PublicKey) -> null;
+  SetEligibilitySigner : (signer: PublicKey) -> null;
+  Pause : () -> null;
+  Unpause : () -> null;
+  TransferOwnership : (new_owner: actor_id) -> null;
+  AcceptOwnership : () -> null;
+
+  query Owner : () -> actor_id;
+  query PendingOwner : () -> opt actor_id;
+  query Paused : () -> bool;
+  query SpinResultSigner : () -> PublicKey;
+  query EligibilitySigner : () -> PublicKey;
+  query GetCampaign : (campaign_id: u64) -> Campaign;
+  query GetProgress : (player: actor_id, campaign_id: u64) -> Progress;
+  query SpinNonceOf : (player: actor_id, campaign_id: u64) -> u64;
+};

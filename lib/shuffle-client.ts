@@ -63,17 +63,23 @@ export type ShuffleSyncResult = {
 
 export async function prepareDailyShuffle(
   walletAddress: string,
-  campaignId: number = DEFAULT_SHUFFLE_CAMPAIGN_ID
+  campaignId: number = DEFAULT_SHUFFLE_CAMPAIGN_ID,
+  chainId?: number | null
 ): Promise<ShufflePrepareResult> {
   const res = await fetch("/api/shuffle/prepare", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ walletAddress, campaignId }),
+    body: JSON.stringify({
+      walletAddress,
+      campaignId,
+      ...(chainId != null ? { chainId } : {}),
+    }),
     cache: "no-store",
   });
   const data = (await res.json().catch(() => ({}))) as ShufflePrepareResult & {
     error?: string;
     code?: string;
+    chainId?: number;
   };
   if (!res.ok || !data.signature) {
     throw new Error(data.error ?? "Could not prepare today's shuffle.");
@@ -86,6 +92,7 @@ export async function syncShuffleSpin(opts: {
   txHash: string;
   campaignId: number;
   nonce: number;
+  chainId?: number | null;
 }): Promise<ShuffleSyncResult> {
   const res = await fetch("/api/shuffle/sync", {
     method: "POST",
@@ -110,42 +117,66 @@ export async function syncShuffleSpin(opts: {
  */
 export async function performDailyShuffle(
   walletAddress: string,
-  campaignId: number = DEFAULT_SHUFFLE_CAMPAIGN_ID
+  campaignId: number = DEFAULT_SHUFFLE_CAMPAIGN_ID,
+  chainId?: number | null
 ): Promise<{
   prepare: ShufflePrepareResult;
   sync: ShuffleSyncResult;
   txHash: string;
 }> {
+  const { isVaraRewardsChainId } = await import("@/lib/vara-rewards");
   try {
-    const prepare = await prepareDailyShuffle(walletAddress, campaignId);
-    const { txHash } = await spinOnChain({
-      campaignId: prepare.campaignId,
-      rewardMode: prepare.rewardMode,
-      rewardTarget: prepare.rewardTarget,
-      rewardAmount: BigInt(prepare.rewardAmount),
-      nonce: BigInt(prepare.nonce),
-      deadline: BigInt(prepare.deadline),
-      signature: prepare.signature,
-    });
+    const prepare = await prepareDailyShuffle(
+      walletAddress,
+      campaignId,
+      chainId
+    );
+    let txHash: string;
+    if (isVaraRewardsChainId(chainId)) {
+      const { spinOnVara } = await import("@/lib/vara-rewards-client");
+      const submitted = await spinOnVara({
+        walletAddress,
+        campaignId: prepare.campaignId,
+        rewardMode: prepare.rewardMode,
+        rewardAmount: BigInt(prepare.rewardAmount),
+        nonce: prepare.nonce,
+        deadline: prepare.deadline,
+        signature: prepare.signature,
+      });
+      txHash = submitted.txHash;
+    } else {
+      const submitted = await spinOnChain({
+        campaignId: prepare.campaignId,
+        rewardMode: prepare.rewardMode,
+        rewardTarget: prepare.rewardTarget,
+        rewardAmount: BigInt(prepare.rewardAmount),
+        nonce: BigInt(prepare.nonce),
+        deadline: BigInt(prepare.deadline),
+        signature: prepare.signature,
+      });
+      txHash = submitted.txHash;
+    }
     const sync = await syncShuffleSpin({
       walletAddress,
       txHash,
       campaignId: prepare.campaignId,
       nonce: prepare.nonce,
+      chainId,
     });
     return { prepare, sync, txHash };
   } catch (err) {
     if (isAlreadyCheckedInError(err)) {
-      await refreshSessionFromCheckIn(walletAddress, campaignId);
+      await refreshSessionFromCheckIn(walletAddress, campaignId, chainId);
       throw err;
     }
 
     try {
       const status = await fetchStreakStatus(walletAddress, campaignId, {
         fresh: true,
+        chainId,
       });
       if (!status.canCheckIn && status.lastCheckInAt > 0) {
-        await refreshSessionFromCheckIn(walletAddress, campaignId);
+        await refreshSessionFromCheckIn(walletAddress, campaignId, chainId);
       }
     } catch {
       // fall through

@@ -16,6 +16,10 @@ import {
   refreshSessionFromCheckIn,
   type StreakStatus,
 } from "@/lib/streak-client";
+import {
+  isVaraRewardsChainId,
+  VARA_SHUFFLE_CAMPAIGN_ID,
+} from "@/lib/vara-rewards";
 
 type Phase =
   | "intro"
@@ -30,6 +34,7 @@ type Phase =
 interface DailyShuffleModalProps {
   open: boolean;
   walletAddress: string;
+  chainId?: number;
   status: StreakStatus | null;
   onComplete: (result: {
     day: number;
@@ -191,6 +196,7 @@ function CardFaceContent({
 export default function DailyShuffleModal({
   open,
   walletAddress,
+  chainId,
   status,
   onComplete,
 }: DailyShuffleModalProps) {
@@ -250,16 +256,21 @@ export default function DailyShuffleModal({
     [theater, winnerId]
   );
 
+  const shuffleCampaignId = isVaraRewardsChainId(chainId)
+    ? VARA_SHUFFLE_CAMPAIGN_ID
+    : DEFAULT_SHUFFLE_CAMPAIGN_ID;
+
   async function recoverIfAlreadyDone() {
     const fresh = await fetchStreakStatus(
       walletAddress,
-      DEFAULT_SHUFFLE_CAMPAIGN_ID,
-      { fresh: true }
+      shuffleCampaignId,
+      { fresh: true, chainId }
     );
     if (!fresh.canCheckIn && fresh.lastCheckInAt > 0) {
       await refreshSessionFromCheckIn(
         walletAddress,
-        DEFAULT_SHUFFLE_CAMPAIGN_ID
+        shuffleCampaignId,
+        chainId
       );
       onComplete({
         day: fresh.currentDay || 1,
@@ -279,7 +290,8 @@ export default function DailyShuffleModal({
     try {
       const { prepare, sync } = await performDailyShuffle(
         walletAddress,
-        DEFAULT_SHUFFLE_CAMPAIGN_ID
+        shuffleCampaignId,
+        chainId
       );
 
       setTheater(prepare.theater);

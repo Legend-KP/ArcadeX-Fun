@@ -194,13 +194,16 @@ export function tryParsePlayerId(
   }
 }
 
-/** Resolve API / storage id — accepts namespaced id or raw EVM address (legacy). */
+/** Resolve API / storage id — accepts namespaced id or raw EVM/Vara address. */
 export function resolvePlayerId(id: string): string | null {
   const parsed = tryParsePlayerId(id);
   if (parsed) return buildPlayerId(parsed.ecosystem, parsed.address);
 
   if (isEvmAddress(id)) {
     return buildPlayerId("evm", id);
+  }
+  if (isVaraAddress(id)) {
+    return buildPlayerId("vara", id);
   }
 
   return null;
