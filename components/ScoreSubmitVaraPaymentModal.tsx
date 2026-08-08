@@ -98,6 +98,7 @@ export default function ScoreSubmitVaraPaymentModal({
   const [balancesLoading, setBalancesLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [status, setStatus] = useState("");
   const [txHash, setTxHash] = useState<string | undefined>();
 
   const programConfigured = isVaraPaymentProgramConfigured("score-submit");
@@ -147,6 +148,7 @@ export default function ScoreSubmitVaraPaymentModal({
       setStep("confirming");
       setBusy(true);
       setError("");
+      setStatus("Submitting score…");
       setTxHash(hash);
 
       try {
@@ -168,6 +170,7 @@ export default function ScoreSubmitVaraPaymentModal({
               ? err.message
               : "Could not submit score."
         );
+        setStatus("");
         setStep("token");
       } finally {
         setBusy(false);
@@ -186,12 +189,19 @@ export default function ScoreSubmitVaraPaymentModal({
       setSelectedToken(null);
       setBusy(false);
       setError("");
+      setStatus("");
       setTxHash(undefined);
       return;
     }
 
+    if (!programConfigured) {
+      setError(
+        "Score submit program is not configured. Redeploy with NEXT_PUBLIC_VARA_SCORE_SUBMIT_PROGRAM."
+      );
+    }
+
     void loadBalances();
-  }, [open, loadBalances]);
+  }, [open, loadBalances, programConfigured]);
 
   const handlePay = useCallback(
     async (token?: VaraShopPaymentToken) => {
@@ -214,6 +224,7 @@ export default function ScoreSubmitVaraPaymentModal({
       setSelectedToken(payToken);
       setBusy(true);
       setError("");
+      setStatus("Starting payment…");
       setStep("paying");
 
       try {
@@ -224,16 +235,19 @@ export default function ScoreSubmitVaraPaymentModal({
           kind: "score-submit",
           token: payToken.id,
           fromAddress: walletAddress,
-          onStatus: (msg) => setError(msg),
+          onStatus: (msg) => setStatus(msg),
         });
 
         await confirmSubmit(payTxHash, payToken);
       } catch (err) {
         setStep("token");
+        setStatus("");
         setError(
           err instanceof Error
-            ? err.message
-            : "Payment was cancelled or failed."
+            ? err.message || "Payment was cancelled or failed."
+            : typeof err === "string"
+              ? err
+              : "Payment was cancelled or failed."
         );
       } finally {
         setBusy(false);
@@ -344,12 +358,17 @@ export default function ScoreSubmitVaraPaymentModal({
           {(step === "paying" || step === "confirming") && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
-                {step === "paying"
-                  ? "Confirm the payment in your wallet…"
-                  : "Submitting score…"}
+                {status ||
+                  (step === "paying"
+                    ? "Confirm the payment in your wallet…"
+                    : "Submitting score…")}
               </p>
             </div>
           )}
+
+          {status && showTokenStep && !error ? (
+            <p className="spark-shop-payment__hint">{status}</p>
+          ) : null}
 
           {error && (
             <p className="spark-shop-payment__error" role="alert">
