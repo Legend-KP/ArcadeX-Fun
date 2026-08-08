@@ -8,8 +8,14 @@ import type { HexString } from "@/lib/shop-vara";
 export const VARA_MAINNET_DEPLOYMENTS = {
   txHubProgramId:
     "0xa9a4530247fde6fa0839602d419086c9a643b766fc186b7fd0f7d637e776e16c" as HexString,
-  codeId:
+  txHubCodeId:
     "0x65ce4e85f8afd2b58a88f3f15423527d422f59b4bfcc50ab2761c4b9fdb12235" as HexString,
+  sparkRefillProgramId:
+    "0xfb4259a1f3b1e4998c6d014a78ff675f3c3f92fc8a4c7ce84eed096725802b5c" as HexString,
+  sparkRefillCodeId:
+    "0x74f24e3baba33420681a09035149d141fbb772226f5ee37e20b9b2b970ee99d7" as HexString,
+  scoreSubmitProgramId: "" as HexString | "",
+  infiniteSparkProgramId: "" as HexString | "",
   wUsdc:
     "0xd1de816d7dce6439504552686ab333e5b7302b1549763656b30af1f8a5871b6a" as HexString,
   wUsdt:

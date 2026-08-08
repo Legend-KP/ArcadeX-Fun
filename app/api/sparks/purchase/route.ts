@@ -18,6 +18,11 @@ import { isValidSuiTxDigest } from "@/lib/shop-sui";
 import { verifySuiShopPaymentTx } from "@/lib/shop-sui-server";
 import { findVaraShopPaymentToken, isValidVaraExtrinsicHash } from "@/lib/shop-vara";
 import { verifyVaraShopPaymentTx } from "@/lib/shop-vara-server";
+import {
+  isVaraPaymentProgramConfigured,
+  type VaraPaymentKind,
+} from "@/lib/vara-payment";
+import { verifyVaraPaymentProgramTx } from "@/lib/vara-payment-server";
 import { fetchChainSettingsFromServer } from "@/lib/chain-settings-server";
 import { isShopPaymentsEnabled } from "@/lib/chain-registry";
 
@@ -175,12 +180,28 @@ export async function POST(request: Request) {
         );
       }
 
-      await verifyVaraShopPaymentTx({
-        txHash: txId as Hash,
-        productId: productId as ShopProductId,
-        tokenProgramId: token.programId,
-        expectedFrom: session.address,
-      });
+      const paymentKind: VaraPaymentKind | null =
+        productId === "spark-refill"
+          ? "spark-refill"
+          : productId === "infinite-24h"
+            ? "infinite-spark"
+            : null;
+
+      if (paymentKind && isVaraPaymentProgramConfigured(paymentKind)) {
+        await verifyVaraPaymentProgramTx({
+          kind: paymentKind,
+          token: token.id,
+          txHash: txId,
+          expectedFrom: session.address,
+        });
+      } else {
+        await verifyVaraShopPaymentTx({
+          txHash: txId as Hash,
+          productId: productId as ShopProductId,
+          tokenProgramId: token.programId,
+          expectedFrom: session.address,
+        });
+      }
 
       const result = await applyShopPurchaseOnServer(
         playerId,

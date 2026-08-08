@@ -1,0 +1,15 @@
+[package]
+name = "spark-refill"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sails-rs = { workspace = true }
+payment-common = { path = "../payment-common" }
+
+[build-dependencies]
+sails-rs = { workspace = true, features = ["wasm-builder"] }
+
+[lib]
+crate-type = ["rlib"]

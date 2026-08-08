@@ -1006,6 +1006,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "infinite-spark"
+version = "0.1.0"
+dependencies = [
+ "payment-common",
+ "sails-rs",
+]
+
+[[package]]
 name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1181,6 +1189,13 @@ name = "pathdiff"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
+
+[[package]]
+name = "payment-common"
+version = "0.1.0"
+dependencies = [
+ "sails-rs",
+]
 
 [[package]]
 name = "percent-encoding"
@@ -1542,6 +1557,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "score-submit"
+version = "0.1.0"
+dependencies = [
+ "payment-common",
+ "sails-rs",
+]
+
+[[package]]
 name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1642,6 +1665,14 @@ name = "smallvec"
 version = "1.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
+
+[[package]]
+name = "spark-refill"
+version = "0.1.0"
+dependencies = [
+ "payment-common",
+ "sails-rs",
+]
 
 [[package]]
 name = "spin"

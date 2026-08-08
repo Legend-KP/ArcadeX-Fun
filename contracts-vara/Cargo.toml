@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["arcadex-tx-hub"]
+members = [
+    "arcadex-tx-hub",
+    "payment-common",
+    "spark-refill",
+    "score-submit",
+    "infinite-spark",
+]
 
 [workspace.package]
 version = "0.1.0"

@@ -1,0 +1,22 @@
+{
+  "contract": "SparkRefill",
+  "network": "vara-mainnet",
+  "programId": "0xfb4259a1f3b1e4998c6d014a78ff675f3c3f92fc8a4c7ce84eed096725802b5c",
+  "codeId": "0x74f24e3baba33420681a09035149d141fbb772226f5ee37e20b9b2b970ee99d7",
+  "owner": "",
+  "deployedAt": "2026-08-08",
+  "fee": "50000",
+  "feeDecimals": 6,
+  "feeNotes": "Default 50_000 = $0.05 with 6-decimal wUSDT/wUSDC",
+  "wUSDT": "0x4255ff4a87a4c13dc39f74ace8c4948bbef2f75fb639d66639a1cfcc99e6243e",
+  "wUSDC": "0xd1de816d7dce6439504552686ab333e5b7302b1549763656b30af1f8a5871b6a",
+  "notes": {
+    "serviceRoute": "SparkRefill",
+    "payMethods": ["PayWithUsdt", "PayWithUsdc"],
+    "constructor": "New",
+    "constructorPayload": "0x0c4e6577",
+    "deploy": "Upload target/wasm32-gear/release/spark_refill.opt.wasm via Gear IDEA, create program with New() (payload 0x0c4e6577), attach idl/spark_refill.idl",
+    "playerPrerequisite": "Player must Approve this program as spender on wUSDT/wUSDC for at least the fee before PayWith*",
+    "env": "NEXT_PUBLIC_VARA_SPARK_REFILL_PROGRAM=<programId>"
+  }
+}

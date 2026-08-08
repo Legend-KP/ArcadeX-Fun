@@ -21,6 +21,20 @@ import {
   fetchVaraVftBalances,
   transferVaraVftToken,
 } from "@/lib/vara-shop-client";
+import { payVaraPaymentProgram } from "@/lib/vara-payment-client";
+import {
+  isVaraPaymentProgramConfigured,
+  varaPaymentFee,
+  type VaraPaymentKind,
+} from "@/lib/vara-payment";
+
+function shopProductToPaymentKind(
+  productId: ShopProductId
+): VaraPaymentKind | null {
+  if (productId === "spark-refill") return "spark-refill";
+  if (productId === "infinite-24h") return "infinite-spark";
+  return null;
+}
 
 interface SparkShopVaraPaymentModalProps {
   open: boolean;
@@ -64,12 +78,17 @@ export default function SparkShopVaraPaymentModal({
 
   const tokenOptions = useMemo(() => {
     if (!product) return [];
+    const paymentKind = shopProductToPaymentKind(product.id);
+    const useProgram =
+      paymentKind !== null && isVaraPaymentProgramConfigured(paymentKind);
 
     return VARA_SHOP_PAYMENT_TOKENS.map((token) => {
       const entry = balances[token.id];
       const decimals = entry?.decimals ?? SHOP_TOKEN_DECIMALS;
       const balance = entry?.balance ?? BigInt(0);
-      const requiredAmount = shopPriceToAmount(product.priceUsd, decimals);
+      const requiredAmount = useProgram
+        ? varaPaymentFee(paymentKind)
+        : shopPriceToAmount(product.priceUsd, decimals);
       const sufficient = balance >= requiredAmount;
 
       return {
@@ -90,7 +109,6 @@ export default function SparkShopVaraPaymentModal({
     setError("");
 
     try {
-      assertVaraShopRecipientConfigured();
       const nextBalances = await fetchVaraVftBalances(walletAddress);
       setBalances(nextBalances);
     } catch (err) {
@@ -175,14 +193,29 @@ export default function SparkShopVaraPaymentModal({
       setStep("paying");
 
       try {
-        assertVaraShopRecipientConfigured();
-        const txHash = await transferVaraVftToken({
-          tokenProgramId: payToken.programId,
-          fromAddress: walletAddress,
-          toAddress: VARA_SHOP_RECIPIENT_ADDRESS,
-          amount: option.requiredAmount,
-          productId: product.id,
-        });
+        const paymentKind = shopProductToPaymentKind(product.id);
+        const useProgram =
+          paymentKind !== null && isVaraPaymentProgramConfigured(paymentKind);
+
+        let txHash: string;
+        if (useProgram && paymentKind) {
+          const { payTxHash } = await payVaraPaymentProgram({
+            kind: paymentKind,
+            token: payToken.id,
+            fromAddress: walletAddress,
+            onStatus: (msg) => setError(msg),
+          });
+          txHash = payTxHash;
+        } else {
+          assertVaraShopRecipientConfigured();
+          txHash = await transferVaraVftToken({
+            tokenProgramId: payToken.programId,
+            fromAddress: walletAddress,
+            toAddress: VARA_SHOP_RECIPIENT_ADDRESS,
+            amount: option.requiredAmount,
+            productId: product.id,
+          });
+        }
 
         await confirmPurchase(txHash, payToken, product);
       } catch (err) {

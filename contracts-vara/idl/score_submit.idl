@@ -1,0 +1,39 @@
+// IDL sketch for ScoreSubmit (sails-rs 0.9.x).
+// Regenerate after `cargo build --release` and copy from
+// contracts-vara/score-submit/score_submit.idl if the builder emits one.
+
+constructor {
+  New : ();
+};
+
+service ScoreSubmit {
+  events {
+    EntryPaid: struct { player: actor_id, token: actor_id, amount: u128, timestamp: u64 };
+    FeeUpdated: struct { old_fee: u128, new_fee: u128 };
+    Paused: null;
+    Unpaused: null;
+    OwnershipTransferStarted: struct { previous_owner: actor_id, new_owner: actor_id };
+    OwnershipTransferred: struct { previous_owner: actor_id, new_owner: actor_id };
+    Withdrawn: struct { to: actor_id, token: actor_id, amount: u128 };
+  };
+
+  PayWithUsdt : () -> null;
+  PayWithUsdc : () -> null;
+  SetFee : (new_fee: u128) -> null;
+  WithdrawUsdt : () -> null;
+  WithdrawUsdc : () -> null;
+  Pause : () -> null;
+  Unpause : () -> null;
+  TransferOwnership : (new_owner: actor_id) -> null;
+  AcceptOwnership : () -> null;
+
+  query Owner : () -> actor_id;
+  query PendingOwner : () -> opt actor_id;
+  query Paused : () -> bool;
+  query Fee : () -> u128;
+  query Wusdt : () -> actor_id;
+  query Wusdc : () -> actor_id;
+  query Stats : () -> struct { total_collected_usdt: u128, total_collected_usdc: u128, total_withdrawn_usdt: u128, total_withdrawn_usdc: u128 };
+  query PayCountUsdt : (player: actor_id) -> u64;
+  query PayCountUsdc : (player: actor_id) -> u64;
+};

@@ -1,0 +1,22 @@
+{
+  "contract": "InfiniteSpark",
+  "network": "vara-mainnet",
+  "programId": "",
+  "codeId": "",
+  "owner": "",
+  "deployedAt": "",
+  "fee": "100000",
+  "feeDecimals": 6,
+  "feeNotes": "Default 100_000 = $0.10 with 6-decimal wUSDT/wUSDC",
+  "wUSDT": "0x4255ff4a87a4c13dc39f74ace8c4948bbef2f75fb639d66639a1cfcc99e6243e",
+  "wUSDC": "0xd1de816d7dce6439504552686ab333e5b7302b1549763656b30af1f8a5871b6a",
+  "notes": {
+    "serviceRoute": "InfiniteSpark",
+    "payMethods": ["PayWithUsdt", "PayWithUsdc"],
+    "constructor": "New",
+    "constructorPayload": "0x0c4e6577",
+    "deploy": "Upload target/wasm32-gear/release/infinite_spark.opt.wasm via Gear IDEA, create program with New() (payload 0x0c4e6577), attach idl/infinite_spark.idl",
+    "playerPrerequisite": "Player must Approve this program as spender on wUSDT/wUSDC for at least the fee before PayWith*",
+    "env": "NEXT_PUBLIC_VARA_INFINITE_SPARK_PROGRAM=<programId>"
+  }
+}

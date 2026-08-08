@@ -93,8 +93,23 @@ export async function verifyScoreSubmitPayment(params: {
     if (!isValidVaraExtrinsicHash(params.txHash)) {
       throw new Error("Invalid transaction hash.");
     }
+
     const token = findVaraShopPaymentToken(params.tokenAddress ?? "");
     if (!token) throw new Error("Unsupported payment token.");
+
+    const { isVaraPaymentProgramConfigured } = await import("@/lib/vara-payment");
+    if (isVaraPaymentProgramConfigured("score-submit")) {
+      const { verifyVaraPaymentProgramTx } = await import(
+        "@/lib/vara-payment-server"
+      );
+      await verifyVaraPaymentProgramTx({
+        kind: "score-submit",
+        token: token.id,
+        txHash: params.txHash,
+        expectedFrom: params.expectedFrom,
+      });
+      return;
+    }
 
     await verifyVaraShopPaymentTx({
       txHash: params.txHash as Hash,
