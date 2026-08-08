@@ -20,5 +20,10 @@
   ],
   "observability": {
     "enabled": true
+  },
+  // Paid Workers: raise above default when long API routes fan out (Vara RPC + RTDB).
+  // Free plan remains capped at 50 external subrequests regardless of this value.
+  "limits": {
+    "subrequests": 10000
   }
 }
