@@ -121,7 +121,7 @@ export async function POST(request: Request) {
         player: wallet,
         campaignId,
         rewardMode: pending.rewardMode,
-        rewardAmount: pending.rewardAmount,
+        rewardAmount: BigInt(pending.rewardAmount),
         nonce,
         deadline: pending.deadline,
         signature: pending.signature,

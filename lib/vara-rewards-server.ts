@@ -174,6 +174,8 @@ export async function verifyVaraCheckInTx(params: {
   day: number;
   timestamp: number;
   milestone: boolean;
+  rewardMode: number;
+  rewardMeta: HexString;
   programId: HexString;
 }> {
   const programIdHex = assertVaraArcadeXRewardsConfigured();

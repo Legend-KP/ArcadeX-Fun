@@ -368,7 +368,7 @@ export async function verifySpinTx(
       expectedFrom: walletAddress,
       campaignId: expectedCampaignId,
       rewardMode: expectedSpin.rewardMode,
-      rewardAmount: expectedSpin.rewardAmount,
+      rewardAmount: BigInt(expectedSpin.rewardAmount),
       nonce: expectedSpin.nonce,
       deadline: expectedSpin.deadline,
       signature: expectedSpin.signature,
