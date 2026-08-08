@@ -27,27 +27,23 @@ export const VARA_PAYMENT_SERVICE_ROUTE: Record<VaraPaymentKind, string> = {
 const ZERO =
   "0x0000000000000000000000000000000000000000000000000000000000000000" as HexString;
 
-function optionalProgramId(envValue: string | undefined): HexString | "" {
-  const trimmed = envValue?.trim() ?? "";
-  if (trimmed && /^0x[0-9a-fA-F]{64}$/.test(trimmed)) {
-    return trimmed.toLowerCase() as HexString;
-  }
-  return "";
-}
-
-/** Empty string until deployed — fall back to checked-in mainnet IDs when present. */
+/** Env preferred; fall back to checked-in mainnet IDs in vara-deployments. */
 export const VARA_SPARK_REFILL_PROGRAM_ID = envProgramId(
   process.env.NEXT_PUBLIC_VARA_SPARK_REFILL_PROGRAM,
   (VARA_MAINNET_DEPLOYMENTS.sparkRefillProgramId ||
     "") as HexString
 );
 
-export const VARA_SCORE_SUBMIT_PROGRAM_ID = optionalProgramId(
-  process.env.NEXT_PUBLIC_VARA_SCORE_SUBMIT_PROGRAM
+export const VARA_SCORE_SUBMIT_PROGRAM_ID = envProgramId(
+  process.env.NEXT_PUBLIC_VARA_SCORE_SUBMIT_PROGRAM,
+  (VARA_MAINNET_DEPLOYMENTS.scoreSubmitProgramId ||
+    "") as HexString
 );
 
-export const VARA_INFINITE_SPARK_PROGRAM_ID = optionalProgramId(
-  process.env.NEXT_PUBLIC_VARA_INFINITE_SPARK_PROGRAM
+export const VARA_INFINITE_SPARK_PROGRAM_ID = envProgramId(
+  process.env.NEXT_PUBLIC_VARA_INFINITE_SPARK_PROGRAM,
+  (VARA_MAINNET_DEPLOYMENTS.infiniteSparkProgramId ||
+    "") as HexString
 );
 
 export function getVaraPaymentProgramId(kind: VaraPaymentKind): HexString {

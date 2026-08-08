@@ -1,10 +1,10 @@
 {
   "contract": "InfiniteSpark",
   "network": "vara-mainnet",
-  "programId": "",
-  "codeId": "",
+  "programId": "0x5ca7be0ecd8c43d41362917fd38b0c986caf165535550211a6c68a1a4d3f8cbf",
+  "codeId": "0x549ce32e9f9888bc2a08ba109d24fe9309110a0f8f71fa93106b83080f7312ab",
   "owner": "",
-  "deployedAt": "",
+  "deployedAt": "2026-08-08",
   "fee": "100000",
   "feeDecimals": 6,
   "feeNotes": "Default 100_000 = $0.10 with 6-decimal wUSDT/wUSDC",

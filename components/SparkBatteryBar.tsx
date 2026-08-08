@@ -2,14 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { useSparks } from "@/components/SparkProvider";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import { useChainSettings } from "@/components/ChainSettingsProvider";
 import SparkShopPaymentModal from "@/components/SparkShopPaymentModal";
 import SparkShopAvalanchePaymentModal from "@/components/SparkShopAvalanchePaymentModal";
 import SparkShopSuiPaymentModal from "@/components/SparkShopSuiPaymentModal";
-import SparkShopVaraPaymentModal from "@/components/SparkShopVaraPaymentModal";
 import SparkShopSuccessModal from "@/components/SparkShopSuccessModal";
+
+const SparkShopVaraPaymentModal = dynamic(
+  () => import("@/components/SparkShopVaraPaymentModal"),
+  { ssr: false }
+);
 import {
   SHOP_PRODUCTS,
   type ShopProductId,

@@ -1,10 +1,10 @@
 {
   "contract": "ScoreSubmit",
   "network": "vara-mainnet",
-  "programId": "",
+  "programId": "0x21ec0adbdda70da6f4f752bf177cc0274cd6436a405b88906de2dcca757d3cfc",
   "codeId": "",
   "owner": "",
-  "deployedAt": "",
+  "deployedAt": "2026-08-08",
   "fee": "50000",
   "feeDecimals": 6,
   "feeNotes": "Default 50_000 = $0.05 with 6-decimal wUSDT/wUSDC",

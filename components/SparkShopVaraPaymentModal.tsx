@@ -21,7 +21,6 @@ import {
   fetchVaraVftBalances,
   transferVaraVftToken,
 } from "@/lib/vara-shop-client";
-import { payVaraPaymentProgram } from "@/lib/vara-payment-client";
 import {
   isVaraPaymentProgramConfigured,
   varaPaymentFee,
@@ -199,6 +198,9 @@ export default function SparkShopVaraPaymentModal({
 
         let txHash: string;
         if (useProgram && paymentKind) {
+          const { payVaraPaymentProgram } = await import(
+            "@/lib/vara-payment-client"
+          );
           const { payTxHash } = await payVaraPaymentProgram({
             kind: paymentKind,
             token: payToken.id,
