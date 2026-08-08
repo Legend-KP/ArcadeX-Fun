@@ -20,9 +20,9 @@ export const VARA_MAINNET_DEPLOYMENTS = {
     "0x5ca7be0ecd8c43d41362917fd38b0c986caf165535550211a6c68a1a4d3f8cbf" as HexString,
   infiniteSparkCodeId:
     "0x549ce32e9f9888bc2a08ba109d24fe9309110a0f8f71fa93106b83080f7312ab" as HexString,
-  /** Filled after Gear IDEA deploy of ArcadeXRewards lite. */
+  /** ArcadeXRewards lite — mainnet. */
   arcadeXRewardsProgramId:
-    "0x0000000000000000000000000000000000000000000000000000000000000000" as HexString,
+    "0x068948642914b6599928ed57c0af4bba1feebc6d742e9712df1a5a4a8cfcd5b0" as HexString,
   arcadeXRewardsCodeId:
     "0x0000000000000000000000000000000000000000000000000000000000000000" as HexString,
   streakCampaignId: 1,

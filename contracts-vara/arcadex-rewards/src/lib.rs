@@ -157,7 +157,7 @@ impl<'a> ArcadeXRewards<'a> {
     pub fn check_in(&mut self, campaign_id: u64, _deadline: u64, _signature: Signature) {
         let player = Syscall::message_source();
         let now = Self::now_secs();
-        let mut day: u16;
+        let day: u16;
         let mut milestone_meta = RewardMeta::default();
         let mut milestone_mode = REWARD_OFFCHAIN;
         let mut reached_milestone = false;
