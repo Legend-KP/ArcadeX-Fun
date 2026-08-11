@@ -379,9 +379,10 @@ export async function rtdbWriteIfMatch(
   path: string,
   data: unknown,
   etag: string,
-  opts?: { silent?: boolean; timeoutMs?: number; connection?: RtdbConnection }
+  opts?: { timeoutMs?: number; connection?: RtdbConnection }
 ): Promise<"ok" | "conflict"> {
-  // Firebase RTDB REST forbids mixing print=silent (or query params) with if-match.
+  // Shared by ArcadeX Fun + Base + Avalanche + Vara via `connection`.
+  // Firebase forbids mixing print=silent / shallow / orderBy with if-match.
   const res = await rtdbRequest(path, {
     method: "PUT",
     headers: { "if-match": etag },
