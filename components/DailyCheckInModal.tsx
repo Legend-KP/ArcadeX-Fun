@@ -135,10 +135,15 @@ export default function DailyCheckInModal({
     setLiveStatus(status);
   }, [status]);
 
-  // Load fresh status on open. If already checked in, mint session and dismiss.
+  // Load status on open only when parent had none. If already checked in, mint session and dismiss.
   useEffect(() => {
     if (!open || !walletAddress || recoverAttemptedRef.current) return;
     recoverAttemptedRef.current = true;
+
+    // Parent already loaded a check-in-needed status — skip another fresh RPC.
+    if (status?.canCheckIn) {
+      return;
+    }
 
     const campaignId = status?.campaignId;
     let cancelled = false;
@@ -167,7 +172,7 @@ export default function DailyCheckInModal({
     return () => {
       cancelled = true;
     };
-  }, [open, walletAddress, status?.campaignId, chainId, onComplete]);
+  }, [open, walletAddress, status, chainId, onComplete]);
 
   useEffect(() => {
     if (!open) {

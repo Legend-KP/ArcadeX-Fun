@@ -11,11 +11,30 @@ import {
 
 const VARA_APP_NAME = "ArcadeX";
 
-export async function connectVaraWallet(): Promise<string> {
-  await ensureVaraCryptoReady();
+let extensionsReadyPromise: Promise<boolean> | null = null;
 
-  const extensions = await web3Enable(VARA_APP_NAME);
-  if (!extensions.length) {
+async function ensureVaraExtensions(): Promise<boolean> {
+  if (!extensionsReadyPromise) {
+    extensionsReadyPromise = (async () => {
+      await ensureVaraCryptoReady();
+      const extensions = await web3Enable(VARA_APP_NAME);
+      return extensions.length > 0;
+    })().catch((err) => {
+      extensionsReadyPromise = null;
+      throw err;
+    });
+  }
+  return extensionsReadyPromise;
+}
+
+/** Warm WASM + extension bridge while the user is still picking a wallet. */
+export function warmVaraWallet(): void {
+  void ensureVaraExtensions().catch(() => undefined);
+}
+
+export async function connectVaraWallet(): Promise<string> {
+  const ready = await ensureVaraExtensions();
+  if (!ready) {
     throw new Error(
       "SubWallet / Polkadot.js not found. Install SubWallet and create a Vara (Substrate) account."
     );
@@ -54,10 +73,8 @@ export async function signVaraMessage(
   address: string,
   nonce: string
 ): Promise<{ address: string; signature: string; message: string }> {
-  await ensureVaraCryptoReady();
-
-  const extensions = await web3Enable(VARA_APP_NAME);
-  if (!extensions.length) {
+  const ready = await ensureVaraExtensions();
+  if (!ready) {
     throw new Error("SubWallet / Polkadot.js not found.");
   }
 

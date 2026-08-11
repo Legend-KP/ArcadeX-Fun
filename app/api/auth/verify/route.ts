@@ -298,11 +298,13 @@ export async function POST(request: Request) {
       chainId: ecosystem === "evm" ? body.chainId : undefined,
     });
 
+    const sessionChainId = ecosystem === "evm" ? body.chainId : undefined;
     const response = NextResponse.json({
       ok: true,
       playerId,
       address: verified.address,
       ecosystem,
+      chainId: sessionChainId,
     });
     response.cookies.set(sessionCookieOptions(token));
     return response;

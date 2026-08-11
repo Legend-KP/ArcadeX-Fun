@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  useAccount,
   useConnect,
   useDisconnect,
   useSignMessage,
@@ -26,6 +27,7 @@ import type { Connector } from "starknetkit";
 import { RpcProvider } from "starknet";
 import Logo from "@/components/Logo";
 import {
+  prefetchAuthNonce,
   signInWithAptos,
   signInWithEvm,
   signInWithMovement,
@@ -33,6 +35,7 @@ import {
   signInWithStellar,
   signInWithSui,
   signInWithVara,
+  type AuthSessionPayload,
 } from "@/lib/wallet-auth-client";
 import {
   connectSlushWallet,
@@ -54,9 +57,13 @@ import {
   connectFreighterWallet,
   signFreighterMessage,
 } from "@/lib/stellar-wallet-client";
-import { connectVaraWallet, signVaraMessage } from "@/lib/vara-wallet-client";
+import {
+  connectVaraWallet,
+  signVaraMessage,
+  warmVaraWallet,
+} from "@/lib/vara-wallet-client";
 import { getEcosystemLabel } from "@/lib/wallet-ecosystems";
-import type { ChainKey } from "@/types";
+import type { ChainKey, WalletEcosystem } from "@/types";
 import type { Wallet } from "@mysten/wallet-standard";
 
 export type { WalletOption };
@@ -66,7 +73,7 @@ type ConnectStep = "select-network" | "select-wallet" | "switch-network";
 interface ConnectWalletModalProps {
   open: boolean;
   error?: string;
-  onSignedIn: () => void;
+  onSignedIn: (session?: AuthSessionPayload) => void;
   onClose?: () => void;
 }
 
@@ -77,6 +84,8 @@ export default function ConnectWalletModal({
 }: ConnectWalletModalProps) {
   const { connectAsync, connectors } = useConnect();
   const { disconnectAsync } = useDisconnect();
+  const { address: connectedEvmAddress, connector: activeConnector } =
+    useAccount();
   const chainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
   const { signMessageAsync } = useSignMessage();
@@ -111,38 +120,35 @@ export default function ConnectWalletModal({
     if (externalError) setError(externalError);
   }, [externalError]);
 
-  async function disconnectAllWallets() {
-    try {
-      await disconnectAsync();
-    } catch {
-      // ignore
+  /** Clear other ecosystems in parallel — never disconnect the wallet we are about to use. */
+  async function clearConflictingWallets(target: WalletEcosystem) {
+    const tasks: Promise<unknown>[] = [];
+
+    if (target !== "evm") {
+      tasks.push(disconnectAsync().catch(() => undefined));
     }
-    try {
-      await disconnectStarknet();
-    } catch {
-      // ignore
+    if (target !== "starknet") {
+      tasks.push(disconnectStarknet().catch(() => undefined));
+      starknetConnectorRef.current = null;
     }
-    try {
-      await disconnectSlushWallet();
-    } catch {
-      // ignore
+    if (target !== "sui") {
+      tasks.push(disconnectSlushWallet().catch(() => undefined));
+      suiWalletRef.current = null;
     }
-    try {
-      await disconnectPetraWallet();
-    } catch {
-      // ignore
+    if (target !== "aptos") {
+      tasks.push(disconnectPetraWallet().catch(() => undefined));
     }
-    try {
-      await disconnectMovementWallet();
-    } catch {
-      // ignore
+    if (target !== "movement") {
+      tasks.push(disconnectMovementWallet().catch(() => undefined));
     }
-    starknetConnectorRef.current = null;
-    suiWalletRef.current = null;
+
+    if (tasks.length) {
+      await Promise.allSettled(tasks);
+    }
   }
 
   async function handleEvmSignIn(connectedAddress: string, activeChainId: number) {
-    await signInWithEvm({
+    return signInWithEvm({
       address: connectedAddress,
       chainId: activeChainId,
       signMessageAsync,
@@ -161,8 +167,8 @@ export default function ConnectWalletModal({
       return;
     }
 
-    await handleEvmSignIn(connectedAddress, activeChainId);
-    onSignedIn();
+    const session = await handleEvmSignIn(connectedAddress, activeChainId);
+    onSignedIn(session);
   }
 
   async function handleSwitchEvmChain() {
@@ -173,8 +179,8 @@ export default function ConnectWalletModal({
 
     try {
       await switchChainAsync({ chainId: pendingChainId });
-      await handleEvmSignIn(pendingEvmAddress, pendingChainId);
-      onSignedIn();
+      const session = await handleEvmSignIn(pendingEvmAddress, pendingChainId);
+      onSignedIn(session);
     } catch (err) {
       const chain = getEvmChainById(pendingChainId);
       setError(
@@ -198,7 +204,7 @@ export default function ConnectWalletModal({
     });
     const account = await connector.account(provider);
 
-    await signInWithStarknet({
+    return signInWithStarknet({
       address: walletAddress,
       signTypedData: async (typedData) => {
         const signature = await account.signMessage(typedData);
@@ -213,9 +219,10 @@ export default function ConnectWalletModal({
   async function handleSelect(option: WalletOption) {
     setBusy(true);
     setError("");
+    prefetchAuthNonce();
 
     try {
-      await disconnectAllWallets();
+      await clearConflictingWallets(option.ecosystem);
 
       if (option.ecosystem === "evm") {
         const targetChainId = option.chainId ?? PRIMARY_EVM_CHAIN_ID;
@@ -226,6 +233,35 @@ export default function ConnectWalletModal({
           );
         if (!connector) {
           throw new Error(`${option.label} is not available.`);
+        }
+
+        // Reuse an already-open MetaMask/etc. session when possible.
+        const sameConnector =
+          activeConnector &&
+          (activeConnector.id === connector.id ||
+            activeConnector.name.toLowerCase() === connector.name.toLowerCase());
+
+        if (sameConnector && connectedEvmAddress) {
+          let activeChainId = chainId ?? targetChainId;
+          if (activeChainId !== targetChainId) {
+            try {
+              await switchChainAsync({ chainId: targetChainId });
+              activeChainId = targetChainId;
+            } catch {
+              await completeEvmSignIn(
+                connectedEvmAddress,
+                activeChainId,
+                targetChainId
+              );
+              return;
+            }
+          }
+          await completeEvmSignIn(
+            connectedEvmAddress,
+            activeChainId,
+            targetChainId
+          );
+          return;
         }
 
         const result = await connectAsync({
@@ -241,37 +277,39 @@ export default function ConnectWalletModal({
         return;
       }
 
+      let session: AuthSessionPayload;
+
       if (option.ecosystem === "sui") {
         const { wallet, account } = await connectSlushWallet();
         suiWalletRef.current = wallet;
 
-        await signInWithSui({
+        session = await signInWithSui({
           address: account.address,
           signPersonalMessage: async (message) =>
             signSlushPersonalMessage(wallet, account, message),
         });
       } else if (option.ecosystem === "aptos") {
         const { address, publicKey } = await connectPetraWallet();
-        await signInWithAptos({
+        session = await signInWithAptos({
           address,
           publicKey,
           signMessage: (nonce) => signPetraMessage(nonce, publicKey),
         });
       } else if (option.ecosystem === "movement") {
         const { address, publicKey } = await connectMovementWallet();
-        await signInWithMovement({
+        session = await signInWithMovement({
           address,
           publicKey,
           signMessage: (nonce) => signMovementMessage(nonce, publicKey),
         });
       } else if (option.ecosystem === "stellar") {
         await connectFreighterWallet();
-        await signInWithStellar({
+        session = await signInWithStellar({
           signMessage: signFreighterMessage,
         });
       } else if (option.ecosystem === "vara") {
         const address = await connectVaraWallet();
-        await signInWithVara({
+        session = await signInWithVara({
           address,
           signMessage: (nonce) => signVaraMessage(address, nonce),
         });
@@ -294,10 +332,10 @@ export default function ConnectWalletModal({
         }
 
         starknetConnectorRef.current = connector;
-        await handleStarknetSignIn(connector, walletAddress);
+        session = await handleStarknetSignIn(connector, walletAddress);
       }
 
-      onSignedIn();
+      onSignedIn(session);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not connect wallet.");
     } finally {
@@ -336,6 +374,17 @@ export default function ConnectWalletModal({
     setError("");
   }
 
+  function selectNetwork(chainKey: ChainKey) {
+    const chain = CHAIN_REGISTRY.find((entry) => entry.key === chainKey);
+    setSelectedChainKey(chainKey);
+    setError("");
+    setStep("select-wallet");
+    prefetchAuthNonce();
+    if (chain?.ecosystem === "vara") {
+      warmVaraWallet();
+    }
+  }
+
   const modal = (
     <div className="player-modal-backdrop">
       <div
@@ -372,11 +421,7 @@ export default function ConnectWalletModal({
                       type="button"
                       className="wallet-option"
                       disabled={busy}
-                      onClick={() => {
-                        setSelectedChainKey(chain.key);
-                        setError("");
-                        setStep("select-wallet");
-                      }}
+                      onClick={() => selectNetwork(chain.key)}
                     >
                       <span className="wallet-option__label">
                         {chain.name}

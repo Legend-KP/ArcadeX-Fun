@@ -144,14 +144,14 @@ export default function PlayerProfileProvider({
       }
 
       try {
-        const config = await fetchDailyPlayConfig({ fresh: true });
+        // Prefer cache after connect — fresh RPC is reserved for check-in / recover.
+        const config = await fetchDailyPlayConfig();
         setDailyPlayMode(config.mode);
         const campaignId =
           config.mode === "shuffle"
             ? config.campaignId
             : getStreakCampaignIdForChain(resolvedChainId);
         const status = await fetchStreakStatus(session.address, campaignId, {
-          fresh: true,
           chainId: resolvedChainId,
         });
         setStreakStatus(status);
@@ -260,6 +260,7 @@ export default function PlayerProfileProvider({
         chainId: session.chainId,
       });
 
+      // Only re-read when bootstrap left the name empty (race / cache miss).
       if (!hasPlayerName(user)) {
         const fresh = await fetchPlayerProfile(session.playerId, {
           chainId: session.chainId,
@@ -282,9 +283,9 @@ export default function PlayerProfileProvider({
         setShowDailyPlay(false);
         setShowOnboarding(true);
       } else {
-        // Registered — prompt daily play only if they still need today's check-in.
+        // Registered — close connect ASAP; daily play runs in the background.
         setShowOnboarding(false);
-        await maybePromptDailyPlay(session);
+        void maybePromptDailyPlay(session);
       }
     },
     [maybePromptDailyPlay, resetToConnect]
@@ -330,24 +331,32 @@ export default function PlayerProfileProvider({
     };
   }, [loadProfileForSession]);
 
-  const handleSignedIn = useCallback(async () => {
-    setError("");
-    try {
-      const session = await fetchAuthSession();
-      if (!session) {
-        throw new Error("Sign-in did not complete.");
+  const handleSignedIn = useCallback(
+    async (signedInSession?: {
+      playerId: string;
+      address: string;
+      ecosystem: WalletEcosystem;
+      chainId?: number;
+    }) => {
+      setError("");
+      try {
+        const session = signedInSession ?? (await fetchAuthSession());
+        if (!session) {
+          throw new Error("Sign-in did not complete.");
+        }
+        // loadProfileForSession closes connect, then opens onboarding or daily.
+        await loadProfileForSession(session);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Could not complete sign-in."
+        );
+        setShowOnboarding(false);
+        setShowDailyPlay(false);
+        setShowConnect(true);
       }
-      // loadProfileForSession closes connect, then opens onboarding or daily.
-      await loadProfileForSession(session);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Could not complete sign-in."
-      );
-      setShowOnboarding(false);
-      setShowDailyPlay(false);
-      setShowConnect(true);
-    }
-  }, [loadProfileForSession]);
+    },
+    [loadProfileForSession]
+  );
 
   const handleOnboardingSubmit = useCallback(
     async (data: { name: string; email?: string }) => {
