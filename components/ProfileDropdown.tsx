@@ -2,12 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { truncateAddress } from "@/lib/player-identity";
-import { getEcosystemLabel } from "@/lib/wallet-ecosystems";
+import { getConnectedChainLabel } from "@/lib/wallet-ecosystems";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 
 export default function ProfileDropdown() {
-  const { playerName, walletAddress, ecosystem, logout, openConnect, isAuthenticated } =
-    usePlayerProfile();
+  const {
+    playerName,
+    walletAddress,
+    ecosystem,
+    chainId,
+    logout,
+    openConnect,
+    isAuthenticated,
+  } = usePlayerProfile();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -31,7 +38,7 @@ export default function ProfileDropdown() {
 
   const displayName = playerName || "Player";
   const shortWallet = walletAddress ? truncateAddress(walletAddress) : "";
-  const chainLabel = ecosystem ? getEcosystemLabel(ecosystem) : "EVM";
+  const chainLabel = getConnectedChainLabel(ecosystem, chainId);
 
   return (
     <div className="profile-dropdown" ref={ref}>

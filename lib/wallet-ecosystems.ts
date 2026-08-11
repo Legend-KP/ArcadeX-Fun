@@ -1,3 +1,8 @@
+import {
+  getChainKeyForEvmChainId,
+  getChainRegistryEntry,
+} from "@/lib/chain-registry";
+import { getEvmChainById, primaryEvmChain } from "@/lib/chains";
 import { WalletEcosystem } from "@/lib/player-identity";
 
 export const WALLET_ECOSYSTEMS: readonly WalletEcosystem[] = [
@@ -26,4 +31,22 @@ const ECOSYSTEM_LABELS: Record<WalletEcosystem, string> = {
 
 export function getEcosystemLabel(ecosystem: WalletEcosystem): string {
   return ECOSYSTEM_LABELS[ecosystem];
+}
+
+/** Human-readable network the user signed in on (e.g. Base, Avalanche, Vara). */
+export function getConnectedChainLabel(
+  ecosystem: WalletEcosystem | null | undefined,
+  chainId?: number
+): string {
+  if (!ecosystem) return "Wallet";
+  if (ecosystem === "evm") {
+    if (chainId != null && Number.isFinite(chainId)) {
+      const key = getChainKeyForEvmChainId(chainId);
+      if (key) return getChainRegistryEntry(key).name;
+      const chain = getEvmChainById(chainId);
+      if (chain) return chain.name;
+    }
+    return primaryEvmChain.name;
+  }
+  return getEcosystemLabel(ecosystem);
 }
