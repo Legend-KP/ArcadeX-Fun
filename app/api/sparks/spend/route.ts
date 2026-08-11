@@ -6,6 +6,7 @@ import {
   resolvePlayerId,
   WalletEcosystem,
 } from "@/lib/player-identity";
+import { readSessionFromCookies } from "@/lib/auth-session";
 
 export const dynamic = "force-dynamic";
 
@@ -31,18 +32,27 @@ export async function POST(request: Request) {
       playerId?: string;
       walletAddress?: string;
       ecosystem?: WalletEcosystem;
+      chainId?: number;
     };
+    const session = await readSessionFromCookies();
 
     const playerId = resolvePlayerIdFromBody(body);
 
     if (!playerId) {
       return NextResponse.json(
-        { error: "A valid playerId or walletAddress is required.", code: "NO_WALLET" },
+        {
+          error: "A valid playerId or walletAddress is required.",
+          code: "NO_WALLET",
+        },
         { status: 400 }
       );
     }
 
-    const result = await spendSparkOnServer(playerId);
+    const result = await spendSparkOnServer(playerId, Date.now(), {
+      chainId:
+        typeof body.chainId === "number" ? body.chainId : session?.chainId,
+      ecosystem: body.ecosystem ?? session?.ecosystem,
+    });
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof NoSparksError) {

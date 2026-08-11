@@ -130,7 +130,7 @@ export async function GET(
       await Promise.all([
         fetchLeaderboardFromServer(id, LEADERBOARD_MAX_ENTRIES, scope),
         playerId
-          ? fetchPersonalBestFromServer(playerId, id)
+          ? fetchPersonalBestFromServer(playerId, id, scope)
           : Promise.resolve(undefined as number | undefined),
         wallet || name
           ? fetchUserSubmittedBestFromServer(id, {
@@ -253,7 +253,11 @@ export async function POST(
     let name = body.name?.trim() || body.playerName?.trim() || "";
 
     if (!name && wallet) {
-      const profile = await fetchUserFromServer(wallet);
+      const session = await readSessionFromCookies();
+      const profile = await fetchUserFromServer(wallet, {
+        chainId: session?.chainId,
+        ecosystem: session?.ecosystem,
+      });
       name = profile?.name?.trim() || "";
     }
 
@@ -269,8 +273,11 @@ export async function POST(
       );
     }
 
+    const session = await readSessionFromCookies();
     const progress = await saveGameProgressOnServer(playerId, id, score, true, {
       playerName: name,
+      chainId: session?.chainId,
+      ecosystem: session?.ecosystem,
     });
 
     return corsJsonResponse(request, {

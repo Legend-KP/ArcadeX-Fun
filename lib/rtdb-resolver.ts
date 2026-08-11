@@ -157,6 +157,18 @@ export function getLeaderboardRtdbConnection(opts: {
   return getSharedRtdbConnection();
 }
 
+/**
+ * Connection for player economy data (users, sparks, per-user progress).
+ * Base / Avalanche / Vara → dedicated chain RTDB; other networks → shared.
+ */
+export function getPlayerRtdbConnection(opts: {
+  chainId?: number | null;
+  ecosystem?: WalletEcosystem | null;
+  chainKey?: ChainKey | null;
+}): RtdbConnection {
+  return getLeaderboardRtdbConnection(opts);
+}
+
 export function listConfiguredRtdbChainKeys(): RtdbChainKey[] {
   return RTDB_CHAIN_KEYS.filter((key) => {
     try {

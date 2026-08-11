@@ -26,7 +26,7 @@ import {
   rtdbWrite,
   rtdbWriteIfMatch,
 } from "@/lib/rtdb-rest";
-import { getLeaderboardRtdbConnection, type RtdbConnection } from "@/lib/rtdb-resolver";
+import { getLeaderboardRtdbConnection, getPlayerRtdbConnection, type RtdbConnection } from "@/lib/rtdb-resolver";
 import {
   isEvmAddress,
   isValidAddress,
@@ -109,35 +109,51 @@ function resolvePlayerFields(
   return null;
 }
 
-async function readPath<T>(path: string): Promise<T | null> {
-  return rtdbRead<T>(path);
+async function readPath<T>(
+  path: string,
+  connection?: RtdbConnection
+): Promise<T | null> {
+  return rtdbRead<T>(path, undefined, connection);
 }
 
-async function writePath(path: string, data: unknown): Promise<void> {
-  await rtdbWrite(path, data, { silent: true });
+async function writePath(
+  path: string,
+  data: unknown,
+  connection?: RtdbConnection
+): Promise<void> {
+  await rtdbWrite(path, data, { silent: true, connection });
 }
 
-async function patchPath(path: string, data: unknown): Promise<void> {
-  await rtdbPatch(path, data, { silent: true });
+async function patchPath(
+  path: string,
+  data: unknown,
+  connection?: RtdbConnection
+): Promise<void> {
+  await rtdbPatch(path, data, { silent: true, connection });
 }
 
-async function deletePath(path: string): Promise<void> {
-  await rtdbDelete(path, { silent: true });
+async function deletePath(
+  path: string,
+  connection?: RtdbConnection
+): Promise<void> {
+  await rtdbDelete(path, { silent: true, connection });
 }
 
 /** GET with ETag for conditional writes (REST transactions). */
 async function readPathWithEtag<T>(
-  path: string
+  path: string,
+  connection?: RtdbConnection
 ): Promise<{ data: T | null; etag: string }> {
-  return rtdbReadWithEtag<T>(path);
+  return rtdbReadWithEtag<T>(path, { connection });
 }
 
 async function writePathIfMatch(
   path: string,
   data: unknown,
-  etag: string
+  etag: string,
+  connection?: RtdbConnection
 ): Promise<"ok" | "conflict"> {
-  return rtdbWriteIfMatch(path, data, etag, { silent: true });
+  return rtdbWriteIfMatch(path, data, etag, { silent: true, connection });
 }
 
 /**
@@ -147,22 +163,35 @@ async function writePathIfMatch(
 async function runRtdbTransaction<T>(
   path: string,
   updateFn: (current: T | null) => T | undefined,
-  maxRetries = RTDB_TRANSACTION_MAX_RETRIES
+  maxRetries = RTDB_TRANSACTION_MAX_RETRIES,
+  connection?: RtdbConnection
 ): Promise<{ committed: boolean; snapshot: T | null }> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const { data, etag } = await readPathWithEtag<T>(path);
+    const { data, etag } = await readPathWithEtag<T>(path, connection);
     const next = updateFn(data);
     if (next === undefined) {
       return { committed: false, snapshot: data };
     }
 
-    const result = await writePathIfMatch(path, next, etag);
+    const result = await writePathIfMatch(path, next, etag, connection);
     if (result === "ok") {
       return { committed: true, snapshot: next };
     }
   }
 
   throw new Error("Realtime Database transaction failed after max retries.");
+}
+
+export type PlayerChainScope = {
+  chainId?: number | null;
+  ecosystem?: WalletEcosystem | null;
+};
+
+function playerConnection(scope?: PlayerChainScope): RtdbConnection {
+  return getPlayerRtdbConnection({
+    chainId: scope?.chainId,
+    ecosystem: scope?.ecosystem,
+  });
 }
 
 type GuardRecord = { wallet?: string } & Record<string, unknown>;
@@ -179,27 +208,33 @@ type GuardClaimResult<T extends GuardRecord> =
 async function claimGuardRecord<T extends GuardRecord>(
   path: string,
   wallet: string,
-  buildRecord: () => T
+  buildRecord: () => T,
+  connection?: RtdbConnection
 ): Promise<GuardClaimResult<T>> {
   let createdRecord: T | null = null;
   let existsRecord: T | null = null;
   let conflictOther = false;
 
-  const { committed, snapshot } = await runRtdbTransaction<T>(path, (current) => {
-    if (current?.wallet) {
-      const recorded = normalizeWalletAddress(String(current.wallet));
-      if (recorded === wallet) {
-        existsRecord = current;
+  const { committed, snapshot } = await runRtdbTransaction<T>(
+    path,
+    (current) => {
+      if (current?.wallet) {
+        const recorded = normalizeWalletAddress(String(current.wallet));
+        if (recorded === wallet) {
+          existsRecord = current;
+          return undefined;
+        }
+        conflictOther = true;
         return undefined;
       }
-      conflictOther = true;
-      return undefined;
-    }
 
-    const record = buildRecord();
-    createdRecord = record;
-    return record;
-  });
+      const record = buildRecord();
+      createdRecord = record;
+      return record;
+    },
+    RTDB_TRANSACTION_MAX_RETRIES,
+    connection
+  );
 
   if (createdRecord && committed) {
     return { status: "created", record: createdRecord };
@@ -211,7 +246,7 @@ async function claimGuardRecord<T extends GuardRecord>(
     return { status: "conflict_other_wallet" };
   }
 
-  const existing = snapshot ?? (await readPath<T>(path));
+  const existing = snapshot ?? (await readPath<T>(path, connection));
   if (existing?.wallet) {
     const recorded = normalizeWalletAddress(String(existing.wallet));
     if (recorded === wallet) {
@@ -273,12 +308,17 @@ function deduplicateLeaderboardEntries(entries: LeaderboardEntry[]): Leaderboard
 // ─── Users ───────────────────────────────────────────────────────────────────
 
 export async function fetchUserFromServer(
-  id: string
+  id: string,
+  scope?: PlayerChainScope
 ): Promise<PlayerProfile | null> {
   const resolved = resolvePlayerId(id);
   if (!resolved) return null;
 
-  const data = await readPath<StoredUser>(profilePath(resolved));
+  const connection = playerConnection({
+    chainId: scope?.chainId,
+    ecosystem: scope?.ecosystem ?? parsePlayerId(resolved)?.ecosystem,
+  });
+  const data = await readPath<StoredUser>(profilePath(resolved), connection);
   if (!data) return null;
   return toPlayerProfile(resolved, data);
 }
@@ -298,7 +338,13 @@ export async function upsertUserOnServer(
     throw new Error("A valid player id or wallet address is required.");
   }
 
-  const existing = await fetchUserFromServer(fields.playerId);
+  const scope: PlayerChainScope = {
+    chainId: data.chainId,
+    ecosystem: fields.ecosystem,
+  };
+  const connection = playerConnection(scope);
+
+  const existing = await fetchUserFromServer(fields.playerId, scope);
   const now = Date.now();
   const email = data.email?.trim() || existing?.email;
 
@@ -312,7 +358,7 @@ export async function upsertUserOnServer(
     updatedAt: now,
   };
 
-  await writePath(profilePath(fields.playerId), stored);
+  await writePath(profilePath(fields.playerId), stored, connection);
   return toPlayerProfile(fields.playerId, stored)!;
 }
 
@@ -326,7 +372,12 @@ export async function bootstrapUserOnServer(
   }
 
   const parsed = parsePlayerId(resolved)!;
-  const existing = await fetchUserFromServer(resolved);
+  const scope: PlayerChainScope = {
+    chainId: opts?.chainId,
+    ecosystem: opts?.ecosystem ?? parsed.ecosystem,
+  };
+  const connection = playerConnection(scope);
+  const existing = await fetchUserFromServer(resolved, scope);
 
   if (!existing) {
     const now = Date.now();
@@ -338,12 +389,12 @@ export async function bootstrapUserOnServer(
       createdAt: now,
       updatedAt: now,
     };
-    await writePath(profilePath(resolved), stored);
-    await writePath(sparksPath(resolved), defaultSparkState());
+    await writePath(profilePath(resolved), stored, connection);
+    await writePath(sparksPath(resolved), defaultSparkState(), connection);
     return toPlayerProfile(resolved, stored)!;
   }
 
-  await ensureSparkStateOnServer(resolved);
+  await ensureSparkStateOnServer(resolved, scope);
   return existing;
 }
 
@@ -539,9 +590,10 @@ export async function fetchUserSubmittedBestFromServer(
 
 export async function fetchPersonalBestFromServer(
   playerId: string,
-  gameId: string
+  gameId: string,
+  scope?: PlayerChainScope
 ): Promise<number> {
-  const stored = await fetchGameProgressFromServer(playerId, gameId);
+  const stored = await fetchGameProgressFromServer(playerId, gameId, scope);
   return stored?.s ?? 0;
 }
 
@@ -732,10 +784,19 @@ export function storedProgressToGameProgress(
 
 export async function fetchGameProgressFromServer(
   playerId: string,
-  gameId: string
+  gameId: string,
+  scope?: PlayerChainScope
 ): Promise<StoredGameProgress | null> {
-  if (!resolvePlayerId(playerId)) return null;
-  return readPath<StoredGameProgress>(gameProgressPath(playerId, gameId));
+  const resolved = resolvePlayerId(playerId);
+  if (!resolved) return null;
+  const connection = playerConnection({
+    chainId: scope?.chainId,
+    ecosystem: scope?.ecosystem ?? parsePlayerId(resolved)?.ecosystem,
+  });
+  return readPath<StoredGameProgress>(
+    gameProgressPath(playerId, gameId),
+    connection
+  );
 }
 
 /**
@@ -745,12 +806,13 @@ export async function fetchGameProgressFromServer(
 export async function resolveGameProgressFromServer(
   playerId: string,
   gameId: string,
-  hasLeaderboard: boolean
+  hasLeaderboard: boolean,
+  scope?: PlayerChainScope
 ): Promise<GameProgress> {
   const resolved = resolvePlayerId(playerId);
   if (!resolved) return {};
 
-  const stored = await fetchGameProgressFromServer(resolved, gameId);
+  const stored = await fetchGameProgressFromServer(resolved, gameId, scope);
   return storedProgressToGameProgress(stored, hasLeaderboard);
 }
 
@@ -759,7 +821,7 @@ export async function saveGameProgressOnServer(
   gameId: string,
   value: number,
   hasLeaderboard: boolean,
-  opts?: { playerName?: string }
+  opts?: { playerName?: string; chainId?: number | null; ecosystem?: WalletEcosystem | null }
 ): Promise<GameProgress> {
   const resolved = resolvePlayerId(playerId);
   if (!resolved) {
@@ -769,7 +831,13 @@ export async function saveGameProgressOnServer(
     throw new Error("value must be a non-negative number.");
   }
 
-  const current = await fetchGameProgressFromServer(resolved, gameId);
+  const scope: PlayerChainScope = {
+    chainId: opts?.chainId,
+    ecosystem: opts?.ecosystem ?? parsePlayerId(resolved)?.ecosystem,
+  };
+  const connection = playerConnection(scope);
+
+  const current = await fetchGameProgressFromServer(resolved, gameId, scope);
   const field: "s" | "l" = hasLeaderboard ? "s" : "l";
   const currentValue = hasLeaderboard ? (current?.s ?? 0) : (current?.l ?? 0);
 
@@ -777,7 +845,7 @@ export async function saveGameProgressOnServer(
     return storedProgressToGameProgress(current, hasLeaderboard);
   }
 
-  await patchPath(gameProgressPath(resolved, gameId), { [field]: value });
+  await patchPath(gameProgressPath(resolved, gameId), { [field]: value }, connection);
 
   const updated: StoredGameProgress = { ...current, [field]: value };
   return storedProgressToGameProgress(updated, hasLeaderboard);
@@ -794,35 +862,48 @@ function sparksPath(playerId: string): string {
 }
 
 export async function fetchSparkStateFromServer(
-  playerId: string
+  playerId: string,
+  scope?: PlayerChainScope
 ): Promise<StoredSparkState | null> {
-  if (!resolvePlayerId(playerId)) return null;
-  return readPath<StoredSparkState>(sparksPath(playerId));
+  const resolved = resolvePlayerId(playerId);
+  if (!resolved) return null;
+  const connection = playerConnection({
+    chainId: scope?.chainId,
+    ecosystem: scope?.ecosystem ?? parsePlayerId(resolved)?.ecosystem,
+  });
+  return readPath<StoredSparkState>(sparksPath(playerId), connection);
 }
 
 export async function ensureSparkStateOnServer(
-  playerId: string
+  playerId: string,
+  scope?: PlayerChainScope
 ): Promise<StoredSparkState> {
   const resolved = resolvePlayerId(playerId);
   if (!resolved) {
     throw new Error("A valid player id is required.");
   }
 
-  const existing = await readPath<unknown>(sparksPath(resolved));
+  const connection = playerConnection({
+    chainId: scope?.chainId,
+    ecosystem: scope?.ecosystem ?? parsePlayerId(resolved)?.ecosystem,
+  });
+
+  const existing = await readPath<unknown>(sparksPath(resolved), connection);
   if (existing) {
     return coerceSparkState(existing);
   }
 
   const initial = defaultSparkState();
-  await writePath(sparksPath(resolved), initial);
+  await writePath(sparksPath(resolved), initial, connection);
   return initial;
 }
 
 export async function getSparkSnapshotOnServer(
   playerId: string,
-  now = Date.now()
+  now = Date.now(),
+  scope?: PlayerChainScope
 ): Promise<{ state: StoredSparkState; sparks: SparkSnapshot }> {
-  const state = await ensureSparkStateOnServer(playerId);
+  const state = await ensureSparkStateOnServer(playerId, scope);
   const normalized = normalizeSparkState(state, now);
   return {
     state: normalized,
@@ -841,7 +922,8 @@ export class NoSparksError extends Error {
 
 export async function spendSparkOnServer(
   playerId: string,
-  now = Date.now()
+  now = Date.now(),
+  scope?: PlayerChainScope
 ): Promise<{
   state: StoredSparkState;
   sparks: SparkSnapshot;
@@ -852,7 +934,13 @@ export async function spendSparkOnServer(
     throw new Error("A valid player id is required.");
   }
 
-  const raw = await ensureSparkStateOnServer(resolved);
+  const resolvedScope: PlayerChainScope = {
+    chainId: scope?.chainId,
+    ecosystem: scope?.ecosystem ?? parsePlayerId(resolved)?.ecosystem,
+  };
+  const connection = playerConnection(resolvedScope);
+
+  const raw = await ensureSparkStateOnServer(resolved, resolvedScope);
   const state = normalizeSparkState(raw, now);
 
   if (typeof state.infiniteUntil === "number" && state.infiniteUntil > now) {
@@ -879,7 +967,7 @@ export async function spendSparkOnServer(
     slots: nextSlots,
   };
 
-  await writePath(sparksPath(resolved), nextState);
+  await writePath(sparksPath(resolved), nextState, connection);
 
   return {
     state: nextState,
@@ -933,12 +1021,19 @@ export async function applyShopPurchaseOnServer(
   productId: ShopProductId,
   txHash: string,
   ecosystem: ShopPurchaseEcosystem = "evm",
-  now = Date.now()
+  now = Date.now(),
+  scope?: PlayerChainScope
 ): Promise<{ state: StoredSparkState; sparks: SparkSnapshot }> {
   const resolved = resolvePlayerId(playerId);
   if (!resolved) {
     throw new Error("A valid player id is required.");
   }
+
+  const resolvedScope: PlayerChainScope = {
+    chainId: scope?.chainId,
+    ecosystem: scope?.ecosystem ?? ecosystem,
+  };
+  const connection = playerConnection(resolvedScope);
 
   const txKey = normalizeShopTxKey(ecosystem, txHash);
 
@@ -946,7 +1041,7 @@ export async function applyShopPurchaseOnServer(
   const existing = await readPath<{
     playerId: string;
     productId: ShopProductId;
-  }>(processedPath);
+  }>(processedPath, connection);
 
   if (existing) {
     if (existing.playerId !== resolved || existing.productId !== productId) {
@@ -956,10 +1051,10 @@ export async function applyShopPurchaseOnServer(
       );
     }
 
-    return getSparkSnapshotOnServer(resolved, now);
+    return getSparkSnapshotOnServer(resolved, now, resolvedScope);
   }
 
-  const raw = await ensureSparkStateOnServer(resolved);
+  const raw = await ensureSparkStateOnServer(resolved, resolvedScope);
   const state = normalizeSparkState(raw, now);
 
   let nextState: StoredSparkState;
@@ -981,12 +1076,16 @@ export async function applyShopPurchaseOnServer(
     };
   }
 
-  await writePath(sparksPath(resolved), nextState);
-  await writePath(processedPath, {
-    playerId: resolved,
-    productId,
-    processedAt: now,
-  });
+  await writePath(sparksPath(resolved), nextState, connection);
+  await writePath(
+    processedPath,
+    {
+      playerId: resolved,
+      productId,
+      processedAt: now,
+    },
+    connection
+  );
 
   return {
     state: nextState,
@@ -1022,7 +1121,8 @@ export class SparkRefillActivationError extends Error {
 
 export async function activateInfiniteSparkOnServer(
   walletAddress: string,
-  txHash: string
+  txHash: string,
+  scope?: PlayerChainScope
 ): Promise<{
   state: StoredSparkState;
   sparks: SparkSnapshot;
@@ -1037,6 +1137,11 @@ export async function activateInfiniteSparkOnServer(
 
   const wallet = normalizeWalletAddress(walletAddress);
   const playerId = walletToPlayerId(wallet);
+  const resolvedScope: PlayerChainScope = {
+    chainId: scope?.chainId,
+    ecosystem: scope?.ecosystem ?? "evm",
+  };
+  const connection = playerConnection(resolvedScope);
   const normalizedTxHash = txHash.trim().toLowerCase();
 
   if (!/^0x[0-9a-f]{64}$/.test(normalizedTxHash)) {
@@ -1047,7 +1152,10 @@ export async function activateInfiniteSparkOnServer(
   }
 
   const guardPath = sparkPaymentPath(normalizedTxHash);
-  const existingPayment = await readPath<{ wallet?: string }>(guardPath);
+  const existingPayment = await readPath<{ wallet?: string }>(
+    guardPath,
+    connection
+  );
 
   if (existingPayment?.wallet) {
     const recordedWallet = normalizeWalletAddress(existingPayment.wallet);
@@ -1058,7 +1166,11 @@ export async function activateInfiniteSparkOnServer(
       );
     }
 
-    const snapshot = await getSparkSnapshotOnServer(playerId);
+    const snapshot = await getSparkSnapshotOnServer(
+      playerId,
+      Date.now(),
+      resolvedScope
+    );
     return { ...snapshot, activated: false };
   }
 
@@ -1069,7 +1181,7 @@ export async function activateInfiniteSparkOnServer(
 
   const now = Date.now();
   const state = normalizeSparkState(
-    await ensureSparkStateOnServer(playerId),
+    await ensureSparkStateOnServer(playerId, resolvedScope),
     now
   );
   const baseUntil =
@@ -1078,11 +1190,16 @@ export async function activateInfiniteSparkOnServer(
       : now;
   const infiniteUntil = baseUntil + INFINITE_SPARKS_MS;
 
-  const claim = await claimGuardRecord(guardPath, wallet, () => ({
+  const claim = await claimGuardRecord(
+    guardPath,
     wallet,
-    activatedAt: now,
-    infiniteUntil,
-  }));
+    () => ({
+      wallet,
+      activatedAt: now,
+      infiniteUntil,
+    }),
+    connection
+  );
 
   if (claim.status === "conflict_other_wallet") {
     throw new InfiniteSparkActivationError(
@@ -1092,7 +1209,11 @@ export async function activateInfiniteSparkOnServer(
   }
 
   if (claim.status === "exists") {
-    const snapshot = await getSparkSnapshotOnServer(playerId);
+    const snapshot = await getSparkSnapshotOnServer(
+      playerId,
+      Date.now(),
+      resolvedScope
+    );
     return { ...snapshot, activated: false };
   }
 
@@ -1102,9 +1223,9 @@ export async function activateInfiniteSparkOnServer(
   };
 
   try {
-    await writePath(sparksPath(playerId), nextState);
+    await writePath(sparksPath(playerId), nextState, connection);
   } catch (err) {
-    await deletePath(guardPath).catch(() => {});
+    await deletePath(guardPath, connection).catch(() => {});
     throw err;
   }
 
@@ -1117,7 +1238,8 @@ export async function activateInfiniteSparkOnServer(
 
 export async function activateSparkRefillOnServer(
   walletAddress: string,
-  txHash: string
+  txHash: string,
+  scope?: PlayerChainScope
 ): Promise<{
   state: StoredSparkState;
   sparks: SparkSnapshot;
@@ -1132,6 +1254,11 @@ export async function activateSparkRefillOnServer(
 
   const wallet = normalizeWalletAddress(walletAddress);
   const playerId = walletToPlayerId(wallet);
+  const resolvedScope: PlayerChainScope = {
+    chainId: scope?.chainId,
+    ecosystem: scope?.ecosystem ?? "evm",
+  };
+  const connection = playerConnection(resolvedScope);
   const normalizedTxHash = txHash.trim().toLowerCase();
 
   if (!/^0x[0-9a-f]{64}$/.test(normalizedTxHash)) {
@@ -1143,7 +1270,8 @@ export async function activateSparkRefillOnServer(
 
   const guardPath = sparkPaymentPath(normalizedTxHash);
   const existingPayment = await readPath<{ wallet?: string; type?: string }>(
-    guardPath
+    guardPath,
+    connection
   );
 
   if (existingPayment?.wallet) {
@@ -1155,7 +1283,11 @@ export async function activateSparkRefillOnServer(
       );
     }
 
-    const snapshot = await getSparkSnapshotOnServer(playerId);
+    const snapshot = await getSparkSnapshotOnServer(
+      playerId,
+      Date.now(),
+      resolvedScope
+    );
     return { ...snapshot, refilled: false };
   }
 
@@ -1166,15 +1298,20 @@ export async function activateSparkRefillOnServer(
 
   const now = Date.now();
   const state = normalizeSparkState(
-    await ensureSparkStateOnServer(playerId),
+    await ensureSparkStateOnServer(playerId, resolvedScope),
     now
   );
 
-  const claim = await claimGuardRecord(guardPath, wallet, () => ({
+  const claim = await claimGuardRecord(
+    guardPath,
     wallet,
-    type: "refill",
-    activatedAt: now,
-  }));
+    () => ({
+      wallet,
+      type: "refill",
+      activatedAt: now,
+    }),
+    connection
+  );
 
   if (claim.status === "conflict_other_wallet") {
     throw new SparkRefillActivationError(
@@ -1184,7 +1321,11 @@ export async function activateSparkRefillOnServer(
   }
 
   if (claim.status === "exists") {
-    const snapshot = await getSparkSnapshotOnServer(playerId);
+    const snapshot = await getSparkSnapshotOnServer(
+      playerId,
+      Date.now(),
+      resolvedScope
+    );
     return { ...snapshot, refilled: false };
   }
 
@@ -1194,9 +1335,9 @@ export async function activateSparkRefillOnServer(
   };
 
   try {
-    await writePath(sparksPath(playerId), nextState);
+    await writePath(sparksPath(playerId), nextState, connection);
   } catch (err) {
-    await deletePath(guardPath).catch(() => {});
+    await deletePath(guardPath, connection).catch(() => {});
     throw err;
   }
 
@@ -1395,6 +1536,11 @@ export async function grantStreakInfiniteSparkOnServer(
 
   const wallet = normalizeRewardsWallet(walletAddress);
   const playerId = walletToPlayerId(wallet);
+  const resolvedScope: PlayerChainScope = {
+    chainId,
+    ecosystem: "evm",
+  };
+  const connection = playerConnection(resolvedScope);
   const normalizedTxHash = txHash.trim().toLowerCase();
 
   if (!/^0x[0-9a-f]{64}$/.test(normalizedTxHash)) {
@@ -1405,7 +1551,10 @@ export async function grantStreakInfiniteSparkOnServer(
   }
 
   const guardPath = streakGrantPath(normalizedTxHash);
-  const existingGrant = await readPath<{ wallet?: string }>(guardPath);
+  const existingGrant = await readPath<{ wallet?: string }>(
+    guardPath,
+    connection
+  );
 
   if (existingGrant?.wallet) {
     const recorded = normalizeRewardsWallet(existingGrant.wallet);
@@ -1416,7 +1565,11 @@ export async function grantStreakInfiniteSparkOnServer(
       );
     }
 
-    const snapshot = await getSparkSnapshotOnServer(playerId);
+    const snapshot = await getSparkSnapshotOnServer(
+      playerId,
+      Date.now(),
+      resolvedScope
+    );
     return { ...snapshot, granted: false };
   }
 
@@ -1441,7 +1594,7 @@ export async function grantStreakInfiniteSparkOnServer(
 
   const now = Date.now();
   const state = normalizeSparkState(
-    await ensureSparkStateOnServer(playerId),
+    await ensureSparkStateOnServer(playerId, resolvedScope),
     now
   );
   const baseUntil =
@@ -1450,13 +1603,18 @@ export async function grantStreakInfiniteSparkOnServer(
       : now;
   const infiniteUntil = baseUntil + INFINITE_SPARKS_MS;
 
-  const claim = await claimGuardRecord(guardPath, wallet, () => ({
+  const claim = await claimGuardRecord(
+    guardPath,
     wallet,
-    campaignId,
-    grantedAt: now,
-    infiniteUntil,
-    reward: "INFINITE_SPARK_24H",
-  }));
+    () => ({
+      wallet,
+      campaignId,
+      grantedAt: now,
+      infiniteUntil,
+      reward: "INFINITE_SPARK_24H",
+    }),
+    connection
+  );
 
   if (claim.status === "conflict_other_wallet") {
     throw new StreakRewardError(
@@ -1466,7 +1624,11 @@ export async function grantStreakInfiniteSparkOnServer(
   }
 
   if (claim.status === "exists") {
-    const snapshot = await getSparkSnapshotOnServer(playerId);
+    const snapshot = await getSparkSnapshotOnServer(
+      playerId,
+      Date.now(),
+      resolvedScope
+    );
     return { ...snapshot, granted: false };
   }
 
@@ -1476,9 +1638,9 @@ export async function grantStreakInfiniteSparkOnServer(
   };
 
   try {
-    await writePath(sparksPath(playerId), nextState);
+    await writePath(sparksPath(playerId), nextState, connection);
   } catch (err) {
-    await deletePath(guardPath).catch(() => {});
+    await deletePath(guardPath, connection).catch(() => {});
     throw err;
   }
 
@@ -1818,7 +1980,8 @@ export async function recordSpinTxOnServer(
 
 export async function grantShuffleInfiniteSparkOnServer(
   walletAddress: string,
-  txHash: string
+  txHash: string,
+  scope?: PlayerChainScope
 ): Promise<{
   state: StoredSparkState;
   sparks: SparkSnapshot;
@@ -1833,9 +1996,17 @@ export async function grantShuffleInfiniteSparkOnServer(
 
   const wallet = normalizeRewardsWallet(walletAddress);
   const playerId = walletToPlayerId(wallet);
+  const resolvedScope: PlayerChainScope = {
+    chainId: scope?.chainId,
+    ecosystem: scope?.ecosystem ?? "evm",
+  };
+  const connection = playerConnection(resolvedScope);
   const normalizedTxHash = txHash.trim().toLowerCase();
   const guardPath = shuffleGrantPath(normalizedTxHash);
-  const existingGrant = await readPath<{ wallet?: string }>(guardPath);
+  const existingGrant = await readPath<{ wallet?: string }>(
+    guardPath,
+    connection
+  );
 
   if (existingGrant?.wallet) {
     const recorded = normalizeRewardsWallet(existingGrant.wallet);
@@ -1845,13 +2016,17 @@ export async function grantShuffleInfiniteSparkOnServer(
         "TX_ALREADY_USED"
       );
     }
-    const snapshot = await getSparkSnapshotOnServer(playerId);
+    const snapshot = await getSparkSnapshotOnServer(
+      playerId,
+      Date.now(),
+      resolvedScope
+    );
     return { ...snapshot, granted: false };
   }
 
   const now = Date.now();
   const state = normalizeSparkState(
-    await ensureSparkStateOnServer(playerId),
+    await ensureSparkStateOnServer(playerId, resolvedScope),
     now
   );
   const baseUntil =
@@ -1860,13 +2035,18 @@ export async function grantShuffleInfiniteSparkOnServer(
       : now;
   const infiniteUntil = baseUntil + INFINITE_SPARKS_MS;
 
-  const claim = await claimGuardRecord(guardPath, wallet, () => ({
+  const claim = await claimGuardRecord(
+    guardPath,
     wallet,
-    grantedAt: now,
-    infiniteUntil,
-    reward: "INFINITE_SPARK_24H",
-    source: "shuffle",
-  }));
+    () => ({
+      wallet,
+      grantedAt: now,
+      infiniteUntil,
+      reward: "INFINITE_SPARK_24H",
+      source: "shuffle",
+    }),
+    connection
+  );
 
   if (claim.status === "conflict_other_wallet") {
     throw new StreakRewardError(
@@ -1876,7 +2056,11 @@ export async function grantShuffleInfiniteSparkOnServer(
   }
 
   if (claim.status === "exists") {
-    const snapshot = await getSparkSnapshotOnServer(playerId);
+    const snapshot = await getSparkSnapshotOnServer(
+      playerId,
+      Date.now(),
+      resolvedScope
+    );
     return { ...snapshot, granted: false };
   }
 
@@ -1886,9 +2070,9 @@ export async function grantShuffleInfiniteSparkOnServer(
   };
 
   try {
-    await writePath(sparksPath(playerId), nextState);
+    await writePath(sparksPath(playerId), nextState, connection);
   } catch (err) {
-    await deletePath(guardPath).catch(() => {});
+    await deletePath(guardPath, connection).catch(() => {});
     throw err;
   }
 

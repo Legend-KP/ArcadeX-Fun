@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import {
   activateSparkRefillOnServer,
   SparkRefillActivationError,
@@ -10,6 +10,7 @@ import {
 } from "@/lib/rate-limit";
 import { normalizeWalletAddress } from "@/lib/wallet-address";
 import { requireWalletAuth } from "@/lib/wallet-session";
+import { readSessionFromCookies } from "@/lib/auth-session";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await activateSparkRefillOnServer(wallet, txHash);
+    const session = await readSessionFromCookies();
+    const result = await activateSparkRefillOnServer(wallet, txHash, {
+      chainId: session?.chainId,
+      ecosystem: "evm",
+    });
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof SparkRefillActivationError) {
@@ -72,7 +77,7 @@ export async function POST(request: Request) {
     }
 
     const message =
-      err instanceof Error ? err.message : "Failed to activate Spark Refill.";
+      err instanceof Error ? err.message : "Failed to activate Spark refill.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

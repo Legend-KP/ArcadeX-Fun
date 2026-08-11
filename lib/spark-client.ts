@@ -18,12 +18,18 @@ export class SparkClientError extends Error {
 }
 
 export async function fetchSparkData(
-  playerId: string
+  playerId: string,
+  opts?: { chainId?: number; ecosystem?: string }
 ): Promise<SparkApiResponse> {
-  const res = await fetch(
-    `/api/sparks?playerId=${encodeURIComponent(playerId)}`,
-    { cache: "no-store" }
-  );
+  const params = new URLSearchParams({ playerId });
+  if (typeof opts?.chainId === "number" && Number.isFinite(opts.chainId)) {
+    params.set("chainId", String(opts.chainId));
+  }
+  if (opts?.ecosystem) params.set("ecosystem", opts.ecosystem);
+
+  const res = await fetch(`/api/sparks?${params.toString()}`, {
+    cache: "no-store",
+  });
 
   const data = (await res.json()) as SparkApiResponse & {
     error?: string;
@@ -41,11 +47,18 @@ export async function fetchSparkData(
   return data;
 }
 
-export async function spendSpark(playerId: string): Promise<SparkApiResponse> {
+export async function spendSpark(
+  playerId: string,
+  opts?: { chainId?: number; ecosystem?: string }
+): Promise<SparkApiResponse> {
   const res = await fetch("/api/sparks/spend", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ playerId }),
+    body: JSON.stringify({
+      playerId,
+      chainId: opts?.chainId,
+      ecosystem: opts?.ecosystem,
+    }),
   });
 
   const data = (await res.json()) as SparkApiResponse & {

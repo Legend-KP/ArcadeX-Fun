@@ -44,7 +44,8 @@ export default function SparkProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const { playerId, isReady, isAuthenticated } = usePlayerProfile();
+  const { playerId, isReady, isAuthenticated, chainId, ecosystem } =
+    usePlayerProfile();
   const [storedState, setStoredState] = useState<StoredSparkState | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -57,7 +58,10 @@ export default function SparkProvider({
     setError("");
 
     try {
-      const data = await fetchSparkData(playerId);
+      const data = await fetchSparkData(playerId, {
+        chainId,
+        ecosystem: ecosystem ?? undefined,
+      });
       setStoredState(data.state);
     } catch (err) {
       setError(
@@ -66,7 +70,7 @@ export default function SparkProvider({
     } finally {
       setLoading(false);
     }
-  }, [playerId, isAuthenticated]);
+  }, [playerId, isAuthenticated, chainId, ecosystem]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -79,7 +83,7 @@ export default function SparkProvider({
     }
 
     void refresh();
-  }, [isReady, playerId, isAuthenticated, refresh]);
+  }, [isReady, playerId, isAuthenticated, chainId, ecosystem, refresh]);
 
   useEffect(() => {
     const id = window.setInterval(() => setTick(Date.now()), 1000);
@@ -104,9 +108,12 @@ export default function SparkProvider({
       );
     }
 
-    const data = await spendSpark(playerId);
+    const data = await spendSpark(playerId, {
+      chainId,
+      ecosystem: ecosystem ?? undefined,
+    });
     setStoredState(data.state);
-  }, [playerId, isAuthenticated]);
+  }, [playerId, isAuthenticated, chainId, ecosystem]);
 
   const value = useMemo(
     () => ({

@@ -10,6 +10,7 @@ import {
 } from "@/lib/rate-limit";
 import { normalizeWalletAddress } from "@/lib/wallet-address";
 import { requireWalletAuth } from "@/lib/wallet-session";
+import { readSessionFromCookies } from "@/lib/auth-session";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await activateInfiniteSparkOnServer(wallet, txHash);
+    const result = await activateInfiniteSparkOnServer(wallet, txHash, {
+      chainId: (await readSessionFromCookies())?.chainId,
+      ecosystem: "evm",
+    });
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof InfiniteSparkActivationError) {

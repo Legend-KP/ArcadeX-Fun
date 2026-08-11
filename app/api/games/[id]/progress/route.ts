@@ -11,6 +11,7 @@ import { gameHasLeaderboard } from "@/types";
 import { resolvePlayerId } from "@/lib/player-identity";
 import { cachedGetProgress, invalidateProgressCache } from "@/lib/progress-response-cache";
 import { coalesceProgressWrite } from "@/lib/progress-write-coalesce";
+import { readSessionFromCookies } from "@/lib/auth-session";
 
 export const dynamic = "force-dynamic";
 
@@ -48,8 +49,13 @@ export async function GET(
     }
 
     const hasLeaderboard = gameHasLeaderboard(game);
+    const session = await readSessionFromCookies();
+    const scope = {
+      chainId: session?.chainId,
+      ecosystem: session?.ecosystem,
+    };
     const result = await cachedGetProgress(playerId, id, () =>
-      resolveGameProgressFromServer(playerId, id, hasLeaderboard).then(
+      resolveGameProgressFromServer(playerId, id, hasLeaderboard, scope).then(
         (progress) => ({ progress, hasLeaderboard })
       )
     );
@@ -115,14 +121,27 @@ export async function POST(
 
     const hasLeaderboard = gameHasLeaderboard(game);
     const playerName = body.playerName ?? body.name;
+    const session = await readSessionFromCookies();
 
     const progress = await coalesceProgressWrite(
       playerId,
       id,
       scoreValue,
       hasLeaderboard,
-      { playerName },
-      (v, hl, opts) => saveGameProgressOnServer(playerId, id, v, hl, opts)
+      {
+        playerName,
+        chainId: session?.chainId,
+        ecosystem: session?.ecosystem,
+      },
+      (v, hl, opts) =>
+        saveGameProgressOnServer(playerId, id, v, hl, {
+          playerName: opts.playerName,
+          chainId: opts.chainId,
+          ecosystem: opts.ecosystem as
+            | import("@/lib/player-identity").WalletEcosystem
+            | null
+            | undefined,
+        })
     );
 
     // Bust the read cache so the next GET reflects the new value immediately

@@ -4,11 +4,22 @@ import { setCachedPlayerName } from "@/lib/player-id";
 import { WalletEcosystem } from "@/lib/player-identity";
 
 export async function fetchPlayerProfile(
-  playerId: string
+  playerId: string,
+  opts?: { chainId?: number; ecosystem?: WalletEcosystem }
 ): Promise<PlayerProfile | null> {
-  const res = await fetch(`/api/users/${encodeUserId(playerId)}`, {
-    cache: "no-store",
-  });
+  const params = new URLSearchParams();
+  if (typeof opts?.chainId === "number" && Number.isFinite(opts.chainId)) {
+    params.set("chainId", String(opts.chainId));
+  }
+  if (opts?.ecosystem) params.set("ecosystem", opts.ecosystem);
+  const qs = params.toString();
+
+  const res = await fetch(
+    `/api/users/${encodeUserId(playerId)}${qs ? `?${qs}` : ""}`,
+    {
+      cache: "no-store",
+    }
+  );
   const data = (await res.json()) as { user?: PlayerProfile | null; error?: string };
 
   if (!res.ok) {

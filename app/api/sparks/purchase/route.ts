@@ -133,7 +133,9 @@ export async function POST(request: Request) {
           playerId,
           productId as ShopProductId,
           txId,
-          "evm"
+          "evm",
+          Date.now(),
+          { chainId: session.chainId, ecosystem: "evm" }
         );
 
         return NextResponse.json(result);
@@ -158,7 +160,9 @@ export async function POST(request: Request) {
         playerId,
         productId as ShopProductId,
         txId,
-        "evm"
+        "evm",
+        Date.now(),
+        { chainId: session.chainId, ecosystem: "evm" }
       );
 
       return NextResponse.json(result);
@@ -207,7 +211,9 @@ export async function POST(request: Request) {
         playerId,
         productId as ShopProductId,
         txId,
-        "vara"
+        "vara",
+        Date.now(),
+        { chainId: session.chainId, ecosystem: "vara" }
       );
 
       return NextResponse.json(result);
@@ -233,7 +239,9 @@ export async function POST(request: Request) {
       playerId,
       productId as ShopProductId,
       txId,
-      "sui"
+      "sui",
+      Date.now(),
+      { chainId: session.chainId, ecosystem: "sui" }
     );
 
     return NextResponse.json(result);

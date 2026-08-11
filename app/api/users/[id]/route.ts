@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchUserFromServer, upsertUserOnServer } from "@/lib/rtdb-server";
 import { resolvePlayerId } from "@/lib/player-identity";
 import { WalletEcosystem } from "@/lib/player-identity";
+import { readSessionFromCookies } from "@/lib/auth-session";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ const NAME_RE = /^[\w\s.-]{1,20}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -23,7 +24,20 @@ export async function GET(
       return NextResponse.json({ user: null });
     }
 
-    const user = await fetchUserFromServer(playerId);
+    const { searchParams } = new URL(request.url);
+    const session = await readSessionFromCookies();
+    const chainIdRaw = searchParams.get("chainId");
+    const chainIdFromQuery =
+      chainIdRaw != null && chainIdRaw !== "" ? Number(chainIdRaw) : undefined;
+    const chainId =
+      typeof chainIdFromQuery === "number" && Number.isFinite(chainIdFromQuery)
+        ? chainIdFromQuery
+        : session?.chainId;
+    const ecosystem =
+      (searchParams.get("ecosystem") as WalletEcosystem | null) ??
+      session?.ecosystem;
+
+    const user = await fetchUserFromServer(playerId, { chainId, ecosystem });
     return NextResponse.json({ user: user ?? null });
   } catch (err) {
     const message =
@@ -57,6 +71,7 @@ export async function PUT(
       ecosystem?: WalletEcosystem;
       chainId?: number;
     };
+    const session = await readSessionFromCookies();
 
     const name = body.name?.trim() ?? "";
     if (!NAME_RE.test(name)) {
@@ -78,8 +93,9 @@ export async function PUT(
       name,
       email: email || undefined,
       walletAddress: body.walletAddress,
-      ecosystem: body.ecosystem,
-      chainId: body.chainId,
+      ecosystem: body.ecosystem ?? session?.ecosystem,
+      chainId:
+        typeof body.chainId === "number" ? body.chainId : session?.chainId,
     });
 
     return NextResponse.json({ user });

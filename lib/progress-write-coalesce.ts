@@ -19,6 +19,8 @@ interface PendingWrite {
   maxValue: number;
   hasLeaderboard: boolean;
   playerName?: string;
+  chainId?: number | null;
+  ecosystem?: string | null;
   resolvers: Array<(progress: GameProgress) => void>;
   rejecters: Array<(err: unknown) => void>;
   timer: ReturnType<typeof setTimeout>;
@@ -46,11 +48,19 @@ export function coalesceProgressWrite(
   gameId: string,
   value: number,
   hasLeaderboard: boolean,
-  opts: { playerName?: string },
+  opts: {
+    playerName?: string;
+    chainId?: number | null;
+    ecosystem?: string | null;
+  },
   writer: (
     v: number,
     hasLeaderboard: boolean,
-    opts: { playerName?: string }
+    opts: {
+      playerName?: string;
+      chainId?: number | null;
+      ecosystem?: string | null;
+    }
   ) => Promise<GameProgress>
 ): Promise<GameProgress> {
   const key = coalesceKey(playerId, gameId);
@@ -76,6 +86,8 @@ export function coalesceProgressWrite(
       maxValue: value,
       hasLeaderboard,
       playerName: opts.playerName,
+      chainId: opts.chainId,
+      ecosystem: opts.ecosystem,
       resolvers: [resolve],
       rejecters: [reject],
       // populated below
@@ -88,6 +100,11 @@ export function coalesceProgressWrite(
       try {
         const result = await writer(entry.maxValue, entry.hasLeaderboard, {
           playerName: entry.playerName,
+          chainId: entry.chainId,
+          ecosystem: entry.ecosystem as
+            | import("@/lib/player-identity").WalletEcosystem
+            | null
+            | undefined,
         });
         for (const res of entry.resolvers) res(result);
       } catch (err) {

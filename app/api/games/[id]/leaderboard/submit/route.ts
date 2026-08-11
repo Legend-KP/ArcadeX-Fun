@@ -123,17 +123,20 @@ export async function POST(
       );
     }
     const wallet = normalizeAddress(ecosystem, rawWallet);
+    const session = await readSessionFromCookies();
 
     let name = body.name?.trim() || body.playerName?.trim() || "";
     if (!name) {
-      const profile = await fetchUserFromServer(wallet);
+      const profile = await fetchUserFromServer(wallet, {
+        chainId: session?.chainId,
+        ecosystem,
+      });
       name = profile?.name?.trim() || "";
     }
     if (!name) {
       name = `${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
     }
 
-    const session = await readSessionFromCookies();
     const contestChainKey = resolveContestChainKey({
       chainId: session?.chainId,
       ecosystem: session?.ecosystem ?? ecosystem,

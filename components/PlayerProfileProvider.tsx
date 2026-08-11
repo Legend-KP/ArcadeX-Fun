@@ -261,7 +261,10 @@ export default function PlayerProfileProvider({
       });
 
       if (!hasPlayerName(user)) {
-        const fresh = await fetchPlayerProfile(session.playerId);
+        const fresh = await fetchPlayerProfile(session.playerId, {
+          chainId: session.chainId,
+          ecosystem: session.ecosystem,
+        });
         if (fresh) user = fresh;
       }
 

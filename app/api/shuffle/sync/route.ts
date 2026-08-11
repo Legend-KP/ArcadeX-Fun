@@ -188,7 +188,10 @@ export async function POST(request: Request) {
       Number(verified.rewardMode) === REWARD_OFFCHAIN
     ) {
       try {
-        const result = await grantShuffleInfiniteSparkOnServer(wallet, txHash);
+        const result = await grantShuffleInfiniteSparkOnServer(wallet, txHash, {
+          chainId,
+          ecosystem: isVaraRewardsChainId(chainId) ? "vara" : "evm",
+        });
         infiniteSparkGranted = result.granted || Boolean(result.state.infiniteUntil);
         reward = {
           granted: result.granted,
