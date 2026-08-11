@@ -26,6 +26,10 @@ import {
   getClientIp,
   rateLimitResponse,
 } from "@/lib/rate-limit";
+import {
+  applyContestForChain,
+  resolveContestChainKey,
+} from "@/lib/contest-chains";
 import { readSessionFromCookies } from "@/lib/auth-session";
 import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 import { VARA_CHAIN_ID } from "@/lib/vara-rewards";
@@ -114,6 +118,11 @@ export async function GET(
       chainId,
       ecosystem: session?.ecosystem,
     };
+    const contestChainKey = resolveContestChainKey({
+      chainId,
+      ecosystem: session?.ecosystem,
+    });
+    const chainGame = applyContestForChain(game, contestChainKey);
 
     const hasPersonal = Boolean(playerId || wallet || name);
 
@@ -132,19 +141,19 @@ export async function GET(
             })
           : Promise.resolve(undefined as number | undefined),
         (async () => {
-          const contestStatus = getContestStatus(game);
+          const contestStatus = getContestStatus(chainGame);
           if (
             contestStatus &&
-            typeof game.contestStartedAt === "number" &&
-            typeof game.contestEndsAt === "number"
+            typeof chainGame.contestStartedAt === "number" &&
+            typeof chainGame.contestEndsAt === "number"
           ) {
             return {
               status: contestStatus,
-              startedAt: game.contestStartedAt,
-              endsAt: game.contestEndsAt,
+              startedAt: chainGame.contestStartedAt,
+              endsAt: chainGame.contestEndsAt,
               entries: await fetchContestLeaderboardFromServer(
                 id,
-                game.contestStartedAt,
+                chainGame.contestStartedAt,
                 CONTEST_TOP_MAX_ENTRIES,
                 scope
               ),
@@ -163,10 +172,10 @@ export async function GET(
     if (contestEntries) {
       contest = {
         status: contestEntries.status,
-        task: game.contestTask ?? "",
+        task: chainGame.contestTask ?? "",
         startedAt: contestEntries.startedAt,
         endsAt: contestEntries.endsAt,
-        durationDays: game.contestDurationDays ?? 1,
+        durationDays: chainGame.contestDurationDays ?? 1,
         entries: contestEntries.entries,
       };
     }

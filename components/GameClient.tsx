@@ -15,6 +15,10 @@ import { getGameTheme } from "@/lib/game-themes";
 import { parsePlayerId } from "@/lib/player-identity";
 import { isVaraWalletAddress } from "@/lib/vara-address";
 import { Game, gameHasContestLive, gameHasLeaderboard } from "@/types";
+import {
+  applyContestForChain,
+  resolveContestChainKey,
+} from "@/lib/contest-chains";
 
 interface GameClientProps {
   game: Game;
@@ -40,20 +44,30 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
     name: string;
     walletAddress: string;
   } | null>(null);
-  const leaderboardEnabled = gameHasLeaderboard(game);
-  const contestLive = gameHasContestLive(game);
-  const theme = getGameTheme(game);
-  const shellOrigin = getShellOrigin();
-  const progressRetryRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const {
     playerName,
     profile,
     playerId,
     walletAddress,
     ecosystem,
+    chainId,
     isReady,
     openConnect,
   } = usePlayerProfile();
+
+  const contestChainKey = resolveContestChainKey({
+    chainId,
+    ecosystem,
+  });
+  const chainGame = useMemo(
+    () => applyContestForChain(game, contestChainKey),
+    [game, contestChainKey]
+  );
+  const leaderboardEnabled = gameHasLeaderboard(game);
+  const contestLive = gameHasContestLive(chainGame);
+  const theme = getGameTheme(game);
+  const shellOrigin = getShellOrigin();
+  const progressRetryRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const resolvedName = playerName || profile?.name || "";
   const resolvedWallet = walletAddress || profile?.walletAddress || "";

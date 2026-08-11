@@ -16,8 +16,8 @@ import {
 } from "@/lib/admin-api";
 import AdminContestModal from "@/components/AdminContestModal";
 import { chainSupportsShopPaymentsConfig } from "@/lib/chain-registry";
-import { contestStatusLabel } from "@/lib/contest";
-import { Game, ChainFeatures, ChainKey, ChainSettingsEntry, gameHasLeaderboard, gameIsLive, getContestStatus } from "@/types";
+import { anyChainContestStatus, chainContestStatusSummary } from "@/lib/contest-chains";
+import { Game, ChainFeatures, ChainKey, ChainSettingsEntry, gameHasLeaderboard, gameIsLive } from "@/types";
 import Logo from "@/components/Logo";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "/";
@@ -640,7 +640,7 @@ export default function AdminPortal() {
                       {gameIsLive(g) ? "✅ Live" : "🔜 Coming Soon"} ·{" "}
                       {gameHasLeaderboard(g) ? "🏆 Leaderboard" : "📊 Level-based"}
                       {gameHasLeaderboard(g) &&
-                        ` · ${contestStatusLabel(getContestStatus(g))}`}
+                        ` · ${chainContestStatusSummary(g)}`}
                     </p>
                   </div>
                   <div className="admin-actions">
@@ -659,9 +659,9 @@ export default function AdminPortal() {
                         onClick={() => setContestGame(g)}
                         disabled={reordering}
                       >
-                        {getContestStatus(g) === "live"
+                        {anyChainContestStatus(g) === "live"
                           ? "Edit Contest"
-                          : getContestStatus(g) === "ended"
+                          : anyChainContestStatus(g) === "ended"
                             ? "Contest Results"
                             : "Start Contest"}
                       </button>
@@ -782,9 +782,21 @@ export default function AdminPortal() {
           game={contestGame}
           open={Boolean(contestGame)}
           onClose={() => setContestGame(null)}
-          onUpdated={() => {
-            void refresh();
-            setContestGame(null);
+          onUpdated={async () => {
+            setLoading(true);
+            try {
+              const g = await fetchAdminGames();
+              setGames(g);
+              if (contestGame) {
+                setContestGame(g.find((game) => game.id === contestGame.id) ?? null);
+              }
+            } catch (err) {
+              showToast(
+                err instanceof Error ? err.message : "Could not load games."
+              );
+            } finally {
+              setLoading(false);
+            }
           }}
         />
       )}

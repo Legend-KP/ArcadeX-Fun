@@ -1,6 +1,6 @@
 "use client";
 
-import { Game, ChainFeatures, ChainKey, ChainSettingsResponse } from "@/types";
+import { Game, ChainFeatures, ChainKey, ChainSettingsResponse, ContestChainKey } from "@/types";
 
 const SESSION_KEY = "arcadex_admin_authed";
 const PASSWORD_KEY = "arcadex_admin_password";
@@ -117,7 +117,9 @@ export async function createAdminGame(
 
 export async function updateAdminGame(
   id: string,
-  patch: Partial<Omit<Game, "id">>
+  patch: Partial<Omit<Game, "id" | "chainContests">> & {
+    contestChainKey?: ContestChainKey;
+  }
 ): Promise<void> {
   const res = await fetch(`/api/games/${id}`, {
     method: "PATCH",

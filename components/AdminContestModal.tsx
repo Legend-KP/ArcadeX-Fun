@@ -1,15 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   buildContestEditPayload,
   buildContestStartPayload,
   CONTEST_DURATION_OPTIONS,
   formatContestCountdown,
 } from "@/lib/contest";
+import {
+  applyContestForChain,
+  CONTEST_CHAIN_KEYS,
+  CONTEST_CHAIN_LABELS,
+  contestChainId,
+  getChainContestState,
+} from "@/lib/contest-chains";
 import { fetchLeaderboardData } from "@/lib/leaderboard-client";
 import { updateAdminGame } from "@/lib/admin-api";
 import {
+  ContestChainKey,
   ContestDurationDays,
   Game,
   gameHasContestLive,
@@ -30,46 +38,61 @@ export default function AdminContestModal({
   onClose,
   onUpdated,
 }: AdminContestModalProps) {
-  const [durationDays, setDurationDays] = useState<ContestDurationDays>(
-    game.contestDurationDays ?? 1
-  );
-  const [task, setTask] = useState(game.contestTask ?? "");
+  const [chainKey, setChainKey] = useState<ContestChainKey>("base");
+  const [durationDays, setDurationDays] = useState<ContestDurationDays>(1);
+  const [task, setTask] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
   const [countdownMs, setCountdownMs] = useState(0);
 
-  const contestStatus = getContestStatus(game);
-  const isLive = gameHasContestLive(game);
+  const chainGame = useMemo(
+    () => applyContestForChain(game, chainKey),
+    [game, chainKey]
+  );
+  const contestStatus = getContestStatus(chainGame);
+  const isLive = gameHasContestLive(chainGame);
   const isEnded = contestStatus === "ended";
   const isPlanning = !contestStatus;
+  const chainId = contestChainId(chainKey);
 
   useEffect(() => {
     if (!open) return;
-    setDurationDays(game.contestDurationDays ?? 1);
-    setTask(game.contestTask ?? "");
+    const state = getChainContestState(game, chainKey);
+    setDurationDays(state.contestDurationDays ?? 1);
+    setTask(state.contestTask ?? "");
     setError("");
-  }, [open, game]);
+  }, [open, game, chainKey]);
 
   useEffect(() => {
-    if (!open || !game.contestStartedAt) return;
+    if (!open || !chainGame.contestStartedAt) {
+      setEntries([]);
+      return;
+    }
 
     setLoadingEntries(true);
-    fetchLeaderboardData(game.id)
+    fetchLeaderboardData(game.id, { chainId })
       .then((data) => setEntries(data.contest?.entries ?? []))
       .catch(() => setEntries([]))
       .finally(() => setLoadingEntries(false));
-  }, [open, game.id, game.contestStartedAt, game.contestEndsAt]);
+  }, [
+    open,
+    game.id,
+    chainId,
+    chainGame.contestStartedAt,
+    chainGame.contestEndsAt,
+  ]);
 
   useEffect(() => {
-    if (!open || !isLive || !game.contestEndsAt) return;
+    if (!open || !isLive || !chainGame.contestEndsAt) return;
 
-    const tick = () => setCountdownMs(Math.max(0, game.contestEndsAt! - Date.now()));
+    const tick = () =>
+      setCountdownMs(Math.max(0, chainGame.contestEndsAt! - Date.now()));
     tick();
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
-  }, [open, isLive, game.contestEndsAt]);
+  }, [open, isLive, chainGame.contestEndsAt]);
 
   if (!open) return null;
 
@@ -82,9 +105,11 @@ export default function AdminContestModal({
     setSaving(true);
     setError("");
     try {
-      await updateAdminGame(game.id, buildContestStartPayload({ task, durationDays }));
+      await updateAdminGame(game.id, {
+        contestChainKey: chainKey,
+        ...buildContestStartPayload({ task, durationDays }),
+      });
       onUpdated();
-      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start contest.");
     } finally {
@@ -97,21 +122,20 @@ export default function AdminContestModal({
       setError("Contest task description is required.");
       return;
     }
-    if (typeof game.contestStartedAt !== "number") return;
+    if (typeof chainGame.contestStartedAt !== "number") return;
 
     setSaving(true);
     setError("");
     try {
-      await updateAdminGame(
-        game.id,
-        buildContestEditPayload({
+      await updateAdminGame(game.id, {
+        contestChainKey: chainKey,
+        ...buildContestEditPayload({
           task,
           durationDays,
-          startedAt: game.contestStartedAt,
-        })
-      );
+          startedAt: chainGame.contestStartedAt,
+        }),
+      });
       onUpdated();
-      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update contest.");
     } finally {
@@ -128,9 +152,11 @@ export default function AdminContestModal({
     setSaving(true);
     setError("");
     try {
-      await updateAdminGame(game.id, buildContestStartPayload({ task, durationDays }));
+      await updateAdminGame(game.id, {
+        contestChainKey: chainKey,
+        ...buildContestStartPayload({ task, durationDays }),
+      });
       onUpdated();
-      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start contest.");
     } finally {
@@ -154,19 +180,50 @@ export default function AdminContestModal({
           </button>
         </div>
 
-        {isLive && (
-          <div className="admin-contest-banner admin-contest-banner--live">
-            Contest live · {formatContestCountdown(countdownMs)} remaining
-          </div>
-        )}
-
-        {isEnded && (
-          <div className="admin-contest-banner admin-contest-banner--ended">
-            Contest ended
-          </div>
-        )}
-
         <div className="admin-contest-form">
+          <label className="form-label">Chain</label>
+          <div className="admin-contest-chains" role="tablist" aria-label="Contest chain">
+            {CONTEST_CHAIN_KEYS.map((key) => {
+              const status = getContestStatus(getChainContestState(game, key));
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={chainKey === key}
+                  className={`admin-contest-chain${
+                    chainKey === key ? " is-selected" : ""
+                  }`}
+                  onClick={() => setChainKey(key)}
+                  disabled={saving}
+                >
+                  <span>{CONTEST_CHAIN_LABELS[key]}</span>
+                  {status === "live" && (
+                    <span className="admin-contest-chain-badge">Live</span>
+                  )}
+                  {status === "ended" && (
+                    <span className="admin-contest-chain-badge is-ended">
+                      Ended
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {isLive && (
+            <div className="admin-contest-banner admin-contest-banner--live">
+              {CONTEST_CHAIN_LABELS[chainKey]} contest live ·{" "}
+              {formatContestCountdown(countdownMs)} remaining
+            </div>
+          )}
+
+          {isEnded && (
+            <div className="admin-contest-banner admin-contest-banner--ended">
+              {CONTEST_CHAIN_LABELS[chainKey]} contest ended
+            </div>
+          )}
+
           <label className="form-label">Duration</label>
           <div className="admin-contest-durations">
             {CONTEST_DURATION_OPTIONS.map((days) => (
@@ -193,7 +250,7 @@ export default function AdminContestModal({
             rows={4}
             value={task}
             onChange={(e) => setTask(e.target.value)}
-            placeholder="Describe how players compete in this contest…"
+            placeholder={`Describe how players compete on ${CONTEST_CHAIN_LABELS[chainKey]}…`}
             disabled={saving}
           />
 
@@ -210,7 +267,9 @@ export default function AdminContestModal({
               onClick={() => void handleStartContest()}
               disabled={saving}
             >
-              {saving ? "Starting…" : "Start Contest"}
+              {saving
+                ? "Starting…"
+                : `Start Contest on ${CONTEST_CHAIN_LABELS[chainKey]}`}
             </button>
           )}
 
@@ -232,7 +291,9 @@ export default function AdminContestModal({
               onClick={() => void handleStartNewContest()}
               disabled={saving}
             >
-              {saving ? "Starting…" : "Start New Contest"}
+              {saving
+                ? "Starting…"
+                : `Start New Contest on ${CONTEST_CHAIN_LABELS[chainKey]}`}
             </button>
           )}
         </div>
@@ -240,7 +301,9 @@ export default function AdminContestModal({
         {(isLive || isEnded) && (
           <div className="admin-contest-results">
             <h3 className="admin-contest-results-title">
-              {isLive ? "Current top 10" : "Final top 10"}
+              {isLive
+                ? `${CONTEST_CHAIN_LABELS[chainKey]} · Current top 10`
+                : `${CONTEST_CHAIN_LABELS[chainKey]} · Final top 10`}
             </h3>
             {loadingEntries && <p className="admin-loading">Loading scores…</p>}
             {!loadingEntries && entries.length === 0 && (
@@ -248,7 +311,10 @@ export default function AdminContestModal({
             )}
             {!loadingEntries &&
               entries.map((entry, index) => (
-                <div key={`${entry.walletAddress ?? entry.name}-${index}`} className="admin-contest-row">
+                <div
+                  key={`${entry.walletAddress ?? entry.name}-${index}`}
+                  className="admin-contest-row"
+                >
                   <span>#{index + 1}</span>
                   <span>{entry.name}</span>
                   <span>{entry.score.toLocaleString()}</span>

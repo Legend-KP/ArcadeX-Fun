@@ -27,6 +27,10 @@ import {
   getClientIp,
   rateLimitResponse,
 } from "@/lib/rate-limit";
+import {
+  applyContestForChain,
+  resolveContestChainKey,
+} from "@/lib/contest-chains";
 
 export const dynamic = "force-dynamic";
 
@@ -130,6 +134,11 @@ export async function POST(
     }
 
     const session = await readSessionFromCookies();
+    const contestChainKey = resolveContestChainKey({
+      chainId: session?.chainId,
+      ecosystem: session?.ecosystem ?? ecosystem,
+    });
+    const chainGame = applyContestForChain(game, contestChainKey);
 
     await verifyScoreSubmitPayment({
       ecosystem,
@@ -140,8 +149,9 @@ export async function POST(
     });
 
     const contestStartedAt =
-      gameHasContestLive(game) && typeof game.contestStartedAt === "number"
-        ? game.contestStartedAt
+      gameHasContestLive(chainGame) &&
+      typeof chainGame.contestStartedAt === "number"
+        ? chainGame.contestStartedAt
         : undefined;
 
     const entry: LeaderboardEntry = {

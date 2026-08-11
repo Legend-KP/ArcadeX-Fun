@@ -3,7 +3,15 @@ import {
   removeGameGatingFromRtdb,
   syncGatingAfterMutation,
 } from "@/lib/game-gating";
-import { Game } from "@/types";
+import {
+  expandChainContestPatch,
+  parseChainContestsFromFields,
+} from "@/lib/contest-chains";
+import {
+  type ChainContestState,
+  type ContestChainKey,
+  Game,
+} from "@/types";
 import {
   getFirebaseAccessToken,
   getProjectId,
@@ -55,6 +63,12 @@ function parseField(value: FirestoreValue | undefined): unknown {
 function docToGame(doc: FirestoreDocument): Game {
   const id = doc.name.split("/").pop() ?? "";
   const fields = doc.fields;
+  const parsedFields: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    parsedFields[key] = parseField(value);
+  }
+  const chainContests = parseChainContestsFromFields(parsedFields);
+
   return {
     id,
     name: String(parseField(fields.name) ?? ""),
@@ -80,6 +94,7 @@ function docToGame(doc: FirestoreDocument): Game {
     contestDurationDays: parseField(fields.contestDurationDays) as
       | Game["contestDurationDays"]
       | undefined,
+    ...(Object.keys(chainContests).length > 0 ? { chainContests } : {}),
   };
 }
 
@@ -195,6 +210,7 @@ export function toPublicGame(game: Game): Game {
     contestStartedAt: game.contestStartedAt,
     contestEndsAt: game.contestEndsAt,
     contestDurationDays: game.contestDurationDays,
+    ...(game.chainContests ? { chainContests: game.chainContests } : {}),
   };
 }
 
@@ -220,7 +236,7 @@ export async function fetchGameFromServer(id: string): Promise<Game | null> {
 export { invalidateGameCache };
 
 export async function createGameOnServer(
-  data: Omit<Game, "id" | "createdAt">
+  data: Omit<Game, "id" | "createdAt" | "chainContests">
 ): Promise<string> {
   const existing = sortGames((await listDocuments("games")).map(docToGame));
   const hasCustomOrder = existing.some((game) => game.order != null);
@@ -260,7 +276,7 @@ export async function createGameOnServer(
 
 export async function updateGameOnServer(
   id: string,
-  data: Partial<Omit<Game, "id">>
+  data: Partial<Omit<Game, "id" | "chainContests">>
 ): Promise<void> {
   const keys = Object.keys(data);
   if (keys.length === 0) return;
@@ -281,6 +297,37 @@ export async function updateGameOnServer(
   invalidateGameCache(id);
   const game = await fetchGameFromServer(id);
   if (game) {
+    await syncGatingAfterMutation(game);
+  }
+}
+
+/** Write contest fields for one chain (flat Firestore fields + Base legacy sync). */
+export async function updateGameContestOnServer(
+  id: string,
+  chainKey: ContestChainKey,
+  contest: ChainContestState
+): Promise<void> {
+  const data = expandChainContestPatch(chainKey, contest);
+  const keys = Object.keys(data);
+  if (keys.length === 0) return;
+
+  const mask = keys.map((key) => `updateMask.fieldPaths=${key}`).join("&");
+  const res = await firestoreFetch(`games/${id}?${mask}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      fields: encodeFields(data),
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Firestore contest update failed (${res.status}): ${text}`);
+  }
+
+  invalidateGameCache(id);
+  const game = await fetchGameFromServer(id);
+  if (game) {
+    // Shared RTDB gating still mirrors Base/legacy contest fields.
     await syncGatingAfterMutation(game);
   }
 }

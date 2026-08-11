@@ -8,8 +8,10 @@ import {
   deleteGameOnServer,
   fetchGameFromServer,
   isGameVisible,
+  updateGameContestOnServer,
   updateGameOnServer,
 } from "@/lib/firestore-server";
+import { isContestChainKey } from "@/lib/contest-chains";
 import { Game } from "@/types";
 import { startMetric } from "@/lib/api-metrics";
 
@@ -49,9 +51,63 @@ export async function PATCH(
 
   try {
     const { id } = await params;
-    const body = (await request.json()) as Partial<Omit<Game, "id">>;
-    await updateGameOnServer(id, body);
-    // updateGameOnServer already calls invalidateGameCache(id)
+    const body = (await request.json()) as Partial<Omit<Game, "id">> & {
+      contestChainKey?: string;
+    };
+
+    const contestChainKey = body.contestChainKey;
+    const {
+      contestChainKey: _ck,
+      chainContests: _cc,
+      contestTask,
+      contestLive,
+      contestStartedAt,
+      contestEndsAt,
+      contestDurationDays,
+      ...nonContest
+    } = body;
+
+    if (contestChainKey) {
+      if (!isContestChainKey(contestChainKey)) {
+        metric.emit(400);
+        return NextResponse.json(
+          { error: "Invalid contestChainKey. Use base, avalanche, or vara." },
+          { status: 400 }
+        );
+      }
+
+      await updateGameContestOnServer(id, contestChainKey, {
+        ...(typeof contestTask === "string" ? { contestTask } : {}),
+        ...(contestLive !== undefined ? { contestLive } : {}),
+        ...(typeof contestStartedAt === "number" ? { contestStartedAt } : {}),
+        ...(typeof contestEndsAt === "number" ? { contestEndsAt } : {}),
+        ...(typeof contestDurationDays === "number"
+          ? { contestDurationDays }
+          : {}),
+      });
+    } else {
+      const contestOnly =
+        Object.keys(nonContest).length === 0 &&
+        (contestTask !== undefined ||
+          contestLive !== undefined ||
+          contestStartedAt !== undefined ||
+          contestEndsAt !== undefined ||
+          contestDurationDays !== undefined);
+
+      if (contestOnly) {
+        metric.emit(400);
+        return NextResponse.json(
+          {
+            error:
+              "contestChainKey is required when updating contest fields (base | avalanche | vara).",
+          },
+          { status: 400 }
+        );
+      }
+
+      await updateGameOnServer(id, nonContest);
+    }
+
     metric.invalidated();
     return metric.finish(NextResponse.json({ ok: true }));
   } catch (err) {
@@ -71,7 +127,6 @@ export async function DELETE(
   try {
     const { id } = await params;
     await deleteGameOnServer(id);
-    // deleteGameOnServer already calls invalidateGameCache(id)
     metric.invalidated();
     return metric.finish(NextResponse.json({ ok: true }));
   } catch (err) {

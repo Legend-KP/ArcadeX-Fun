@@ -71,7 +71,23 @@ export interface Game {
   contestStartedAt?: number;
   contestEndsAt?: number;
   contestDurationDays?: ContestDurationDays;
+  /**
+   * Per-chain contest overlays (Base / Avalanche / Vara).
+   * Top-level contest* fields remain as Base legacy / summary.
+   */
+  chainContests?: Partial<Record<ContestChainKey, ChainContestState>>;
 }
+
+/** Chains that support dedicated contest + leaderboard databases. */
+export type ContestChainKey = "base" | "avalanche" | "vara";
+
+export type ChainContestState = {
+  contestTask?: string;
+  contestLive?: boolean;
+  contestStartedAt?: number;
+  contestEndsAt?: number;
+  contestDurationDays?: ContestDurationDays;
+};
 
 export function gameHasLeaderboard(game: Pick<Game, "hasLeaderboard">): boolean {
   return game.hasLeaderboard !== false;
