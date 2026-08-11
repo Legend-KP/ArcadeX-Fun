@@ -8,6 +8,7 @@
  */
 
 import {
+  clearFirebaseAccessTokenCache,
   getDatabaseUrl,
   getFirebaseAccessToken,
   hasServiceAccount,
@@ -71,22 +72,33 @@ function appendQueryValue(
   }
 }
 
-async function buildAuth(): Promise<{
+async function buildAuth(opts?: {
+  preferSecret?: boolean;
+}): Promise<{
   header?: Record<string, string>;
   query?: string;
+  mode: "oauth" | "secret";
 }> {
-  if (hasServiceAccount()) {
+  const secret = process.env.FIREBASE_DATABASE_SECRET?.trim();
+
+  if (!opts?.preferSecret && hasServiceAccount()) {
     const token = await getFirebaseAccessToken();
-    return { header: { Authorization: `Bearer ${token}` } };
+    return {
+      header: { Authorization: `Bearer ${token}` },
+      mode: "oauth",
+    };
   }
 
-  const secret = process.env.FIREBASE_DATABASE_SECRET?.trim();
-  if (!secret) {
-    throw new Error(
-      "Firebase RTDB auth missing. Configure FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY (preferred) or FIREBASE_DATABASE_SECRET."
-    );
+  if (secret) {
+    return {
+      query: `auth=${encodeURIComponent(secret)}`,
+      mode: "secret",
+    };
   }
-  return { query: `auth=${encodeURIComponent(secret)}` };
+
+  throw new Error(
+    "Firebase RTDB auth missing. Configure FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY (preferred) or FIREBASE_DATABASE_SECRET."
+  );
 }
 
 function timeoutSignal(ms: number): AbortSignal {
@@ -98,19 +110,11 @@ function timeoutSignal(ms: number): AbortSignal {
   return controller.signal;
 }
 
-export async function rtdbRequest(
+function buildUrl(
   path: string,
-  init?: RequestInit & { query?: RtdbQuery }
-): Promise<Response> {
-  const started = Date.now();
-  const method = (init?.method ?? "GET").toUpperCase();
-  const query = init?.query;
-  const timeoutMs = query?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const pathCategory = sanitizeFirebasePath(path);
-  const op: FirebaseOp =
-    query?.orderBy || query?.shallow ? "query" : methodToOp(method);
-
-  const auth = await buildAuth();
+  auth: { query?: string },
+  query?: RtdbQuery
+): string {
   const params = new URLSearchParams();
   if (auth.query) {
     const eq = auth.query.indexOf("=");
@@ -148,9 +152,24 @@ export async function rtdbRequest(
   }
 
   const qs = params.toString();
-  const url = `${getDatabaseUrl()}/${encodeRtdbPath(path)}.json${qs ? `?${qs}` : ""}`;
+  return `${getDatabaseUrl()}/${encodeRtdbPath(path)}.json${qs ? `?${qs}` : ""}`;
+}
 
-  try {
+export async function rtdbRequest(
+  path: string,
+  init?: RequestInit & { query?: RtdbQuery }
+): Promise<Response> {
+  const started = Date.now();
+  const method = (init?.method ?? "GET").toUpperCase();
+  const query = init?.query;
+  const timeoutMs = query?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const pathCategory = sanitizeFirebasePath(path);
+  const op: FirebaseOp =
+    query?.orderBy || query?.shallow ? "query" : methodToOp(method);
+
+  const run = async (preferSecret: boolean) => {
+    const auth = await buildAuth({ preferSecret });
+    const url = buildUrl(path, auth, query);
     const res = await fetch(url, {
       ...init,
       method,
@@ -162,8 +181,29 @@ export async function rtdbRequest(
       cache: "no-store",
       signal: init?.signal ?? timeoutSignal(timeoutMs),
     });
+    return { res, mode: auth.mode };
+  };
 
-    // Clone-safe byte estimate from Content-Length when present.
+  try {
+    let { res, mode } = await run(false);
+
+    // OAuth without userinfo.email (or bad SA) returns 401 — fall back to legacy secret once.
+    if (
+      res.status === 401 &&
+      mode === "oauth" &&
+      process.env.FIREBASE_DATABASE_SECRET?.trim()
+    ) {
+      clearFirebaseAccessTokenCache();
+      console.warn(
+        JSON.stringify({
+          type: "arcadex_rtdb_auth_fallback",
+          reason: "oauth_401",
+          pathCategory,
+        })
+      );
+      ({ res, mode } = await run(true));
+    }
+
     const lenHeader = res.headers.get("content-length");
     const responseBytes = lenHeader ? Number(lenHeader) : undefined;
 

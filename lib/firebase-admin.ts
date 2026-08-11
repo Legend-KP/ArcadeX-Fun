@@ -1,8 +1,13 @@
 import { SignJWT, importPKCS8 } from "jose";
 import { getDeployEnv } from "@/lib/deploy-env";
 
-const FIREBASE_SCOPES =
-  "https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase.database";
+const FIREBASE_SCOPES = [
+  // Firestore
+  "https://www.googleapis.com/auth/datastore",
+  // RTDB REST requires BOTH of these or writes return 401 Unauthorized
+  "https://www.googleapis.com/auth/firebase.database",
+  "https://www.googleapis.com/auth/userinfo.email",
+].join(" ");
 
 /** Refresh a few minutes before Google's ~3600s expiry. */
 const TOKEN_EXPIRY_SAFETY_MS = 5 * 60 * 1000;
