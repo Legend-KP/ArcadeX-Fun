@@ -1,15 +1,24 @@
 import { sortGames } from "@/lib/games-sort";
 import {
   removeGameGatingFromRtdb,
-  syncGameGatingFlagsToRtdb,
+  syncGatingAfterMutation,
 } from "@/lib/game-gating";
 import { Game } from "@/types";
-import { getFirebaseAccessToken, getProjectId, getServiceAccount } from "@/lib/firebase-admin";
+import {
+  getFirebaseAccessToken,
+  getProjectId,
+  getServiceAccount,
+} from "@/lib/firebase-admin";
 import {
   cachedFetchGameList,
   cachedFetchGameDoc,
   invalidateGameCache,
+  isFirestoreOutageError,
 } from "@/lib/game-cache";
+import {
+  logFirebaseRequest,
+  sanitizeFirebasePath,
+} from "@/lib/firebase-log";
 
 type FirestoreValue = {
   stringValue?: string;
@@ -22,6 +31,17 @@ export type FirestoreDocument = {
   name: string;
   fields: Record<string, FirestoreValue>;
 };
+
+const FIRESTORE_TIMEOUT_MS = 12_000;
+
+function timeoutSignal(ms: number): AbortSignal {
+  if (typeof AbortSignal !== "undefined" && "timeout" in AbortSignal) {
+    return AbortSignal.timeout(ms);
+  }
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
 
 function parseField(value: FirestoreValue | undefined): unknown {
   if (!value) return undefined;
@@ -67,26 +87,71 @@ export async function firestoreFetch(
   path: string,
   init?: RequestInit
 ): Promise<Response> {
+  const started = Date.now();
   const { projectId } = getServiceAccount();
   const token = await getFirebaseAccessToken();
   const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${path}`;
+  const method = (init?.method ?? "GET").toUpperCase();
+  const operation =
+    method === "GET"
+      ? "get"
+      : method === "PATCH"
+        ? "patch"
+        : method === "POST"
+          ? "post"
+          : method === "DELETE"
+            ? "delete"
+            : "get";
 
-  return fetch(url, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-    cache: "no-store",
-  });
+  try {
+    const res = await fetch(url, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers,
+      },
+      cache: "no-store",
+      signal: init?.signal ?? timeoutSignal(FIRESTORE_TIMEOUT_MS),
+    });
+
+    const lenHeader = res.headers.get("content-length");
+    const responseBytes = lenHeader ? Number(lenHeader) : undefined;
+
+    logFirebaseRequest({
+      database: "firestore",
+      operation,
+      pathCategory: sanitizeFirebasePath(path.split("?")[0] ?? path),
+      durationMs: Date.now() - started,
+      responseBytes: Number.isFinite(responseBytes) ? responseBytes : undefined,
+      status: res.status,
+    });
+
+    return res;
+  } catch (err) {
+    logFirebaseRequest({
+      database: "firestore",
+      operation,
+      pathCategory: sanitizeFirebasePath(path.split("?")[0] ?? path),
+      durationMs: Date.now() - started,
+      status: "error",
+    });
+    // Re-throw with message that game-cache can classify.
+    if (err instanceof Error) throw err;
+    throw new Error(String(err));
+  }
 }
 
 async function listDocuments(path: string): Promise<FirestoreDocument[]> {
   const res = await firestoreFetch(path);
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Firestore request failed (${res.status}): ${text}`);
+    const err = new Error(`Firestore request failed (${res.status}): ${text}`);
+    // Annotate for circuit breaker classification.
+    if (!isFirestoreOutageError(err)) {
+      // still throw — just don't treat as outage upstream
+    }
+    throw err;
   }
 
   const data = (await res.json()) as { documents?: FirestoreDocument[] };
@@ -108,6 +173,29 @@ function encodeFields(
 
 export function isGameVisible(game: Game): boolean {
   return game.active !== false;
+}
+
+/** Public catalog fields only — strip anything admin-only if added later. */
+export function toPublicGame(game: Game): Game {
+  return {
+    id: game.id,
+    name: game.name,
+    thumbnail: game.thumbnail,
+    logo: game.logo,
+    url: game.url,
+    plays: game.plays,
+    fallbackImage: game.fallbackImage,
+    active: game.active,
+    live: game.live,
+    hasLeaderboard: game.hasLeaderboard,
+    order: game.order,
+    createdAt: game.createdAt,
+    contestTask: game.contestTask,
+    contestLive: game.contestLive,
+    contestStartedAt: game.contestStartedAt,
+    contestEndsAt: game.contestEndsAt,
+    contestDurationDays: game.contestDurationDays,
+  };
 }
 
 export async function fetchGamesFromServer(): Promise<Game[]> {
@@ -165,9 +253,7 @@ export async function createGameOnServer(
   invalidateGameCache();
   const game = await fetchGameFromServer(newId);
   if (game) {
-    await syncGameGatingFlagsToRtdb(game).catch(() => {
-      // Gating sync is best-effort
-    });
+    await syncGatingAfterMutation(game);
   }
   return newId;
 }
@@ -195,9 +281,7 @@ export async function updateGameOnServer(
   invalidateGameCache(id);
   const game = await fetchGameFromServer(id);
   if (game) {
-    await syncGameGatingFlagsToRtdb(game).catch(() => {
-      // Gating sync is best-effort
-    });
+    await syncGatingAfterMutation(game);
   }
 }
 
@@ -205,7 +289,6 @@ export async function reorderGamesOnServer(ids: string[]): Promise<void> {
   await Promise.all(
     ids.map((id, index) => updateGameOnServer(id, { order: index }))
   );
-  // updateGameOnServer already invalidates each doc; also bust the list
   invalidateGameCache();
 }
 
@@ -216,9 +299,7 @@ export async function deleteGameOnServer(id: string): Promise<void> {
     throw new Error(`Firestore delete failed (${res.status}): ${text}`);
   }
   invalidateGameCache(id);
-  await removeGameGatingFromRtdb(id).catch(() => {
-    // Gating sync is best-effort
-  });
+  await removeGameGatingFromRtdb(id);
 }
 
 // Re-export project id helper for other modules.

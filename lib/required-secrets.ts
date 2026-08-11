@@ -17,7 +17,8 @@ export function getMissingRequiredSecrets(): string[] {
     missing.push("WALLET_SESSION_SECRET");
   }
 
-  // Fun RTDB uses database secret; Firestore / OAuth path uses service account.
+  // Fun prefers service-account OAuth for Firestore + RTDB.
+  // Legacy FIREBASE_DATABASE_SECRET remains a fallback when no service account is set.
   const hasDbSecret = Boolean(process.env.FIREBASE_DATABASE_SECRET?.trim());
   const hasServiceAccount =
     Boolean(
@@ -29,7 +30,7 @@ export function getMissingRequiredSecrets(): string[] {
 
   if (!hasDbSecret && !hasServiceAccount) {
     missing.push(
-      "FIREBASE_DATABASE_SECRET (or FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY)"
+      "FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY (preferred) or FIREBASE_DATABASE_SECRET"
     );
   }
 

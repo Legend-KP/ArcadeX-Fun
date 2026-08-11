@@ -9,7 +9,6 @@ import {
   StoredGameProgress,
   StoredSparkState,
 } from "@/types";
-import { getDatabaseUrl } from "./firebase-admin";
 import {
   cachedFetchAllPlayCounts,
   bumpCachedPlayCount,
@@ -18,6 +17,15 @@ import {
   cachedFetchContestLeaderboardTop,
   invalidateContestLeaderboardTopCache,
 } from "@/lib/rtdb-cache";
+import {
+  rtdbDelete,
+  rtdbPatch,
+  rtdbRead,
+  rtdbReadWithEtag,
+  rtdbRequest,
+  rtdbWrite,
+  rtdbWriteIfMatch,
+} from "@/lib/rtdb-rest";
 import {
   isEvmAddress,
   isValidAddress,
@@ -40,6 +48,9 @@ import { isWalletAddress, normalizeWalletAddress } from "@/lib/wallet-address";
 import { toVaraActorId, toVaraSs58 } from "@/lib/vara-address";
 import { SHUFFLE_DAILY_USDC_BUDGET_MICRO } from "@/lib/shuffle-outcomes";
 
+/** Absolute max a client/API may request for leaderboard downloads. */
+export const LEADERBOARD_ABSOLUTE_MAX = 50;
+
 /** EVM checksum or Vara SS58 — for streak/shuffle RTDB keys. */
 function normalizeRewardsWallet(walletAddress: string): string {
   const trimmed = walletAddress.trim();
@@ -57,22 +68,9 @@ type LeaderboardMap = Record<string, LeaderboardEntry>;
 
 const RTDB_TRANSACTION_MAX_RETRIES = 8;
 
-function getRtdbAuthQuery(): string {
-  const secret = process.env.FIREBASE_DATABASE_SECRET?.trim();
-  if (!secret) {
-    throw new Error(
-      "FIREBASE_DATABASE_SECRET is missing. Add it to Cloudflare Worker secrets (Firebase Console → Realtime Database → Secrets)."
-    );
-  }
-  return `auth=${encodeURIComponent(secret)}`;
-}
-
-/** Encode each path segment for RTDB REST (wallet keys, game ids, etc.). */
-function encodeRtdbPath(path: string): string {
-  return path
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
+function clampLeaderboardLimit(limit: number, fallback: number): number {
+  if (!Number.isFinite(limit) || limit <= 0) return fallback;
+  return Math.min(Math.floor(limit), LEADERBOARD_ABSOLUTE_MAX);
 }
 
 function profilePath(playerId: string): string {
@@ -110,89 +108,27 @@ function resolvePlayerFields(
   return null;
 }
 
-async function rtdbFetch(
-  path: string,
-  init?: RequestInit
-): Promise<Response> {
-  const auth = getRtdbAuthQuery();
-  const url = `${getDatabaseUrl()}/${encodeRtdbPath(path)}.json?${auth}`;
-
-  return fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-    cache: "no-store",
-  });
-}
-
 async function readPath<T>(path: string): Promise<T | null> {
-  const res = await rtdbFetch(path);
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Realtime Database read failed (${res.status}): ${text}`);
-  }
-
-  const data = (await res.json()) as T | null;
-  return data ?? null;
+  return rtdbRead<T>(path);
 }
 
 async function writePath(path: string, data: unknown): Promise<void> {
-  const res = await rtdbFetch(path, {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Realtime Database write failed (${res.status}): ${text}`);
-  }
+  await rtdbWrite(path, data, { silent: true });
 }
 
 async function patchPath(path: string, data: unknown): Promise<void> {
-  const res = await rtdbFetch(path, {
-    method: "PATCH",
-    body: JSON.stringify(data),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Realtime Database patch failed (${res.status}): ${text}`);
-  }
+  await rtdbPatch(path, data, { silent: true });
 }
 
 async function deletePath(path: string): Promise<void> {
-  const res = await rtdbFetch(path, { method: "DELETE" });
-  if (!res.ok && res.status !== 404) {
-    const text = await res.text();
-    throw new Error(`Realtime Database delete failed (${res.status}): ${text}`);
-  }
+  await rtdbDelete(path, { silent: true });
 }
 
 /** GET with ETag for conditional writes (REST transactions). */
 async function readPathWithEtag<T>(
   path: string
 ): Promise<{ data: T | null; etag: string }> {
-  const res = await rtdbFetch(path, {
-    headers: { "X-Firebase-ETag": "true" },
-  });
-  if (res.status === 404) {
-    return { data: null, etag: res.headers.get("ETag") ?? '""' };
-  }
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Realtime Database read failed (${res.status}): ${text}`);
-  }
-
-  const etag = res.headers.get("ETag");
-  if (!etag) {
-    throw new Error("Realtime Database ETag missing for transaction read.");
-  }
-
-  const data = (await res.json()) as T | null;
-  return { data: data ?? null, etag };
+  return rtdbReadWithEtag<T>(path);
 }
 
 async function writePathIfMatch(
@@ -200,18 +136,7 @@ async function writePathIfMatch(
   data: unknown,
   etag: string
 ): Promise<"ok" | "conflict"> {
-  const res = await rtdbFetch(path, {
-    method: "PUT",
-    headers: { "if-match": etag },
-    body: JSON.stringify(data),
-  });
-
-  if (res.status === 412) return "conflict";
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Realtime Database write failed (${res.status}): ${text}`);
-  }
-  return "ok";
+  return rtdbWriteIfMatch(path, data, etag, { silent: true });
 }
 
 /**
@@ -445,6 +370,7 @@ function coercePlayCount(value: unknown): number {
 
 export async function fetchAllGamePlayCounts(): Promise<Record<string, number>> {
   return cachedFetchAllPlayCounts(async () => {
+    // Aggregate counts only — leaves are numbers (or legacy maps coerced below).
     const data = await readPath<Record<string, unknown>>("gamePlays");
     if (!data) return {};
 
@@ -469,70 +395,102 @@ export async function incrementGamePlayCount(gameId: string): Promise<number> {
     await writePath(`gamePlays/${gameId}`, repaired);
   }
 
-  // Atomic server-side increment — PUT at the leaf (POST would push a child key).
-  const auth = getRtdbAuthQuery();
-  const url = `${getDatabaseUrl()}/${encodeRtdbPath(`gamePlays/${gameId}`)}.json?${auth}`;
-  const res = await fetch(url, {
+  // Atomic server-side increment at the leaf. Keep the response body so we
+  // avoid a follow-up GET for the new count.
+  const res = await rtdbRequest(`gamePlays/${gameId}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ".sv": { increment: 1 } }),
-    cache: "no-store",
   });
 
   if (!res.ok) {
-    // Fallback: read-then-write if the server-value syntax isn't supported
-    const current = await fetchGamePlayCount(gameId);
-    const next = current + 1;
-    await writePath(`gamePlays/${gameId}`, next);
+    const { committed, snapshot } = await runRtdbTransaction<number>(
+      `gamePlays/${gameId}`,
+      (current) => coercePlayCount(current) + 1
+    );
     bumpCachedPlayCount(gameId);
-    return next;
+    return committed ? (snapshot ?? 0) : await fetchGamePlayCount(gameId);
   }
 
-  // Bump the in-memory cache without a full re-fetch
   bumpCachedPlayCount(gameId);
-
   const body = (await res.json()) as number | null;
   return typeof body === "number" ? body : await fetchGamePlayCount(gameId);
 }
 
 // ─── Leaderboard ─────────────────────────────────────────────────────────────
 
+async function fetchLeaderboardTopQuery(
+  basePath: string,
+  limit: number
+): Promise<LeaderboardEntry[]> {
+  const clamped = clampLeaderboardLimit(limit, LEADERBOARD_MAX_ENTRIES);
+  try {
+    // Indexed orderBy + limitToLast downloads only the top-N subtree.
+    const map = await rtdbRead<LeaderboardMap>(basePath, {
+      orderBy: "score",
+      limitToLast: clamped,
+    });
+    return deduplicateLeaderboardEntries(mapToLeaderboardEntries(map))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, clamped);
+  } catch (err) {
+    // Fallback while .indexOn("score") is rolling out — still clamp in memory.
+    console.warn(
+      JSON.stringify({
+        type: "arcadex_leaderboard_query_fallback",
+        path: basePath,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    );
+    const map = await readPath<LeaderboardMap>(basePath);
+    return deduplicateLeaderboardEntries(mapToLeaderboardEntries(map))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, clamped);
+  }
+}
+
 export async function fetchLeaderboardFromServer(
   gameId: string,
   limit = LEADERBOARD_MAX_ENTRIES
 ): Promise<LeaderboardEntry[]> {
-  return cachedFetchLeaderboardTop(gameId, async () => {
-    const map = await readPath<LeaderboardMap>(`leaderboards/${gameId}`);
-    return deduplicateLeaderboardEntries(mapToLeaderboardEntries(map))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
-  });
+  const clamped = clampLeaderboardLimit(limit, LEADERBOARD_MAX_ENTRIES);
+  return cachedFetchLeaderboardTop(gameId, async () =>
+    fetchLeaderboardTopQuery(`leaderboards/${gameId}`, clamped)
+  );
+}
+
+function leaderboardLookupKey(opts: {
+  walletAddress?: string;
+  playerName?: string;
+}): string | null {
+  const wallet = opts.walletAddress?.trim();
+  if (wallet) {
+    return wallet.replace(/[.#$[\]/]/g, "_");
+  }
+  const name = opts.playerName?.trim();
+  if (name) {
+    return `name_${name.toLowerCase().replace(/[.#$[\]/]/g, "_")}`;
+  }
+  return null;
 }
 
 export async function fetchUserBestScoreFromServer(
   gameId: string,
   opts: { walletAddress?: string; playerName?: string }
 ): Promise<number> {
-  const map = await readPath<LeaderboardMap>(`leaderboards/${gameId}`);
-  const entries = deduplicateLeaderboardEntries(mapToLeaderboardEntries(map));
+  // Path-scoped read — never download the full leaderboard for one player.
+  const key = leaderboardLookupKey(opts);
+  if (!key) return 0;
 
-  const wallet = opts.walletAddress?.trim().toLowerCase();
-  const name = opts.playerName?.trim().toLowerCase();
-  if (!wallet && !name) return 0;
-
-  let best = 0;
-  for (const entry of entries) {
-    const entryWallet = entry.walletAddress?.trim().toLowerCase();
-    const matchesWallet = Boolean(wallet && entryWallet === wallet);
-    const matchesName = Boolean(
-      name && entry.name.trim().toLowerCase() === name
-    );
-    if (matchesWallet || matchesName) {
-      best = Math.max(best, entry.score);
-    }
+  const entry = await readPath<LeaderboardEntry>(
+    `leaderboards/${gameId}/${key}`
+  );
+  if (entry && typeof entry.score === "number") {
+    return entry.score;
   }
 
-  return best;
+  // Legacy name-key mismatch: only if wallet was provided, try a second key shape.
+  // Do not fall back to a full-board scan.
+  return 0;
 }
 
 export async function fetchUserSubmittedBestFromServer(
@@ -555,17 +513,15 @@ export async function fetchContestLeaderboardFromServer(
   contestStartedAt: number,
   limit = CONTEST_TOP_MAX_ENTRIES
 ): Promise<LeaderboardEntry[]> {
+  const clamped = clampLeaderboardLimit(limit, CONTEST_TOP_MAX_ENTRIES);
   return cachedFetchContestLeaderboardTop(
     gameId,
     contestStartedAt,
-    async () => {
-      const map = await readPath<LeaderboardMap>(
-        `contestLeaderboards/${gameId}/${contestStartedAt}`
-      );
-      return deduplicateLeaderboardEntries(mapToLeaderboardEntries(map))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, limit);
-    }
+    async () =>
+      fetchLeaderboardTopQuery(
+        `contestLeaderboards/${gameId}/${contestStartedAt}`,
+        clamped
+      )
   );
 }
 
@@ -582,20 +538,16 @@ async function writeLeaderboardEntry(
     createdAt: entry.createdAt ?? Date.now(),
   };
 
-  const map = await readPath<LeaderboardMap>(basePath);
-  const userKey = leaderboardUserKey(payload);
-  const existingBest = deduplicateLeaderboardEntries(
-    mapToLeaderboardEntries(map)
-  ).find((e) => leaderboardUserKey(e) === userKey);
+  const storageKey = leaderboardStorageKey(payload);
+  const entryPath = `${basePath}/${storageKey}`;
 
-  if (existingBest && existingBest.score >= payload.score) {
+  // Path-scoped compare — do not download the entire leaderboard map.
+  const existing = await readPath<LeaderboardEntry>(entryPath);
+  if (existing && typeof existing.score === "number" && existing.score >= payload.score) {
     return false;
   }
 
-  await writePath(
-    `${basePath}/${leaderboardStorageKey(payload)}`,
-    payload
-  );
+  await writePath(entryPath, payload);
   invalidate();
   return true;
 }

@@ -1,7 +1,24 @@
 import { SignJWT, importPKCS8 } from "jose";
+import { getDeployEnv } from "@/lib/deploy-env";
 
 const FIREBASE_SCOPES =
   "https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase.database";
+
+/** Refresh a few minutes before Google's ~3600s expiry. */
+const TOKEN_EXPIRY_SAFETY_MS = 5 * 60 * 1000;
+
+type CachedToken = {
+  accessToken: string;
+  expiresAtMs: number;
+};
+
+let cachedToken: CachedToken | null = null;
+/** Shared in-flight mint so concurrent requests only refresh once. */
+let inflightToken: Promise<string> | null = null;
+/** Cached PKCS8 key — avoid re-parsing the private key on every refresh. */
+let cachedKey: CryptoKey | Awaited<ReturnType<typeof importPKCS8>> | null =
+  null;
+let cachedKeyFingerprint: string | null = null;
 
 export function getProjectId(): string {
   return (
@@ -25,6 +42,14 @@ export function getServiceAccount() {
   return { projectId, clientEmail, privateKey };
 }
 
+export function hasServiceAccount(): boolean {
+  return Boolean(
+    getProjectId() &&
+      process.env.FIREBASE_CLIENT_EMAIL?.trim() &&
+      process.env.FIREBASE_PRIVATE_KEY?.trim()
+  );
+}
+
 export function getDatabaseUrl(): string {
   const explicit = process.env.FIREBASE_DATABASE_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
@@ -39,9 +64,22 @@ export function getDatabaseUrl(): string {
   return `https://${projectId}-default-rtdb.firebaseio.com`;
 }
 
-export async function getFirebaseAccessToken(): Promise<string> {
+async function getImportedKey(
+  privateKey: string
+): Promise<NonNullable<typeof cachedKey>> {
+  // Fingerprint without logging key material.
+  const fingerprint = `${privateKey.length}:${privateKey.slice(0, 32)}`;
+  if (cachedKey && cachedKeyFingerprint === fingerprint) {
+    return cachedKey;
+  }
+  cachedKey = await importPKCS8(privateKey, "RS256");
+  cachedKeyFingerprint = fingerprint;
+  return cachedKey;
+}
+
+async function mintAccessToken(): Promise<string> {
   const { clientEmail, privateKey } = getServiceAccount();
-  const key = await importPKCS8(privateKey, "RS256");
+  const key = await getImportedKey(privateKey);
 
   const assertion = await new SignJWT({ scope: FIREBASE_SCOPES })
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
@@ -62,10 +100,70 @@ export async function getFirebaseAccessToken(): Promise<string> {
     cache: "no-store",
   });
 
-  const data = (await res.json()) as { access_token?: string; error?: string };
+  const data = (await res.json()) as {
+    access_token?: string;
+    expires_in?: number;
+    error?: string;
+  };
+
   if (!res.ok || !data.access_token) {
     throw new Error(data.error ?? "Could not obtain Google access token.");
   }
 
+  const expiresInSec =
+    typeof data.expires_in === "number" && data.expires_in > 0
+      ? data.expires_in
+      : 3600;
+
+  cachedToken = {
+    accessToken: data.access_token,
+    expiresAtMs: Date.now() + expiresInSec * 1000,
+  };
+
+  console.log(
+    JSON.stringify({
+      type: "arcadex_oauth_token",
+      env: getDeployEnv(),
+      event: "minted",
+      expiresInSec,
+    })
+  );
+
   return data.access_token;
+}
+
+/**
+ * Returns a Google OAuth access token, cached in memory until shortly before expiry.
+ * Concurrent callers share one in-flight mint; failures do not poison the cache.
+ */
+export async function getFirebaseAccessToken(): Promise<string> {
+  const now = Date.now();
+  if (
+    cachedToken &&
+    cachedToken.expiresAtMs - TOKEN_EXPIRY_SAFETY_MS > now
+  ) {
+    return cachedToken.accessToken;
+  }
+
+  if (inflightToken) {
+    return inflightToken;
+  }
+
+  inflightToken = mintAccessToken()
+    .catch((err) => {
+      // Do not keep a failed promise cached.
+      cachedToken = null;
+      throw err;
+    })
+    .finally(() => {
+      inflightToken = null;
+    });
+
+  return inflightToken;
+}
+
+/** Test/helper: drop cached token so the next call refreshes. */
+export function clearFirebaseAccessTokenCache(): void {
+  cachedToken = null;
+  inflightToken = null;
 }

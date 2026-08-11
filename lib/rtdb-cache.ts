@@ -1,19 +1,19 @@
 /**
  * In-memory RTDB cache for hot-path reads.
  *
- * Covers two main use cases:
- *  1. All game play counts — read once per home-page load, cached 45 s.
- *  2. Leaderboard top-N mirror — per-game, cached 30 s.
+ * Covers:
+ *  1. All game play counts — longer TTL; approximate counts are fine for catalog.
+ *  2. Leaderboard top-N mirror — per-game, short TTL.
  *
- * Like game-cache.ts this lives in Worker module scope and persists across
- * warm-instance requests.
+ * Concurrent cache misses coalesce into one upstream fetch per key.
  */
 
 import { LeaderboardEntry } from "@/types";
 
 // ─── TTLs ────────────────────────────────────────────────────────────────────
 
-const PLAY_COUNTS_TTL_MS = 45_000;
+/** Catalog can tolerate slightly stale play counts (reduces RTDB bandwidth). */
+const PLAY_COUNTS_TTL_MS = 90_000;
 const LEADERBOARD_TOP_TTL_MS = 30_000;
 
 // ─── State ───────────────────────────────────────────────────────────────────
@@ -29,8 +29,10 @@ interface LeaderboardTopEntry {
 }
 
 let playCountsEntry: PlayCountsEntry | null = null;
+let playCountsInflight: Promise<Record<string, number>> | null = null;
 
 const leaderboardTopCache = new Map<string, LeaderboardTopEntry>();
+const leaderboardTopInflight = new Map<string, Promise<LeaderboardEntry[]>>();
 
 // ─── Play counts ─────────────────────────────────────────────────────────────
 
@@ -43,9 +45,19 @@ export async function cachedFetchAllPlayCounts(
     return playCountsEntry.counts;
   }
 
-  const counts = await fetcher();
-  playCountsEntry = { counts, fetchedAt: now };
-  return counts;
+  if (playCountsInflight) return playCountsInflight;
+
+  playCountsInflight = (async () => {
+    try {
+      const counts = await fetcher();
+      playCountsEntry = { counts, fetchedAt: Date.now() };
+      return counts;
+    } finally {
+      playCountsInflight = null;
+    }
+  })();
+
+  return playCountsInflight;
 }
 
 /**
@@ -65,6 +77,10 @@ export function invalidatePlayCountsCache(): void {
   playCountsEntry = null;
 }
 
+export function getPlayCountsCacheAgeMs(): number | null {
+  return playCountsEntry ? Date.now() - playCountsEntry.fetchedAt : null;
+}
+
 // ─── Leaderboard top mirror ───────────────────────────────────────────────────
 
 export async function cachedFetchLeaderboardTop(
@@ -78,9 +94,21 @@ export async function cachedFetchLeaderboardTop(
     return entry.entries;
   }
 
-  const entries = await fetcher();
-  leaderboardTopCache.set(gameId, { entries, fetchedAt: now });
-  return entries;
+  const inflight = leaderboardTopInflight.get(gameId);
+  if (inflight) return inflight;
+
+  const promise = (async () => {
+    try {
+      const entries = await fetcher();
+      leaderboardTopCache.set(gameId, { entries, fetchedAt: Date.now() });
+      return entries;
+    } finally {
+      leaderboardTopInflight.delete(gameId);
+    }
+  })();
+
+  leaderboardTopInflight.set(gameId, promise);
+  return promise;
 }
 
 export function invalidateLeaderboardTopCache(gameId: string): void {
@@ -90,6 +118,10 @@ export function invalidateLeaderboardTopCache(gameId: string): void {
 // ─── Contest leaderboard top mirror ──────────────────────────────────────────
 
 const contestLeaderboardTopCache = new Map<string, LeaderboardTopEntry>();
+const contestLeaderboardTopInflight = new Map<
+  string,
+  Promise<LeaderboardEntry[]>
+>();
 
 function contestCacheKey(gameId: string, startedAt: number): string {
   return `${gameId}:${startedAt}`;
@@ -108,9 +140,21 @@ export async function cachedFetchContestLeaderboardTop(
     return entry.entries;
   }
 
-  const entries = await fetcher();
-  contestLeaderboardTopCache.set(key, { entries, fetchedAt: now });
-  return entries;
+  const inflight = contestLeaderboardTopInflight.get(key);
+  if (inflight) return inflight;
+
+  const promise = (async () => {
+    try {
+      const entries = await fetcher();
+      contestLeaderboardTopCache.set(key, { entries, fetchedAt: Date.now() });
+      return entries;
+    } finally {
+      contestLeaderboardTopInflight.delete(key);
+    }
+  })();
+
+  contestLeaderboardTopInflight.set(key, promise);
+  return promise;
 }
 
 export function invalidateContestLeaderboardTopCache(
@@ -124,7 +168,9 @@ export function invalidateContestLeaderboardTopCache(
 export function getRtdbCacheStats() {
   return {
     playCountsCached: playCountsEntry !== null,
-    playCountsAgeMs: playCountsEntry ? Date.now() - playCountsEntry.fetchedAt : null,
+    playCountsAgeMs: playCountsEntry
+      ? Date.now() - playCountsEntry.fetchedAt
+      : null,
     leaderboardTopCached: leaderboardTopCache.size,
   };
 }

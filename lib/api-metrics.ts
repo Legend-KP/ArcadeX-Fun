@@ -10,6 +10,9 @@
  *   return m.finish(response);
  */
 
+import { getDeployEnv } from "@/lib/deploy-env";
+import { setFirebaseLogRoute } from "@/lib/firebase-log";
+
 export type CacheLayer =
   | "list"
   | "doc"
@@ -20,6 +23,7 @@ export type CacheLayer =
 
 interface MetricRecord {
   type: "arcadex_api_metric";
+  env: string;
   endpoint: string;
   method: string;
   startedAt: number;
@@ -28,6 +32,7 @@ interface MetricRecord {
   cacheHit?: boolean;
   cacheLayer?: CacheLayer;
   cacheInvalidated?: boolean;
+  responseBytes?: number;
   extra?: Record<string, unknown>;
 }
 
@@ -47,8 +52,11 @@ export interface ApiMetric {
 }
 
 export function startMetric(endpoint: string, method = "GET"): ApiMetric {
+  setFirebaseLogRoute(endpoint);
+
   const record: MetricRecord = {
     type: "arcadex_api_metric",
+    env: getDeployEnv(),
     endpoint,
     method,
     startedAt: Date.now(),
@@ -72,13 +80,20 @@ export function startMetric(endpoint: string, method = "GET"): ApiMetric {
     finish(response: Response): Response {
       record.durationMs = Date.now() - record.startedAt;
       record.statusCode = response.status;
+      const len = response.headers.get("content-length");
+      if (len) {
+        const n = Number(len);
+        if (Number.isFinite(n)) record.responseBytes = n;
+      }
       console.log(JSON.stringify(record));
+      setFirebaseLogRoute(undefined);
       return response;
     },
     emit(statusCode = 200) {
       record.durationMs = Date.now() - record.startedAt;
       record.statusCode = statusCode;
       console.log(JSON.stringify(record));
+      setFirebaseLogRoute(undefined);
     },
   };
 }

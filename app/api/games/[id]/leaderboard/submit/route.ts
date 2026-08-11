@@ -22,6 +22,11 @@ import {
   type WalletEcosystem,
 } from "@/lib/player-identity";
 import { readSessionFromCookies } from "@/lib/auth-session";
+import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +50,31 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+    const ip = getClientIp(request);
+    if (
+      !(await checkRateLimit(`score-submit:ip:${ip}`, 30, 60_000)) ||
+      !(await checkRateLimit(`score-submit:game:${id}:${ip}`, 15, 60_000))
+    ) {
+      return rateLimitResponse();
+    }
+
+    if (!id || id.length > 128 || /[.#$[\]/]/.test(id)) {
+      return corsJsonResponse(
+        request,
+        { error: "Invalid game id." },
+        { status: 400 }
+      );
+    }
+
+    const contentLength = Number(request.headers.get("content-length") ?? "0");
+    if (Number.isFinite(contentLength) && contentLength > 32_768) {
+      return corsJsonResponse(
+        request,
+        { error: "Request body too large." },
+        { status: 413 }
+      );
+    }
+
     const game = await fetchGameFromServer(id);
     if (!game || !gameHasLeaderboard(game)) {
       return corsJsonResponse(

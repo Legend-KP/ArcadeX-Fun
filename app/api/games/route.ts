@@ -8,43 +8,85 @@ import {
   createGameOnServer,
   fetchGamesFromServer,
   isGameVisible,
-  invalidateGameCache,
+  toPublicGame,
 } from "@/lib/firestore-server";
 import { fetchAllGamePlayCounts } from "@/lib/rtdb-server";
 import { Game } from "@/types";
 import { startMetric } from "@/lib/api-metrics";
 import { getGameCacheStats } from "@/lib/game-cache";
+import { getPlayCountsCacheAgeMs, getRtdbCacheStats } from "@/lib/rtdb-cache";
+import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
+import { setFirebaseLogRoute } from "@/lib/firebase-log";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const metric = startMetric("/api/games", "GET");
+  setFirebaseLogRoute("/api/games");
+
+  const isAdmin = verifyAdminRequest(request);
+  if (!isAdmin) {
+    const ip = getClientIp(request);
+    if (!(await checkRateLimit(`games:ip:${ip}`, 120, 60_000))) {
+      metric.emit(429);
+      return rateLimitResponse();
+    }
+  }
 
   try {
     const statsBefore = getGameCacheStats();
-    const games = await fetchGamesFromServer();
+    const playAgeBefore = getPlayCountsCacheAgeMs();
+
+    // Independent Firebase reads in parallel.
+    const [games, playCounts] = await Promise.all([
+      fetchGamesFromServer(),
+      fetchAllGamePlayCounts().catch(() => ({} as Record<string, number>)),
+    ]);
+
     const statsAfter = getGameCacheStats();
+    const rtdbStats = getRtdbCacheStats();
 
     if (statsBefore.listCached) {
       metric.cacheHit("list");
     } else {
       metric.cacheMiss("list");
     }
-    metric.set("gameCount", games.length);
-    metric.set("cbOpen", statsAfter.cbOpen);
-
-    const visible = verifyAdminRequest(request)
-      ? games
-      : games.filter(isGameVisible);
-
-    let playCounts: Record<string, number> = {};
-    try {
-      playCounts = await fetchAllGamePlayCounts();
-    } catch {
-      // Play counts are optional; games still load without them.
+    if (playAgeBefore !== null) {
+      metric.set("playCountsCache", "hit");
+    } else {
+      metric.set("playCountsCache", "miss");
     }
 
-    return metric.finish(NextResponse.json({ games: visible, playCounts }));
+    metric.set("gameCount", games.length);
+    metric.set("cbOpen", statsAfter.cbOpen);
+    metric.set("playCountsAgeMs", rtdbStats.playCountsAgeMs);
+
+    const visible = isAdmin
+      ? games
+      : games.filter(isGameVisible).map(toPublicGame);
+
+    const body = { games: visible, playCounts };
+    const headers = new Headers();
+
+    if (isAdmin) {
+      headers.set("Cache-Control", "private, no-store");
+    } else {
+      // Edge-cacheable public catalog. Play counts are approximate (90s in-memory).
+      headers.set(
+        "Cache-Control",
+        "public, s-maxage=60, stale-while-revalidate=300"
+      );
+      headers.set("CDN-Cache-Control", "public, s-maxage=60");
+      headers.set("Vary", "Authorization");
+    }
+
+    return metric.finish(
+      NextResponse.json(body, { headers })
+    );
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load games.";
@@ -86,9 +128,16 @@ export async function POST(request: Request) {
       hasLeaderboard: body.hasLeaderboard !== false,
     });
 
-    // createGameOnServer already calls invalidateGameCache()
     metric.invalidated();
-    return metric.finish(NextResponse.json({ id }, { status: 201 }));
+    return metric.finish(
+      NextResponse.json(
+        { id },
+        {
+          status: 201,
+          headers: { "Cache-Control": "private, no-store" },
+        }
+      )
+    );
   } catch (err) {
     metric.emit(500);
     return apiErrorResponse(err, "Failed to add game.");

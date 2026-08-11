@@ -1,0 +1,79 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "leaderboards": {
+      "$gameId": {
+        ".indexOn": ["score"]
+      }
+    },
+
+    "contestLeaderboards": {
+      "$gameId": {
+        "$contestStartedAt": {
+          ".indexOn": ["score"]
+        }
+      }
+    },
+
+    "users": {
+      "$playerId": {
+        ".read": false,
+        ".write": false,
+        "sparks": {
+          ".read": false,
+          ".write": false
+        },
+        "games": {
+          "$gameId": {
+            ".read": false,
+            ".write": false
+          }
+        }
+      }
+    },
+
+    "gamePlays": {
+      "$gameId": {
+        ".read": false,
+        ".write": false
+      }
+    },
+
+    "gameGating": {
+      "$gameId": {
+        ".read": false,
+        ".write": false
+      }
+    },
+
+    "sparkPayments": {
+      "$txHash": {
+        ".read": false,
+        ".write": false
+      }
+    },
+
+    "checkInTxs": {
+      "$txHash": {
+        ".read": false,
+        ".write": false
+      }
+    },
+
+    "streakGrants": {
+      "$txHash": {
+        ".read": false,
+        ".write": false
+      }
+    },
+
+    "authNonces": {
+      "$nonce": {
+        ".read": false,
+        ".write": false
+      }
+    }
+  }
+}

@@ -19,8 +19,13 @@ import {
   LeaderboardEntry,
   LeaderboardResponse,
 } from "@/types";
-import { isWalletAddress, tryNormalizeWalletAddress } from "@/lib/wallet-address";
+import { tryNormalizeWalletAddress } from "@/lib/wallet-address";
 import { resolvePlayerId } from "@/lib/player-identity";
+import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +34,17 @@ export async function OPTIONS(request: Request) {
 }
 
 async function assertLeaderboardEnabled(request: Request, gameId: string) {
+  if (!gameId || gameId.length > 128 || /[.#$[\]/]/.test(gameId)) {
+    return {
+      error: corsJsonResponse(
+        request,
+        { error: "Invalid game id." },
+        { status: 400 }
+      ),
+      game: null,
+    };
+  }
+
   const game = await fetchGameFromServer(gameId);
   if (!game || !gameHasLeaderboard(game)) {
     return {
@@ -59,6 +75,14 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const ip = getClientIp(request);
+    if (
+      !(await checkRateLimit(`leaderboard:ip:${ip}`, 90, 60_000)) ||
+      !(await checkRateLimit(`leaderboard:game:${id}:${ip}`, 45, 60_000))
+    ) {
+      return rateLimitResponse();
+    }
+
     const { error, game } = await assertLeaderboardEnabled(request, id);
     if (error || !game) return error;
 
@@ -69,47 +93,56 @@ export async function GET(
       resolvePlayerId(searchParams.get("playerId") ?? "") ??
       resolvePlayerId(wallet ?? "");
 
-    const entries = await fetchLeaderboardFromServer(id, LEADERBOARD_MAX_ENTRIES);
+    const hasPersonal = Boolean(playerId || wallet || name);
 
-    let personalBest: number | undefined;
-    if (playerId) {
-      personalBest = await fetchPersonalBestFromServer(playerId, id);
-    }
-
-    let submittedBest: number | undefined;
-    if (wallet || name) {
-      submittedBest = await fetchUserSubmittedBestFromServer(id, {
-        walletAddress: wallet,
-        playerName: name,
-      });
-    }
+    const [entries, personalBest, submittedBest, contestEntries] =
+      await Promise.all([
+        fetchLeaderboardFromServer(id, LEADERBOARD_MAX_ENTRIES),
+        playerId
+          ? fetchPersonalBestFromServer(playerId, id)
+          : Promise.resolve(undefined as number | undefined),
+        wallet || name
+          ? fetchUserSubmittedBestFromServer(id, {
+              walletAddress: wallet,
+              playerName: name,
+            })
+          : Promise.resolve(undefined as number | undefined),
+        (async () => {
+          const contestStatus = getContestStatus(game);
+          if (
+            contestStatus &&
+            typeof game.contestStartedAt === "number" &&
+            typeof game.contestEndsAt === "number"
+          ) {
+            return {
+              status: contestStatus,
+              startedAt: game.contestStartedAt,
+              endsAt: game.contestEndsAt,
+              entries: await fetchContestLeaderboardFromServer(
+                id,
+                game.contestStartedAt,
+                CONTEST_TOP_MAX_ENTRIES
+              ),
+            };
+          }
+          return null;
+        })(),
+      ]);
 
     const canSubmit =
       typeof personalBest === "number" &&
       personalBest > 0 &&
       personalBest > (submittedBest ?? 0);
 
-    const contestStatus = getContestStatus(game);
     let contest: LeaderboardResponse["contest"] = null;
-
-    if (
-      contestStatus &&
-      typeof game.contestStartedAt === "number" &&
-      typeof game.contestEndsAt === "number"
-    ) {
-      const contestEntries = await fetchContestLeaderboardFromServer(
-        id,
-        game.contestStartedAt,
-        CONTEST_TOP_MAX_ENTRIES
-      );
-
+    if (contestEntries) {
       contest = {
-        status: contestStatus,
+        status: contestEntries.status,
         task: game.contestTask ?? "",
-        startedAt: game.contestStartedAt,
-        endsAt: game.contestEndsAt,
+        startedAt: contestEntries.startedAt,
+        endsAt: contestEntries.endsAt,
         durationDays: game.contestDurationDays ?? 1,
-        entries: contestEntries,
+        entries: contestEntries.entries,
       };
     }
 
@@ -125,7 +158,14 @@ export async function GET(
       contest,
     };
 
-    return corsJsonResponse(request, response);
+    // Public top board is cacheable; personalized fields must not share CDN cache.
+    const cacheControl = hasPersonal
+      ? "private, no-store"
+      : "public, s-maxage=15, stale-while-revalidate=60";
+
+    return corsJsonResponse(request, response, {
+      headers: { "Cache-Control": cacheControl },
+    });
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load leaderboard.";
@@ -140,8 +180,22 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+    const ip = getClientIp(request);
+    if (!(await checkRateLimit(`leaderboard-save:ip:${ip}`, 40, 60_000))) {
+      return rateLimitResponse();
+    }
+
     const { error, game } = await assertLeaderboardEnabled(request, id);
     if (error || !game) return error;
+
+    const contentLength = Number(request.headers.get("content-length") ?? "0");
+    if (Number.isFinite(contentLength) && contentLength > 16_384) {
+      return corsJsonResponse(
+        request,
+        { error: "Request body too large." },
+        { status: 413 }
+      );
+    }
 
     const body = (await request.json()) as LeaderboardEntry & {
       value?: number;
