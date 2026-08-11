@@ -114,6 +114,23 @@ export async function checkInOnChain(
     }
   }
 
+  // Ensure MetaMask is on Base / Avalanche before checkIn (avoids wrong-chain txs).
+  try {
+    await walletClient.switchChain({ id: chain.id });
+  } catch (err) {
+    const message = err instanceof Error ? err.message.toLowerCase() : "";
+    if (
+      message.includes("rejected") ||
+      message.includes("denied") ||
+      message.includes("user refused")
+    ) {
+      throw new Error(
+        `Switch MetaMask to ${chain.name} to complete daily check-in.`
+      );
+    }
+    // Some wallets auto-prompt on writeContract; continue and let write fail clearly.
+  }
+
   const resolvedCampaignId =
     campaignId ?? getStreakCampaignIdForChain(chainId);
 

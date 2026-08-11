@@ -79,7 +79,7 @@ export default function DailyStreakSuccessModal({
           {result.infiniteSparkGranted ? (
             <span>Infinite Spark · 24h</span>
           ) : (
-            <span>Come back after 00:00 UTC</span>
+            <span>Come back tomorrow</span>
           )}
         </div>
 
@@ -90,21 +90,6 @@ export default function DailyStreakSuccessModal({
           autoFocus
         >
           Continue playing
-        </button>
-        <button
-          type="button"
-          className="spark-shop-success__link"
-          onClick={onClose}
-          style={{
-            marginTop: 12,
-            marginBottom: 0,
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-            width: "100%",
-          }}
-        >
-          Close
         </button>
       </div>
     </div>

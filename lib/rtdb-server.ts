@@ -153,7 +153,7 @@ async function writePathIfMatch(
   etag: string,
   connection?: RtdbConnection
 ): Promise<"ok" | "conflict"> {
-  return rtdbWriteIfMatch(path, data, etag, { silent: true, connection });
+  return rtdbWriteIfMatch(path, data, etag, { connection });
 }
 
 /**

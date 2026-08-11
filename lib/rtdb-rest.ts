@@ -381,11 +381,12 @@ export async function rtdbWriteIfMatch(
   etag: string,
   opts?: { silent?: boolean; timeoutMs?: number; connection?: RtdbConnection }
 ): Promise<"ok" | "conflict"> {
+  // Firebase RTDB REST forbids mixing print=silent (or query params) with if-match.
   const res = await rtdbRequest(path, {
     method: "PUT",
     headers: { "if-match": etag },
     body: JSON.stringify(data),
-    query: { silent: opts?.silent ?? true, timeoutMs: opts?.timeoutMs },
+    query: { timeoutMs: opts?.timeoutMs },
     connection: opts?.connection,
   });
   if (res.status === 412) return "conflict";

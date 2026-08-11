@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatChainError } from "@/lib/base-public-client";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
-import { isAvalancheRewardsChainId } from "@/lib/arcadex-rewards";
+import { getDailyPlayNetworkCopy } from "@/lib/daily-play-ui";
 import {
   confirmExistingCheckIn,
   fetchStreakStatus,
@@ -185,9 +185,8 @@ export default function DailyCheckInModal({
   if (!open || typeof document === "undefined") return null;
 
   const view = liveStatus ?? status;
-  const onAvalanche = isAvalancheRewardsChainId(chainId);
-  const explorerName = onAvalanche ? "Snowtrace" : "Basescan";
-  const chainLabel = onAvalanche ? "Avalanche" : "Base";
+  const network = getDailyPlayNetworkCopy(chainId);
+  const { label: chainLabel, explorerName } = network;
   const requiredDays = view?.campaign.requiredDays ?? 7;
   const currentDay = view?.currentDay ?? 0;
   const wouldReset = Boolean(view?.streakWouldReset);
@@ -347,6 +346,9 @@ export default function DailyCheckInModal({
           Daily Streak
           <FlameIcon className="daily-checkin-heading-flame" />
         </h2>
+        <p className="daily-checkin-network" aria-label={`Network ${chainLabel}`}>
+          on {chainLabel}
+        </p>
         <p className="daily-checkin-sub">
           Check in once per day (resets 00:00 UTC) to keep your streak alive and
           earn <span className="daily-checkin-sub-accent">Infinite Spark.</span>
@@ -474,10 +476,10 @@ export default function DailyCheckInModal({
             {loading
               ? `Syncing your ${chainLabel} check-in`
               : alreadyCheckedInToday
-                ? "Come back after 00:00 UTC for the next day"
+                ? "Come back tomorrow"
                 : pendingTxHash
                   ? `Uses your confirmed ${explorerName} transaction`
-                  : "Non-fee transaction"}
+                  : network.gasHint}
           </span>
         </button>
       </div>

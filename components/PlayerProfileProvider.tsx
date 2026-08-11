@@ -507,14 +507,24 @@ export default function PlayerProfileProvider({
       <DailyCheckInModal
         open={dailyOpen && dailyPlayMode !== "shuffle"}
         walletAddress={walletAddress}
-        chainId={ecosystem === "vara" ? VARA_CHAIN_ID : chainId}
+        chainId={
+          ecosystem === "vara"
+            ? VARA_CHAIN_ID
+            : chainId ??
+              (ecosystem === "evm" ? PRIMARY_EVM_CHAIN_ID : undefined)
+        }
         status={streakStatus}
         onComplete={handleDailyPlayComplete}
       />
       <DailyShuffleModal
         open={dailyOpen && dailyPlayMode === "shuffle"}
         walletAddress={walletAddress}
-        chainId={ecosystem === "vara" ? VARA_CHAIN_ID : chainId}
+        chainId={
+          ecosystem === "vara"
+            ? VARA_CHAIN_ID
+            : chainId ??
+              (ecosystem === "evm" ? PRIMARY_EVM_CHAIN_ID : undefined)
+        }
         status={streakStatus}
         onComplete={handleDailyPlayComplete}
       />
