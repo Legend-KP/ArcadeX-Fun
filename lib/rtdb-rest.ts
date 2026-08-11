@@ -120,14 +120,26 @@ async function buildAuth(
   const account = connection.serviceAccount;
 
   if (!opts?.preferSecret && account?.clientEmail && account.privateKey) {
-    const token =
-      connection.label === "shared" && hasServiceAccount()
-        ? await getFirebaseAccessToken()
-        : await getFirebaseAccessTokenForAccount(account);
-    return {
-      header: { Authorization: `Bearer ${token}` },
-      mode: "oauth",
-    };
+    try {
+      const token =
+        connection.label === "shared" && hasServiceAccount()
+          ? await getFirebaseAccessToken()
+          : await getFirebaseAccessTokenForAccount(account);
+      return {
+        header: { Authorization: `Bearer ${token}` },
+        mode: "oauth",
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (/invalid[_\s-]?grant/i.test(message)) {
+        throw new Error(
+          `${message} (RTDB: ${connection.label}). Check FIREBASE_PRIVATE_KEY${
+            connection.label === "shared" ? "" : `_${connection.label.toUpperCase()}`
+          }.`
+        );
+      }
+      throw err;
+    }
   }
 
   if (secret) {

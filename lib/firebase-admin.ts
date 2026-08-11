@@ -77,13 +77,16 @@ export function getDatabaseUrl(): string {
 }
 
 async function getImportedKey(
-  privateKey: string
+  account: FirebaseServiceAccountCreds
 ): Promise<CryptoKey | Awaited<ReturnType<typeof importPKCS8>>> {
-  // Fingerprint without logging key material.
-  const fingerprint = `${privateKey.length}:${privateKey.slice(0, 32)}`;
+  // Fingerprint must include the account email — PEM headers + early base64
+  // bytes often collide across different service-account keys (same length,
+  // same "-----BEGIN PRIVATE KEY-----\nMIIE…" prefix), which previously made
+  // Avalanche/Vara mint JWTs with the Base key → Google invalid_grant.
+  const fingerprint = `${account.clientEmail}:${account.privateKey.length}:${account.privateKey.slice(-48)}`;
   const cached = keyCache.get(fingerprint);
   if (cached) return cached;
-  const imported = await importPKCS8(privateKey, "RS256");
+  const imported = await importPKCS8(account.privateKey, "RS256");
   keyCache.set(fingerprint, imported);
   return imported;
 }
@@ -91,7 +94,7 @@ async function getImportedKey(
 async function mintAccessToken(
   account: FirebaseServiceAccountCreds
 ): Promise<string> {
-  const key = await getImportedKey(account.privateKey);
+  const key = await getImportedKey(account);
 
   const assertion = await new SignJWT({ scope: FIREBASE_SCOPES })
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
@@ -116,10 +119,22 @@ async function mintAccessToken(
     access_token?: string;
     expires_in?: number;
     error?: string;
+    error_description?: string;
   };
 
   if (!res.ok || !data.access_token) {
-    throw new Error(data.error ?? "Could not obtain Google access token.");
+    const detail = data.error_description || data.error || "unknown error";
+    if (
+      data.error === "invalid_grant" ||
+      /invalid[_\s-]?grant/i.test(detail)
+    ) {
+      throw new Error(
+        `Invalid grant: Firebase service account rejected for ${account.clientEmail}. Regenerate that account's private key in Google Cloud / Firebase and update the matching FIREBASE_PRIVATE_KEY (or FIREBASE_PRIVATE_KEY_VARA / _BASE / _AVALANCHE) secret, then redeploy.`
+      );
+    }
+    throw new Error(
+      `Could not obtain Google access token (${detail}).`
+    );
   }
 
   const expiresInSec =
