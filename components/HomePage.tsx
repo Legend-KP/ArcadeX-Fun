@@ -107,13 +107,7 @@ export default function HomePage() {
           >
             Home
           </button>
-          <button
-            type="button"
-            className={`web-nav__tab${navTab === "browse" ? " is-active" : ""}`}
-            onClick={() => setNavTab("browse")}
-          >
-            Browse
-          </button>
+          
         </nav>
 
         <div className="filter-bar">

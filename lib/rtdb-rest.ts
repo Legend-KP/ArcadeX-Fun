@@ -5,12 +5,14 @@
  * - Falls back to legacy database secret only when no service account is configured.
  * - Never puts OAuth tokens in query strings (avoids URL log leakage).
  * - Supports print=silent, shallow, orderBy/limit query params, and timeouts.
+ * - Optional `connection` routes to shared vs per-chain RTDB projects.
  */
 
 import {
   clearFirebaseAccessTokenCache,
   getDatabaseUrl,
   getFirebaseAccessToken,
+  getFirebaseAccessTokenForAccount,
   hasServiceAccount,
 } from "@/lib/firebase-admin";
 import {
@@ -18,6 +20,10 @@ import {
   sanitizeFirebasePath,
   type FirebaseOp,
 } from "@/lib/firebase-log";
+import {
+  getSharedRtdbConnection,
+  type RtdbConnection,
+} from "@/lib/rtdb-resolver";
 
 const DEFAULT_TIMEOUT_MS = 12_000;
 
@@ -33,6 +39,36 @@ export type RtdbQuery = {
   silent?: boolean;
   timeoutMs?: number;
 };
+
+export type RtdbCallOptions = {
+  query?: RtdbQuery;
+  /** When omitted, uses shared ArcadeX Fun RTDB. */
+  connection?: RtdbConnection;
+};
+
+function resolveConnection(connection?: RtdbConnection): RtdbConnection {
+  if (connection) return connection;
+  try {
+    return getSharedRtdbConnection();
+  } catch {
+    return {
+      label: "shared",
+      databaseUrl: getDatabaseUrl(),
+      serviceAccount: hasServiceAccount()
+        ? {
+            projectId:
+              process.env.FIREBASE_PROJECT_ID?.trim() ||
+              process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() ||
+              "",
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL?.trim() || "",
+            privateKey:
+              process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n") || "",
+          }
+        : null,
+      databaseSecret: process.env.FIREBASE_DATABASE_SECRET?.trim() || undefined,
+    };
+  }
+}
 
 function encodeRtdbPath(path: string): string {
   return path
@@ -72,17 +108,22 @@ function appendQueryValue(
   }
 }
 
-async function buildAuth(opts?: {
-  preferSecret?: boolean;
-}): Promise<{
+async function buildAuth(
+  connection: RtdbConnection,
+  opts?: { preferSecret?: boolean }
+): Promise<{
   header?: Record<string, string>;
   query?: string;
   mode: "oauth" | "secret";
 }> {
-  const secret = process.env.FIREBASE_DATABASE_SECRET?.trim();
+  const secret = connection.databaseSecret?.trim();
+  const account = connection.serviceAccount;
 
-  if (!opts?.preferSecret && hasServiceAccount()) {
-    const token = await getFirebaseAccessToken();
+  if (!opts?.preferSecret && account?.clientEmail && account.privateKey) {
+    const token =
+      connection.label === "shared" && hasServiceAccount()
+        ? await getFirebaseAccessToken()
+        : await getFirebaseAccessTokenForAccount(account);
     return {
       header: { Authorization: `Bearer ${token}` },
       mode: "oauth",
@@ -97,7 +138,7 @@ async function buildAuth(opts?: {
   }
 
   throw new Error(
-    "Firebase RTDB auth missing. Configure FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY (preferred) or FIREBASE_DATABASE_SECRET."
+    `Firebase RTDB auth missing for ${connection.label}. Configure service account env vars (preferred) or FIREBASE_DATABASE_SECRET for shared.`
   );
 }
 
@@ -111,6 +152,7 @@ function timeoutSignal(ms: number): AbortSignal {
 }
 
 function buildUrl(
+  connection: RtdbConnection,
   path: string,
   auth: { query?: string },
   query?: RtdbQuery
@@ -152,24 +194,25 @@ function buildUrl(
   }
 
   const qs = params.toString();
-  return `${getDatabaseUrl()}/${encodeRtdbPath(path)}.json${qs ? `?${qs}` : ""}`;
+  return `${connection.databaseUrl.replace(/\/$/, "")}/${encodeRtdbPath(path)}.json${qs ? `?${qs}` : ""}`;
 }
 
 export async function rtdbRequest(
   path: string,
-  init?: RequestInit & { query?: RtdbQuery }
+  init?: RequestInit & RtdbCallOptions
 ): Promise<Response> {
   const started = Date.now();
   const method = (init?.method ?? "GET").toUpperCase();
   const query = init?.query;
+  const connection = resolveConnection(init?.connection);
   const timeoutMs = query?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const pathCategory = sanitizeFirebasePath(path);
   const op: FirebaseOp =
     query?.orderBy || query?.shallow ? "query" : methodToOp(method);
 
   const run = async (preferSecret: boolean) => {
-    const auth = await buildAuth({ preferSecret });
-    const url = buildUrl(path, auth, query);
+    const auth = await buildAuth(connection, { preferSecret });
+    const url = buildUrl(connection, path, auth, query);
     const res = await fetch(url, {
       ...init,
       method,
@@ -187,11 +230,11 @@ export async function rtdbRequest(
   try {
     let { res, mode } = await run(false);
 
-    // OAuth without userinfo.email (or bad SA) returns 401 — fall back to legacy secret once.
+    // OAuth without userinfo.email (or bad SA) returns 401 — fall back to legacy secret once (shared only).
     if (
       res.status === 401 &&
       mode === "oauth" &&
-      process.env.FIREBASE_DATABASE_SECRET?.trim()
+      connection.databaseSecret?.trim()
     ) {
       clearFirebaseAccessTokenCache();
       console.warn(
@@ -199,6 +242,7 @@ export async function rtdbRequest(
           type: "arcadex_rtdb_auth_fallback",
           reason: "oauth_401",
           pathCategory,
+          connection: connection.label,
         })
       );
       ({ res, mode } = await run(true));
@@ -231,9 +275,10 @@ export async function rtdbRequest(
 
 export async function rtdbRead<T>(
   path: string,
-  query?: RtdbQuery
+  query?: RtdbQuery,
+  connection?: RtdbConnection
 ): Promise<T | null> {
-  const res = await rtdbRequest(path, { method: "GET", query });
+  const res = await rtdbRequest(path, { method: "GET", query, connection });
   if (res.status === 404) return null;
   if (!res.ok) {
     const text = await res.text();
@@ -246,12 +291,13 @@ export async function rtdbRead<T>(
 export async function rtdbWrite(
   path: string,
   data: unknown,
-  opts?: { silent?: boolean; timeoutMs?: number }
+  opts?: { silent?: boolean; timeoutMs?: number; connection?: RtdbConnection }
 ): Promise<void> {
   const res = await rtdbRequest(path, {
     method: "PUT",
     body: JSON.stringify(data),
     query: { silent: opts?.silent ?? true, timeoutMs: opts?.timeoutMs },
+    connection: opts?.connection,
   });
   if (!res.ok) {
     const text = await res.text();
@@ -262,12 +308,13 @@ export async function rtdbWrite(
 export async function rtdbPatch(
   path: string,
   data: unknown,
-  opts?: { silent?: boolean; timeoutMs?: number }
+  opts?: { silent?: boolean; timeoutMs?: number; connection?: RtdbConnection }
 ): Promise<void> {
   const res = await rtdbRequest(path, {
     method: "PATCH",
     body: JSON.stringify(data),
     query: { silent: opts?.silent ?? true, timeoutMs: opts?.timeoutMs },
+    connection: opts?.connection,
   });
   if (!res.ok) {
     const text = await res.text();
@@ -277,11 +324,12 @@ export async function rtdbPatch(
 
 export async function rtdbDelete(
   path: string,
-  opts?: { silent?: boolean; timeoutMs?: number }
+  opts?: { silent?: boolean; timeoutMs?: number; connection?: RtdbConnection }
 ): Promise<void> {
   const res = await rtdbRequest(path, {
     method: "DELETE",
     query: { silent: opts?.silent ?? true, timeoutMs: opts?.timeoutMs },
+    connection: opts?.connection,
   });
   if (!res.ok && res.status !== 404) {
     const text = await res.text();
@@ -292,12 +340,13 @@ export async function rtdbDelete(
 /** GET with ETag for conditional writes (REST transactions). */
 export async function rtdbReadWithEtag<T>(
   path: string,
-  opts?: { timeoutMs?: number }
+  opts?: { timeoutMs?: number; connection?: RtdbConnection }
 ): Promise<{ data: T | null; etag: string }> {
   const res = await rtdbRequest(path, {
     method: "GET",
     headers: { "X-Firebase-ETag": "true" },
     query: { timeoutMs: opts?.timeoutMs },
+    connection: opts?.connection,
   });
   if (res.status === 404) {
     return { data: null, etag: res.headers.get("ETag") ?? '""' };
@@ -318,13 +367,14 @@ export async function rtdbWriteIfMatch(
   path: string,
   data: unknown,
   etag: string,
-  opts?: { silent?: boolean; timeoutMs?: number }
+  opts?: { silent?: boolean; timeoutMs?: number; connection?: RtdbConnection }
 ): Promise<"ok" | "conflict"> {
   const res = await rtdbRequest(path, {
     method: "PUT",
     headers: { "if-match": etag },
     body: JSON.stringify(data),
     query: { silent: opts?.silent ?? true, timeoutMs: opts?.timeoutMs },
+    connection: opts?.connection,
   });
   if (res.status === 412) return "conflict";
   if (!res.ok) {
@@ -337,12 +387,16 @@ export async function rtdbWriteIfMatch(
 /** Shallow read — returns immediate child keys only. */
 export async function rtdbShallowKeys(
   path: string,
-  opts?: { timeoutMs?: number }
+  opts?: { timeoutMs?: number; connection?: RtdbConnection }
 ): Promise<string[]> {
-  const data = await rtdbRead<Record<string, boolean> | null>(path, {
-    shallow: true,
-    timeoutMs: opts?.timeoutMs,
-  });
+  const data = await rtdbRead<Record<string, boolean> | null>(
+    path,
+    {
+      shallow: true,
+      timeoutMs: opts?.timeoutMs,
+    },
+    opts?.connection
+  );
   if (!data || typeof data !== "object") return [];
   return Object.keys(data);
 }

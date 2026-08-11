@@ -5,12 +5,20 @@ import {
 
 export async function fetchLeaderboardData(
   gameId: string,
-  opts?: { walletAddress?: string; playerName?: string; playerId?: string }
+  opts?: {
+    walletAddress?: string;
+    playerName?: string;
+    playerId?: string;
+    chainId?: number;
+  }
 ): Promise<LeaderboardResponse> {
   const params = new URLSearchParams();
   if (opts?.walletAddress) params.set("wallet", opts.walletAddress);
   if (opts?.playerName) params.set("name", opts.playerName);
   if (opts?.playerId) params.set("playerId", opts.playerId);
+  if (typeof opts?.chainId === "number" && Number.isFinite(opts.chainId)) {
+    params.set("chainId", String(opts.chainId));
+  }
   const qs = params.toString();
 
   const res = await fetch(

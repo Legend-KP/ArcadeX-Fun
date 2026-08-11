@@ -26,6 +26,9 @@ import {
   getClientIp,
   rateLimitResponse,
 } from "@/lib/rate-limit";
+import { readSessionFromCookies } from "@/lib/auth-session";
+import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
+import { VARA_CHAIN_ID } from "@/lib/vara-rewards";
 
 export const dynamic = "force-dynamic";
 
@@ -92,12 +95,31 @@ export async function GET(
     const playerId =
       resolvePlayerId(searchParams.get("playerId") ?? "") ??
       resolvePlayerId(wallet ?? "");
+    const session = await readSessionFromCookies();
+    const chainIdParam = searchParams.get("chainId");
+    const chainIdFromQuery =
+      chainIdParam != null && chainIdParam !== ""
+        ? Number(chainIdParam)
+        : undefined;
+    const chainId =
+      typeof chainIdFromQuery === "number" && Number.isFinite(chainIdFromQuery)
+        ? chainIdFromQuery
+        : session?.chainId ??
+          (session?.ecosystem === "vara"
+            ? VARA_CHAIN_ID
+            : session?.ecosystem === "evm"
+              ? PRIMARY_EVM_CHAIN_ID
+              : undefined);
+    const scope = {
+      chainId,
+      ecosystem: session?.ecosystem,
+    };
 
     const hasPersonal = Boolean(playerId || wallet || name);
 
     const [entries, personalBest, submittedBest, contestEntries] =
       await Promise.all([
-        fetchLeaderboardFromServer(id, LEADERBOARD_MAX_ENTRIES),
+        fetchLeaderboardFromServer(id, LEADERBOARD_MAX_ENTRIES, scope),
         playerId
           ? fetchPersonalBestFromServer(playerId, id)
           : Promise.resolve(undefined as number | undefined),
@@ -105,6 +127,8 @@ export async function GET(
           ? fetchUserSubmittedBestFromServer(id, {
               walletAddress: wallet,
               playerName: name,
+              chainId,
+              ecosystem: session?.ecosystem,
             })
           : Promise.resolve(undefined as number | undefined),
         (async () => {
@@ -121,7 +145,8 @@ export async function GET(
               entries: await fetchContestLeaderboardFromServer(
                 id,
                 game.contestStartedAt,
-                CONTEST_TOP_MAX_ENTRIES
+                CONTEST_TOP_MAX_ENTRIES,
+                scope
               ),
             };
           }

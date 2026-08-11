@@ -25,6 +25,7 @@ export default function GamePageClient() {
     playerId,
     playerName,
     ecosystem,
+    chainId,
   } = usePlayerProfile();
   const { sparks, spendForGame } = useSparks();
   const [game, setGame] = useState<Game | null>(null);
@@ -184,6 +185,7 @@ export default function GamePageClient() {
           walletAddress={walletAddress ?? undefined}
           playerName={playerName ?? undefined}
           playerId={playerId ?? undefined}
+          chainId={chainId}
           onClose={() => {
             setLbOpen(false);
             setLbMode("default");

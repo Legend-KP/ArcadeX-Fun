@@ -21,6 +21,7 @@ interface LeaderboardProps {
   walletAddress?: string;
   playerName?: string;
   playerId?: string;
+  chainId?: number;
 }
 
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -36,6 +37,7 @@ export default function Leaderboard({
   walletAddress,
   playerName,
   playerId,
+  chainId,
 }: LeaderboardProps) {
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -55,11 +57,16 @@ export default function Leaderboard({
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    fetchLeaderboardData(gameId, { walletAddress, playerName, playerId })
+    fetchLeaderboardData(gameId, {
+      walletAddress,
+      playerName,
+      playerId,
+      chainId,
+    })
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [open, gameId, walletAddress, playerName, playerId]);
+  }, [open, gameId, walletAddress, playerName, playerId, chainId]);
 
   useEffect(() => {
     if (!open || !showContestBoard || !data?.contest?.endsAt) return;

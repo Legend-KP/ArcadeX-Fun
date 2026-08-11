@@ -159,6 +159,7 @@ export async function POST(
           ? ecosystem
           : "evm",
       contestStartedAt,
+      chainId: session?.chainId,
     });
 
     return corsJsonResponse(request, {

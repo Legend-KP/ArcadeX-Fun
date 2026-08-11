@@ -83,36 +83,45 @@ export function getPlayCountsCacheAgeMs(): number | null {
 
 // ─── Leaderboard top mirror ───────────────────────────────────────────────────
 
+function leaderboardCacheKey(gameId: string, chainScope = "shared"): string {
+  return `${chainScope}:${gameId}`;
+}
+
 export async function cachedFetchLeaderboardTop(
   gameId: string,
-  fetcher: () => Promise<LeaderboardEntry[]>
+  fetcher: () => Promise<LeaderboardEntry[]>,
+  chainScope = "shared"
 ): Promise<LeaderboardEntry[]> {
   const now = Date.now();
-  const entry = leaderboardTopCache.get(gameId);
+  const key = leaderboardCacheKey(gameId, chainScope);
+  const entry = leaderboardTopCache.get(key);
 
   if (entry && now - entry.fetchedAt < LEADERBOARD_TOP_TTL_MS) {
     return entry.entries;
   }
 
-  const inflight = leaderboardTopInflight.get(gameId);
+  const inflight = leaderboardTopInflight.get(key);
   if (inflight) return inflight;
 
   const promise = (async () => {
     try {
       const entries = await fetcher();
-      leaderboardTopCache.set(gameId, { entries, fetchedAt: Date.now() });
+      leaderboardTopCache.set(key, { entries, fetchedAt: Date.now() });
       return entries;
     } finally {
-      leaderboardTopInflight.delete(gameId);
+      leaderboardTopInflight.delete(key);
     }
   })();
 
-  leaderboardTopInflight.set(gameId, promise);
+  leaderboardTopInflight.set(key, promise);
   return promise;
 }
 
-export function invalidateLeaderboardTopCache(gameId: string): void {
-  leaderboardTopCache.delete(gameId);
+export function invalidateLeaderboardTopCache(
+  gameId: string,
+  chainScope = "shared"
+): void {
+  leaderboardTopCache.delete(leaderboardCacheKey(gameId, chainScope));
 }
 
 // ─── Contest leaderboard top mirror ──────────────────────────────────────────
@@ -123,17 +132,22 @@ const contestLeaderboardTopInflight = new Map<
   Promise<LeaderboardEntry[]>
 >();
 
-function contestCacheKey(gameId: string, startedAt: number): string {
-  return `${gameId}:${startedAt}`;
+function contestCacheKey(
+  gameId: string,
+  startedAt: number,
+  chainScope = "shared"
+): string {
+  return `${chainScope}:${gameId}:${startedAt}`;
 }
 
 export async function cachedFetchContestLeaderboardTop(
   gameId: string,
   contestStartedAt: number,
-  fetcher: () => Promise<LeaderboardEntry[]>
+  fetcher: () => Promise<LeaderboardEntry[]>,
+  chainScope = "shared"
 ): Promise<LeaderboardEntry[]> {
   const now = Date.now();
-  const key = contestCacheKey(gameId, contestStartedAt);
+  const key = contestCacheKey(gameId, contestStartedAt, chainScope);
   const entry = contestLeaderboardTopCache.get(key);
 
   if (entry && now - entry.fetchedAt < LEADERBOARD_TOP_TTL_MS) {
@@ -159,9 +173,12 @@ export async function cachedFetchContestLeaderboardTop(
 
 export function invalidateContestLeaderboardTopCache(
   gameId: string,
-  contestStartedAt: number
+  contestStartedAt: number,
+  chainScope = "shared"
 ): void {
-  contestLeaderboardTopCache.delete(contestCacheKey(gameId, contestStartedAt));
+  contestLeaderboardTopCache.delete(
+    contestCacheKey(gameId, contestStartedAt, chainScope)
+  );
 }
 
 /** Expose stats for metrics logging. */

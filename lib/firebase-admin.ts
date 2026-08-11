@@ -1,6 +1,12 @@
 import { SignJWT, importPKCS8 } from "jose";
 import { getDeployEnv } from "@/lib/deploy-env";
 
+export type FirebaseServiceAccountCreds = {
+  projectId: string;
+  clientEmail: string;
+  privateKey: string;
+};
+
 const FIREBASE_SCOPES = [
   // Firestore
   "https://www.googleapis.com/auth/datastore",
@@ -17,13 +23,14 @@ type CachedToken = {
   expiresAtMs: number;
 };
 
-let cachedToken: CachedToken | null = null;
-/** Shared in-flight mint so concurrent requests only refresh once. */
-let inflightToken: Promise<string> | null = null;
-/** Cached PKCS8 key — avoid re-parsing the private key on every refresh. */
-let cachedKey: CryptoKey | Awaited<ReturnType<typeof importPKCS8>> | null =
-  null;
-let cachedKeyFingerprint: string | null = null;
+const tokenCache = new Map<string, CachedToken>();
+/** Shared in-flight mint so concurrent requests only refresh once per account. */
+const inflightTokens = new Map<string, Promise<string>>();
+/** Cached PKCS8 keys — avoid re-parsing the private key on every refresh. */
+const keyCache = new Map<
+  string,
+  CryptoKey | Awaited<ReturnType<typeof importPKCS8>>
+>();
 
 export function getProjectId(): string {
   return (
@@ -71,25 +78,25 @@ export function getDatabaseUrl(): string {
 
 async function getImportedKey(
   privateKey: string
-): Promise<NonNullable<typeof cachedKey>> {
+): Promise<CryptoKey | Awaited<ReturnType<typeof importPKCS8>>> {
   // Fingerprint without logging key material.
   const fingerprint = `${privateKey.length}:${privateKey.slice(0, 32)}`;
-  if (cachedKey && cachedKeyFingerprint === fingerprint) {
-    return cachedKey;
-  }
-  cachedKey = await importPKCS8(privateKey, "RS256");
-  cachedKeyFingerprint = fingerprint;
-  return cachedKey;
+  const cached = keyCache.get(fingerprint);
+  if (cached) return cached;
+  const imported = await importPKCS8(privateKey, "RS256");
+  keyCache.set(fingerprint, imported);
+  return imported;
 }
 
-async function mintAccessToken(): Promise<string> {
-  const { clientEmail, privateKey } = getServiceAccount();
-  const key = await getImportedKey(privateKey);
+async function mintAccessToken(
+  account: FirebaseServiceAccountCreds
+): Promise<string> {
+  const key = await getImportedKey(account.privateKey);
 
   const assertion = await new SignJWT({ scope: FIREBASE_SCOPES })
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
-    .setIssuer(clientEmail)
-    .setSubject(clientEmail)
+    .setIssuer(account.clientEmail)
+    .setSubject(account.clientEmail)
     .setAudience("https://oauth2.googleapis.com/token")
     .setIssuedAt()
     .setExpirationTime("1h")
@@ -120,16 +127,17 @@ async function mintAccessToken(): Promise<string> {
       ? data.expires_in
       : 3600;
 
-  cachedToken = {
+  tokenCache.set(account.clientEmail, {
     accessToken: data.access_token,
     expiresAtMs: Date.now() + expiresInSec * 1000,
-  };
+  });
 
   console.log(
     JSON.stringify({
       type: "arcadex_oauth_token",
       env: getDeployEnv(),
       event: "minted",
+      account: account.clientEmail,
       expiresInSec,
     })
   );
@@ -138,37 +146,44 @@ async function mintAccessToken(): Promise<string> {
 }
 
 /**
- * Returns a Google OAuth access token, cached in memory until shortly before expiry.
- * Concurrent callers share one in-flight mint; failures do not poison the cache.
+ * Returns a Google OAuth access token for a service account, cached until
+ * shortly before expiry. Concurrent callers share one in-flight mint per email.
  */
-export async function getFirebaseAccessToken(): Promise<string> {
+export async function getFirebaseAccessTokenForAccount(
+  account: FirebaseServiceAccountCreds
+): Promise<string> {
+  const cacheKey = account.clientEmail;
   const now = Date.now();
-  if (
-    cachedToken &&
-    cachedToken.expiresAtMs - TOKEN_EXPIRY_SAFETY_MS > now
-  ) {
-    return cachedToken.accessToken;
+  const cached = tokenCache.get(cacheKey);
+  if (cached && cached.expiresAtMs - TOKEN_EXPIRY_SAFETY_MS > now) {
+    return cached.accessToken;
   }
 
-  if (inflightToken) {
-    return inflightToken;
-  }
+  const inflight = inflightTokens.get(cacheKey);
+  if (inflight) return inflight;
 
-  inflightToken = mintAccessToken()
+  const promise = mintAccessToken(account)
     .catch((err) => {
-      // Do not keep a failed promise cached.
-      cachedToken = null;
+      tokenCache.delete(cacheKey);
       throw err;
     })
     .finally(() => {
-      inflightToken = null;
+      inflightTokens.delete(cacheKey);
     });
 
-  return inflightToken;
+  inflightTokens.set(cacheKey, promise);
+  return promise;
 }
 
-/** Test/helper: drop cached token so the next call refreshes. */
+/**
+ * Shared ArcadeX Fun service-account token (Firestore + default RTDB).
+ */
+export async function getFirebaseAccessToken(): Promise<string> {
+  return getFirebaseAccessTokenForAccount(getServiceAccount());
+}
+
+/** Test/helper: drop cached tokens so the next call refreshes. */
 export function clearFirebaseAccessTokenCache(): void {
-  cachedToken = null;
-  inflightToken = null;
+  tokenCache.clear();
+  inflightTokens.clear();
 }

@@ -26,6 +26,7 @@ import {
   rtdbWrite,
   rtdbWriteIfMatch,
 } from "@/lib/rtdb-rest";
+import { getLeaderboardRtdbConnection, type RtdbConnection } from "@/lib/rtdb-resolver";
 import {
   isEvmAddress,
   isValidAddress,
@@ -35,7 +36,7 @@ import {
   normalizeVaraAddress,
   parsePlayerId,
   resolvePlayerId,
-  WalletEcosystem,
+  type WalletEcosystem,
 } from "@/lib/player-identity";
 import {
   computeSparkSnapshot,
@@ -418,17 +419,34 @@ export async function incrementGamePlayCount(gameId: string): Promise<number> {
 
 // ─── Leaderboard ─────────────────────────────────────────────────────────────
 
+export type LeaderboardChainScope = {
+  chainId?: number | null;
+  ecosystem?: WalletEcosystem | null;
+};
+
+function leaderboardConnection(scope?: LeaderboardChainScope): RtdbConnection {
+  return getLeaderboardRtdbConnection({
+    chainId: scope?.chainId,
+    ecosystem: scope?.ecosystem,
+  });
+}
+
 async function fetchLeaderboardTopQuery(
   basePath: string,
-  limit: number
+  limit: number,
+  connection: RtdbConnection
 ): Promise<LeaderboardEntry[]> {
   const clamped = clampLeaderboardLimit(limit, LEADERBOARD_MAX_ENTRIES);
   try {
     // Indexed orderBy + limitToLast downloads only the top-N subtree.
-    const map = await rtdbRead<LeaderboardMap>(basePath, {
-      orderBy: "score",
-      limitToLast: clamped,
-    });
+    const map = await rtdbRead<LeaderboardMap>(
+      basePath,
+      {
+        orderBy: "score",
+        limitToLast: clamped,
+      },
+      connection
+    );
     return deduplicateLeaderboardEntries(mapToLeaderboardEntries(map))
       .sort((a, b) => b.score - a.score)
       .slice(0, clamped);
@@ -438,10 +456,11 @@ async function fetchLeaderboardTopQuery(
       JSON.stringify({
         type: "arcadex_leaderboard_query_fallback",
         path: basePath,
+        connection: connection.label,
         error: err instanceof Error ? err.message : String(err),
       })
     );
-    const map = await readPath<LeaderboardMap>(basePath);
+    const map = await rtdbRead<LeaderboardMap>(basePath, undefined, connection);
     return deduplicateLeaderboardEntries(mapToLeaderboardEntries(map))
       .sort((a, b) => b.score - a.score)
       .slice(0, clamped);
@@ -450,11 +469,16 @@ async function fetchLeaderboardTopQuery(
 
 export async function fetchLeaderboardFromServer(
   gameId: string,
-  limit = LEADERBOARD_MAX_ENTRIES
+  limit = LEADERBOARD_MAX_ENTRIES,
+  scope?: LeaderboardChainScope
 ): Promise<LeaderboardEntry[]> {
   const clamped = clampLeaderboardLimit(limit, LEADERBOARD_MAX_ENTRIES);
-  return cachedFetchLeaderboardTop(gameId, async () =>
-    fetchLeaderboardTopQuery(`leaderboards/${gameId}`, clamped)
+  const connection = leaderboardConnection(scope);
+  return cachedFetchLeaderboardTop(
+    gameId,
+    async () =>
+      fetchLeaderboardTopQuery(`leaderboards/${gameId}`, clamped, connection),
+    connection.label
   );
 }
 
@@ -475,14 +499,22 @@ function leaderboardLookupKey(opts: {
 
 export async function fetchUserBestScoreFromServer(
   gameId: string,
-  opts: { walletAddress?: string; playerName?: string }
+  opts: {
+    walletAddress?: string;
+    playerName?: string;
+    chainId?: number | null;
+    ecosystem?: WalletEcosystem | null;
+  }
 ): Promise<number> {
   // Path-scoped read — never download the full leaderboard for one player.
   const key = leaderboardLookupKey(opts);
   if (!key) return 0;
 
-  const entry = await readPath<LeaderboardEntry>(
-    `leaderboards/${gameId}/${key}`
+  const connection = leaderboardConnection(opts);
+  const entry = await rtdbRead<LeaderboardEntry>(
+    `leaderboards/${gameId}/${key}`,
+    undefined,
+    connection
   );
   if (entry && typeof entry.score === "number") {
     return entry.score;
@@ -495,7 +527,12 @@ export async function fetchUserBestScoreFromServer(
 
 export async function fetchUserSubmittedBestFromServer(
   gameId: string,
-  opts: { walletAddress?: string; playerName?: string }
+  opts: {
+    walletAddress?: string;
+    playerName?: string;
+    chainId?: number | null;
+    ecosystem?: WalletEcosystem | null;
+  }
 ): Promise<number> {
   return fetchUserBestScoreFromServer(gameId, opts);
 }
@@ -511,24 +548,29 @@ export async function fetchPersonalBestFromServer(
 export async function fetchContestLeaderboardFromServer(
   gameId: string,
   contestStartedAt: number,
-  limit = CONTEST_TOP_MAX_ENTRIES
+  limit = CONTEST_TOP_MAX_ENTRIES,
+  scope?: LeaderboardChainScope
 ): Promise<LeaderboardEntry[]> {
   const clamped = clampLeaderboardLimit(limit, CONTEST_TOP_MAX_ENTRIES);
+  const connection = leaderboardConnection(scope);
   return cachedFetchContestLeaderboardTop(
     gameId,
     contestStartedAt,
     async () =>
       fetchLeaderboardTopQuery(
         `contestLeaderboards/${gameId}/${contestStartedAt}`,
-        clamped
-      )
+        clamped,
+        connection
+      ),
+    connection.label
   );
 }
 
 async function writeLeaderboardEntry(
   basePath: string,
   entry: LeaderboardEntry,
-  invalidate: () => void
+  invalidate: () => void,
+  connection: RtdbConnection
 ): Promise<boolean> {
   const wallet = entry.walletAddress?.trim();
   const payload: LeaderboardEntry = {
@@ -542,36 +584,51 @@ async function writeLeaderboardEntry(
   const entryPath = `${basePath}/${storageKey}`;
 
   // Path-scoped compare — do not download the entire leaderboard map.
-  const existing = await readPath<LeaderboardEntry>(entryPath);
+  const existing = await rtdbRead<LeaderboardEntry>(
+    entryPath,
+    undefined,
+    connection
+  );
   if (existing && typeof existing.score === "number" && existing.score >= payload.score) {
     return false;
   }
 
-  await writePath(entryPath, payload);
+  await rtdbWrite(entryPath, payload, { silent: true, connection });
   invalidate();
   return true;
 }
 
 export async function submitLeaderboardEntryOnServer(
   gameId: string,
-  entry: LeaderboardEntry
+  entry: LeaderboardEntry,
+  scope?: LeaderboardChainScope
 ): Promise<void> {
+  const connection = leaderboardConnection(scope);
   await writeLeaderboardEntry(
     `leaderboards/${gameId}`,
     entry,
-    () => invalidateLeaderboardTopCache(gameId)
+    () => invalidateLeaderboardTopCache(gameId, connection.label),
+    connection
   );
 }
 
 export async function submitContestLeaderboardEntryOnServer(
   gameId: string,
   contestStartedAt: number,
-  entry: LeaderboardEntry
+  entry: LeaderboardEntry,
+  scope?: LeaderboardChainScope
 ): Promise<void> {
+  const connection = leaderboardConnection(scope);
   await writeLeaderboardEntry(
     `contestLeaderboards/${gameId}/${contestStartedAt}`,
     entry,
-    () => invalidateContestLeaderboardTopCache(gameId, contestStartedAt)
+    () =>
+      invalidateContestLeaderboardTopCache(
+        gameId,
+        contestStartedAt,
+        connection.label
+      ),
+    connection
   );
 }
 
@@ -591,13 +648,21 @@ export async function submitPublicScoreOnServer(params: {
   txHash: string;
   ecosystem?: ShopPurchaseEcosystem;
   contestStartedAt?: number;
+  chainId?: number | null;
 }): Promise<{ submittedBest: number }> {
   const ecosystem = params.ecosystem ?? "evm";
   const txKey = normalizeShopTxKey(ecosystem, params.txHash);
   const processedPath = processedScoreSubmitTxPath(ecosystem, txKey);
+  const scope: LeaderboardChainScope = {
+    chainId: params.chainId,
+    ecosystem,
+  };
+  const connection = leaderboardConnection(scope);
 
-  const existing = await readPath<{ gameId: string; walletAddress?: string }>(
-    processedPath
+  const existing = await rtdbRead<{ gameId: string; walletAddress?: string }>(
+    processedPath,
+    undefined,
+    connection
   );
   if (existing) {
     if (
@@ -612,26 +677,33 @@ export async function submitPublicScoreOnServer(params: {
       );
     }
   } else {
-    await writePath(processedPath, {
-      gameId: params.gameId,
-      walletAddress: params.entry.walletAddress?.trim(),
-      processedAt: Date.now(),
-    });
+    await rtdbWrite(
+      processedPath,
+      {
+        gameId: params.gameId,
+        walletAddress: params.entry.walletAddress?.trim(),
+        processedAt: Date.now(),
+      },
+      { silent: true, connection }
+    );
   }
 
-  await submitLeaderboardEntryOnServer(params.gameId, params.entry);
+  await submitLeaderboardEntryOnServer(params.gameId, params.entry, scope);
 
   if (typeof params.contestStartedAt === "number") {
     await submitContestLeaderboardEntryOnServer(
       params.gameId,
       params.contestStartedAt,
-      params.entry
+      params.entry,
+      scope
     );
   }
 
   const submittedBest = await fetchUserSubmittedBestFromServer(params.gameId, {
     walletAddress: params.entry.walletAddress,
     playerName: params.entry.name,
+    chainId: params.chainId,
+    ecosystem,
   });
 
   return { submittedBest };
