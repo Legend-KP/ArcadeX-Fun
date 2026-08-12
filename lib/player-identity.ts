@@ -1,5 +1,8 @@
 import { getAddress, isAddress } from "viem";
-import { isValidSuiAddress, normalizeSuiAddress } from "@mysten/sui/utils";
+import {
+  isValidSuiAddress,
+  normalizeSuiAddress,
+} from "@/lib/sui-address-lite";
 import {
   isVaraWalletAddress,
   normalizeVaraAddressPair,

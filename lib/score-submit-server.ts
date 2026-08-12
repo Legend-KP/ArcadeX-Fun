@@ -6,7 +6,6 @@ import {
   scoreSubmitPriceToAmount,
 } from "@/lib/score-submit";
 import { SHOP_TOKEN_DECIMALS } from "@/lib/shop";
-import { verifySuiShopPaymentTx } from "@/lib/shop-sui-server";
 import { verifyVaraShopPaymentTx } from "@/lib/shop-vara-server";
 import { findVaraShopPaymentToken } from "@/lib/shop-vara";
 import { isValidSuiTxDigest } from "@/lib/shop-sui";
@@ -80,6 +79,7 @@ export async function verifyScoreSubmitPayment(params: {
     if (!isValidSuiTxDigest(params.txHash)) {
       throw new Error("Invalid Sui transaction digest.");
     }
+    const { verifySuiShopPaymentTx } = await import("@/lib/shop-sui-server");
     await verifySuiShopPaymentTx({
       txDigest: params.txHash,
       productId: "spark-refill",

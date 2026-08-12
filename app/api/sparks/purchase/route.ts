@@ -15,7 +15,6 @@ import { verifyShopPaymentTx } from "@/lib/shop-server";
 import { findAvalancheShopPaymentToken } from "@/lib/shop-avalanche";
 import { verifyAvalancheShopPaymentTx } from "@/lib/shop-avalanche-server";
 import { isValidSuiTxDigest } from "@/lib/shop-sui";
-import { verifySuiShopPaymentTx } from "@/lib/shop-sui-server";
 import { findVaraShopPaymentToken, isValidVaraExtrinsicHash } from "@/lib/shop-vara";
 import { verifyVaraShopPaymentTx } from "@/lib/shop-vara-server";
 import {
@@ -229,6 +228,7 @@ export async function POST(request: Request) {
       );
     }
 
+    const { verifySuiShopPaymentTx } = await import("@/lib/shop-sui-server");
     await verifySuiShopPaymentTx({
       txDigest: txId,
       productId: productId as ShopProductId,

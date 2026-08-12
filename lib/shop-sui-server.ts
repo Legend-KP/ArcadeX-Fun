@@ -1,4 +1,4 @@
-import { normalizeSuiAddress } from "@mysten/sui/utils";
+import { normalizeSuiAddress } from "@/lib/sui-address-lite";
 import { getSuiRpcClient } from "@/lib/sui-rpc";
 import {
   normalizeSuiTxDigest,

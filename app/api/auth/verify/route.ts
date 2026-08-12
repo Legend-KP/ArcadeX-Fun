@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { SiweMessage } from "siwe";
-import { RpcProvider } from "starknet";
 import { consumeAuthNonce } from "@/lib/auth-nonce";
 import {
   createSessionToken,
@@ -21,7 +20,6 @@ import { isVaraAuthMessageValid } from "@/lib/vara-auth";
 import { verifyVaraSignature } from "@/lib/vara-verify";
 import { buildStarknetAuthTypedData } from "@/lib/starknet-auth";
 import { isSuiAuthMessageValid } from "@/lib/sui-auth";
-import { isValidPersonalMessageSignature } from "@mysten/sui/verify";
 import {
   buildPlayerId,
   normalizeAddress,
@@ -109,6 +107,7 @@ async function verifyStarknetAuth(
   const signer = normalizeAddress("starknet", address);
   const typedData = buildStarknetAuthTypedData(nonce);
 
+  const { RpcProvider } = await import("starknet");
   const provider = new RpcProvider({
     nodeUrl:
       process.env.STARKNET_RPC_URL?.trim() ||
@@ -145,6 +144,9 @@ async function verifySuiAuth(body: VerifyBody): Promise<{ address: string }> {
 
   const signer = normalizeAddress("sui", address);
   const messageBytes = new TextEncoder().encode(message);
+  const { isValidPersonalMessageSignature } = await import(
+    "@/lib/sui-verify-lite"
+  );
   const valid = await isValidPersonalMessageSignature(messageBytes, signature, {
     address: signer,
   });

@@ -31,6 +31,7 @@ const nextConfig: NextConfig = {
     };
 
     // Server Worker stubs — real packages stay in the browser bundle for Vara UX.
+    // Do not alias @mysten/* here: client wallet code needs the real SDK subpaths.
     if (isServer) {
       config.resolve.alias = {
         ...config.resolve.alias,
