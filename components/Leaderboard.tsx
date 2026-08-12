@@ -139,7 +139,9 @@ export default function Leaderboard({
       >
         {isPostSubmit && (
           <div className="lb-post-submit-banner" role="status">
-            Score submitted!
+            {showContestBoard
+              ? "Contest score submitted!"
+              : "Score submitted!"}
           </div>
         )}
 

@@ -3154,6 +3154,27 @@ a { color: inherit; text-decoration: none; }
   animation: lb-sheet-in 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.spark-shop-payment--contest {
+  border-color: rgba(124, 58, 237, 0.35);
+  box-shadow:
+    0 24px 80px rgba(15, 23, 42, 0.18),
+    0 0 0 1px rgba(124, 58, 237, 0.12);
+}
+
+.spark-shop-payment__contest-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-family: var(--font-head);
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  color: #fff;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+}
+
 .spark-shop-payment__body {
   flex: 1;
   min-height: 0;

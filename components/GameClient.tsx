@@ -446,6 +446,7 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
           walletAddress={
             pendingScore.walletAddress || resolvedWallet || ""
           }
+          contestLive={contestLive}
           onClose={() => {
             setScoreSubmitOpen(false);
             setPendingScore(null);
@@ -475,6 +476,7 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
           walletAddress={
             pendingScore.walletAddress || resolvedWallet || ""
           }
+          contestLive={contestLive}
           onClose={() => {
             setScoreSubmitOpen(false);
             setPendingScore(null);

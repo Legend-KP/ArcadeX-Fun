@@ -53,6 +53,8 @@ interface ScoreSubmitModalProps {
   score: number;
   playerName: string;
   walletAddress: string;
+  /** When true, paid score also counts on the live contest board. */
+  contestLive?: boolean;
   onClose: () => void;
   onSuccess: (submittedBest: number) => void;
 }
@@ -119,6 +121,7 @@ export default function ScoreSubmitModal({
   score,
   playerName,
   walletAddress,
+  contestLive = false,
   onClose,
   onSuccess,
 }: ScoreSubmitModalProps) {
@@ -523,7 +526,12 @@ export default function ScoreSubmitModal({
       onClick={busy ? undefined : onClose}
     >
       <div
-        className="spark-shop-payment"
+        className={[
+          "spark-shop-payment",
+          contestLive && "spark-shop-payment--contest",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         role="dialog"
         aria-modal="true"
         aria-labelledby="score-submit-title"
@@ -540,15 +548,30 @@ export default function ScoreSubmitModal({
             ✕
           </button>
 
+          {contestLive && (
+            <div className="spark-shop-payment__contest-badge" aria-live="polite">
+              <span className="lb-contest-live-dot" aria-hidden />
+              CONTEST LIVE
+            </div>
+          )}
+
           <h2 id="score-submit-title" className="spark-panel__title">
-            Submit to Leaderboard
+            {contestLive ? "Submit Contest Score" : "Submit to Leaderboard"}
           </h2>
           <p className="spark-shop-payment__price">
             Pay {formatScoreSubmitPrice()} in USDC on {networkLabel}
           </p>
           <p className="spark-shop-payment__desc">
-            Your score of <strong>{score.toLocaleString()}</strong> will appear
-            on the public leaderboard after payment confirms.
+            Your score of <strong>{score.toLocaleString()}</strong> will
+            {contestLive ? (
+              <>
+                {" "}
+                count on the <strong>contest board</strong> and the all-time
+                leaderboard after payment confirms.
+              </>
+            ) : (
+              <> appear on the all-time public leaderboard after payment confirms.</>
+            )}
           </p>
 
           {!isConnected && (
