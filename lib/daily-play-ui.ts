@@ -7,6 +7,7 @@ import {
   isVaraRewardsChainId,
   VARA_CHAIN_ID,
 } from "@/lib/vara-rewards";
+import { isPlausibleEvmTxHash } from "@/lib/tx-hash";
 
 export type DailyPlayNetworkCopy = {
   chainId: number;
@@ -20,7 +21,7 @@ export function getDailyCheckInTxExplorerUrl(
   chainId: number | null | undefined,
   txHash: string
 ): string | null {
-  if (!txHash || !/^0x[a-fA-F0-9]{64}$/.test(txHash)) return null;
+  if (!isPlausibleEvmTxHash(txHash)) return null;
   if (isVaraRewardsChainId(chainId)) {
     return `https://vara.subscan.io/extrinsic/${txHash}`;
   }

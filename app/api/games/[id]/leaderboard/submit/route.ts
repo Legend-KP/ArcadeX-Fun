@@ -1,6 +1,7 @@
 import { fetchGameFromServer } from "@/lib/firestore-server";
 import {
   fetchUserFromServer,
+  isScoreSubmitTxProcessed,
   submitPublicScoreOnServer,
   ShopPurchaseError,
 } from "@/lib/rtdb-server";
@@ -93,6 +94,7 @@ export async function POST(
       tokenAddress?: string;
       ecosystem?: WalletEcosystem;
       playerName?: string;
+      chainId?: number;
     };
 
     const score = body.score;
@@ -124,11 +126,15 @@ export async function POST(
     }
     const wallet = normalizeAddress(ecosystem, rawWallet);
     const session = await readSessionFromCookies();
+    const chainId =
+      typeof body.chainId === "number" && Number.isFinite(body.chainId)
+        ? body.chainId
+        : session?.chainId;
 
     let name = body.name?.trim() || body.playerName?.trim() || "";
     if (!name) {
       const profile = await fetchUserFromServer(wallet, {
-        chainId: session?.chainId,
+        chainId,
         ecosystem,
       });
       name = profile?.name?.trim() || "";
@@ -137,19 +143,34 @@ export async function POST(
       name = `${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
     }
 
+    const shopEcosystem =
+      ecosystem === "evm" || ecosystem === "sui" || ecosystem === "vara"
+        ? ecosystem
+        : "evm";
+
     const contestChainKey = resolveContestChainKey({
-      chainId: session?.chainId,
+      chainId,
       ecosystem: session?.ecosystem ?? ecosystem,
     });
     const chainGame = applyContestForChain(game, contestChainKey);
 
-    await verifyScoreSubmitPayment({
-      ecosystem,
+    const alreadyProcessed = await isScoreSubmitTxProcessed({
       txHash,
-      tokenAddress: body.tokenAddress,
-      expectedFrom: wallet,
-      chainId: session?.chainId,
+      gameId: id,
+      walletAddress: wallet,
+      ecosystem: shopEcosystem,
+      chainId,
     });
+
+    if (!alreadyProcessed) {
+      await verifyScoreSubmitPayment({
+        ecosystem,
+        txHash,
+        tokenAddress: body.tokenAddress,
+        expectedFrom: wallet,
+        chainId,
+      });
+    }
 
     const contestStartedAt =
       gameHasContestLive(chainGame) &&
@@ -167,12 +188,9 @@ export async function POST(
       gameId: id,
       entry,
       txHash,
-      ecosystem:
-        ecosystem === "evm" || ecosystem === "sui" || ecosystem === "vara"
-          ? ecosystem
-          : "evm",
+      ecosystem: shopEcosystem,
       contestStartedAt,
-      chainId: session?.chainId,
+      chainId,
     });
 
     return corsJsonResponse(request, {

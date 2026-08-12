@@ -73,15 +73,16 @@ export async function getPaymentTransactionReceipt(
     try {
       return await waitForAvalancheTransactionReceipt(txHash, {
         confirmations: 1,
-        timeoutMs: 12_000,
+        timeoutMs: 6_000,
       });
     } catch (error) {
       lastError = error;
       if (!isTransientReceiptError(error)) throw error;
     }
 
-    for (let attempt = 0; attempt < 10; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, 800 + attempt * 400));
+    // Short poll — clients retry with "Confirm" instead of multi-minute waits.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 400 + attempt * 250));
       resetAvalanchePublicClient();
       try {
         const receipt = await getAvalanchePublicClient().getTransactionReceipt({
@@ -107,7 +108,7 @@ export async function getPaymentTransactionReceipt(
   try {
     return await waitForBaseTransactionReceipt(txHash, {
       confirmations: 1,
-      timeoutMs: 12_000,
+      timeoutMs: 6_000,
     });
   } catch (error) {
     lastError = error;
@@ -115,8 +116,8 @@ export async function getPaymentTransactionReceipt(
   }
 
   // Poll getTransactionReceipt across RPCs — cheaper than long eth_getLogs waits.
-  for (let attempt = 0; attempt < 10; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 800 + attempt * 400));
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 400 + attempt * 250));
     resetBasePublicClient();
     try {
       const receipt = await getBasePublicClient().getTransactionReceipt({

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import {
   useAccount,
   useChainId,
+  useDisconnect,
   useReadContracts,
   useSwitchChain,
   useWriteContract,
@@ -13,8 +14,18 @@ import { formatUnits, getAddress, maxUint256, type Hash } from "viem";
 import { avalanche, PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 import { formatChainError } from "@/lib/base-public-client";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
+import { extractSubmittedTxHash } from "@/lib/tx-hash";
 import { submitPaidScore } from "@/lib/leaderboard-client";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
+import {
+  isWalletMismatchMessage,
+  WalletSessionMismatchError,
+} from "@/lib/evm-session-wallet";
+import {
+  clearPendingScoreSubmitTx,
+  readPendingScoreSubmitTx,
+  savePendingScoreSubmitTx,
+} from "@/lib/score-submit-pending-tx";
 import {
   erc20Abi,
   SHOP_PAYMENT_TOKENS,
@@ -57,35 +68,6 @@ function formatTokenBalance(balance: bigint, decimals: number): string {
   return value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
 }
 
-/** Pull a tx hash if wagmi/MetaMask threw after the wallet already broadcast. */
-function extractSubmittedTxHash(error: unknown): Hash | null {
-  const candidates: unknown[] = [];
-  let current: unknown = error;
-  for (let i = 0; i < 6 && current; i++) {
-    candidates.push(current);
-    if (current && typeof current === "object") {
-      const obj = current as Record<string, unknown>;
-      if ("hash" in obj) candidates.push(obj.hash);
-      if ("transactionHash" in obj) candidates.push(obj.transactionHash);
-      if ("cause" in obj) current = obj.cause;
-      else break;
-    } else break;
-  }
-
-  for (const value of candidates) {
-    if (typeof value === "string" && /^0x[a-fA-F0-9]{64}$/.test(value)) {
-      return value as Hash;
-    }
-  }
-
-  const text =
-    error instanceof Error
-      ? `${error.message} ${error.cause instanceof Error ? error.cause.message : ""}`
-      : String(error);
-  const match = text.match(/0x[a-fA-F0-9]{64}/);
-  return match ? (match[0] as Hash) : null;
-}
-
 async function confirmScoreSubmitWithRetries(params: {
   gameId: string;
   score: number;
@@ -93,11 +75,12 @@ async function confirmScoreSubmitWithRetries(params: {
   playerName: string;
   txHash: Hash;
   tokenAddress: string;
+  chainId: number;
 }): Promise<number> {
   let lastError: unknown;
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, 1200 + attempt * 600));
+      await new Promise((r) => setTimeout(r, 500 + attempt * 400));
     }
     try {
       const { submittedBest } = await submitPaidScore(params.gameId, {
@@ -107,7 +90,9 @@ async function confirmScoreSubmitWithRetries(params: {
         name: params.playerName,
         tokenAddress: params.tokenAddress,
         ecosystem: "evm",
+        chainId: params.chainId,
       });
+      clearPendingScoreSubmitTx();
       return submittedBest;
     } catch (err) {
       lastError = err;
@@ -120,7 +105,7 @@ async function confirmScoreSubmitWithRetries(params: {
       ) {
         continue;
       }
-      if (attempt >= 2) throw err;
+      if (attempt >= 1) throw err;
     }
   }
   throw lastError instanceof Error
@@ -139,6 +124,7 @@ export default function ScoreSubmitModal({
 }: ScoreSubmitModalProps) {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
+  const { disconnectAsync } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const { openConnect, chainId: profileChainId } = usePlayerProfile();
@@ -148,6 +134,25 @@ export default function ScoreSubmitModal({
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const walletMismatch =
+    Boolean(address && walletAddress) &&
+    (() => {
+      try {
+        return getAddress(address!) !== getAddress(walletAddress as `0x${string}`);
+      } catch {
+        return false;
+      }
+    })();
+
+  const handleReconnectWallet = useCallback(async () => {
+    setError("");
+    try {
+      await disconnectAsync();
+    } catch {
+      // ignore
+    }
+    openConnect();
+  }, [disconnectAsync, openConnect]);
 
   const isAvalanche = profileChainId === AVALANCHE_CHAIN_ID;
   const targetChainId = isAvalanche ? AVALANCHE_CHAIN_ID : PRIMARY_EVM_CHAIN_ID;
@@ -283,6 +288,18 @@ export default function ScoreSubmitModal({
       setError("");
       setTxHash(hash);
 
+      savePendingScoreSubmitTx({
+        gameId,
+        score,
+        walletAddress: address || walletAddress,
+        txHash: hash,
+        tokenAddress: token.address,
+        chainId: targetChainId,
+        ecosystem: "evm",
+        playerName,
+        savedAt: Date.now(),
+      });
+
       try {
         const submittedBest = await confirmScoreSubmitWithRetries({
           gameId,
@@ -291,6 +308,7 @@ export default function ScoreSubmitModal({
           playerName,
           txHash: hash,
           tokenAddress: token.address,
+          chainId: targetChainId,
         });
         onSuccess(submittedBest);
         onClose();
@@ -314,6 +332,7 @@ export default function ScoreSubmitModal({
       onSuccess,
       onClose,
       networkLabel,
+      targetChainId,
     ]
   );
 
@@ -328,8 +347,18 @@ export default function ScoreSubmitModal({
       setTxHash(undefined);
       setBusy(false);
       setError("");
+      return;
     }
-  }, [open]);
+
+    const pending = readPendingScoreSubmitTx(gameId, walletAddress);
+    if (pending?.txHash) {
+      setTxHash(pending.txHash as `0x${string}`);
+      const match = paymentTokens.find(
+        (t) => t.address.toLowerCase() === pending.tokenAddress.toLowerCase()
+      );
+      if (match) setSelectedToken(match);
+    }
+  }, [open, gameId, walletAddress, paymentTokens]);
 
   useEffect(() => {
     if (!open) return;
@@ -366,11 +395,10 @@ export default function ScoreSubmitModal({
 
       if (
         walletAddress &&
+        address &&
         getAddress(address) !== getAddress(walletAddress as `0x${string}`)
       ) {
-        setError(
-          `MetaMask is on ${address.slice(0, 6)}…${address.slice(-4)}, but you signed in as ${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}. Switch MetaMask to your signed-in account, then try again.`
-        );
+        setError(new WalletSessionMismatchError(address, walletAddress).message);
         return;
       }
 
@@ -612,6 +640,18 @@ export default function ScoreSubmitModal({
             <p className="spark-shop-payment__error" role="alert">
               {error}
             </p>
+          )}
+
+          {(walletMismatch || isWalletMismatchMessage(error)) && (
+            <div className="spark-shop-payment__section">
+              <button
+                type="button"
+                className="spark-shop-payment__primary"
+                onClick={() => void handleReconnectWallet()}
+              >
+                Reconnect wallet
+              </button>
+            </div>
           )}
 
           {txHash && showTokenStep && !busy ? (

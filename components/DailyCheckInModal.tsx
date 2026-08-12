@@ -14,6 +14,8 @@ import {
   refreshSessionFromCheckIn,
   type StreakStatus,
 } from "@/lib/streak-client";
+import { readCompletedCheckIn } from "@/lib/streak-done";
+import { isPlausibleEvmTxHash } from "@/lib/tx-hash";
 
 interface DailyCheckInModalProps {
   open: boolean;
@@ -151,8 +153,34 @@ export default function DailyCheckInModal({
       campaignId,
       chainId
     );
-    if (storedPending) {
+    if (storedPending && isPlausibleEvmTxHash(storedPending)) {
       setPendingTxHash(storedPending);
+    } else if (storedPending) {
+      setPendingTxHash(null);
+    }
+
+    const completed =
+      typeof campaignId === "number" && typeof chainId === "number"
+        ? readCompletedCheckIn(walletAddress, chainId, campaignId)
+        : null;
+    if (completed && !storedPending) {
+      let cancelled = false;
+      (async () => {
+        try {
+          await refreshSessionFromCheckIn(
+            walletAddress,
+            campaignId,
+            chainId,
+            completed.txHash
+          );
+        } catch {
+          // Still dismiss — local done flag means ceremony already finished.
+        }
+        if (!cancelled) onComplete();
+      })();
+      return () => {
+        cancelled = true;
+      };
     }
 
     // Parent already loaded a check-in-needed status — skip another fresh RPC.
@@ -192,7 +220,7 @@ export default function DailyCheckInModal({
               walletAddress,
               campaignId,
               chainId,
-              storedPending ?? undefined
+              storedPending ?? completed?.txHash ?? undefined
             );
           } catch {
             // Session mint is best-effort; still dismiss the ceremony.
@@ -228,7 +256,7 @@ export default function DailyCheckInModal({
           ? "Sync is taking longer than expected. Tap Confirm check-in below — do not send another transaction."
           : "Check-in is taking longer than expected. If your wallet already confirmed, wait a moment and tap the button again."
       );
-    }, 75_000);
+    }, 35_000);
     return () => window.clearTimeout(watchdog);
   }, [loading, pendingTxHash]);
 
@@ -292,7 +320,9 @@ export default function DailyCheckInModal({
         chainId,
         {
           onTxSubmitted: (txHash) => {
-            setPendingTxHash(txHash);
+            if (isPlausibleEvmTxHash(txHash)) {
+              setPendingTxHash(txHash);
+            }
             setLoadingPhase("sync");
           },
         }
@@ -307,7 +337,7 @@ export default function DailyCheckInModal({
         err && typeof err === "object" && "txHash" in err
           ? String((err as { txHash?: string }).txHash ?? "")
           : pendingTxHash ?? "";
-      if (maybeHash && /^0x[a-fA-F0-9]{64}$/.test(maybeHash)) {
+      if (maybeHash && isPlausibleEvmTxHash(maybeHash)) {
         setPendingTxHash(maybeHash);
       }
 

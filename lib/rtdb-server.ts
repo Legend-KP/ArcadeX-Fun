@@ -694,6 +694,41 @@ function processedScoreSubmitTxPath(
   return `scoreSubmit/processedTxs/${ecosystem}/${txKey}`;
 }
 
+/** Fast path for client retries — skip on-chain verify when tx was already accepted. */
+export async function isScoreSubmitTxProcessed(params: {
+  txHash: string;
+  gameId: string;
+  walletAddress: string;
+  ecosystem?: ShopPurchaseEcosystem;
+  chainId?: number | null;
+}): Promise<boolean> {
+  const ecosystem = params.ecosystem ?? "evm";
+  let txKey: string;
+  try {
+    txKey = normalizeShopTxKey(ecosystem, params.txHash);
+  } catch {
+    return false;
+  }
+  const connection = leaderboardConnection({
+    chainId: params.chainId,
+    ecosystem,
+  });
+  const existing = await rtdbRead<{ gameId: string; walletAddress?: string }>(
+    processedScoreSubmitTxPath(ecosystem, txKey),
+    undefined,
+    connection
+  );
+  if (!existing) return false;
+  if (existing.gameId !== params.gameId) return false;
+  if (
+    existing.walletAddress &&
+    existing.walletAddress !== params.walletAddress.trim()
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export async function submitPublicScoreOnServer(params: {
   gameId: string;
   entry: LeaderboardEntry;

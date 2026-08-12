@@ -1,9 +1,11 @@
 "use client";
 
 import type { Address, Hash, Hex } from "viem";
-import { getAddress } from "viem";
 import { avalanche, base } from "@/lib/chains";
-import { createEvmWalletClient } from "@/lib/evm-wallet-client";
+import {
+  resolveEvmAccountForSession,
+  WalletSessionMismatchError,
+} from "@/lib/evm-session-wallet";
 import {
   ARCADEX_REWARDS_ABI,
   getArcadeXRewardsAddress,
@@ -12,35 +14,7 @@ import {
   isAvalancheRewardsChainId,
 } from "@/lib/arcadex-rewards";
 import { isVaraRewardsChainId } from "@/lib/vara-rewards";
-
-/** Pull a tx hash out of viem/MetaMask errors when the wallet already broadcast. */
-function extractSubmittedTxHash(error: unknown): Hash | null {
-  const candidates: unknown[] = [];
-  let current: unknown = error;
-  for (let i = 0; i < 6 && current; i++) {
-    candidates.push(current);
-    if (current && typeof current === "object") {
-      const obj = current as Record<string, unknown>;
-      if ("hash" in obj) candidates.push(obj.hash);
-      if ("transactionHash" in obj) candidates.push(obj.transactionHash);
-      if ("cause" in obj) current = obj.cause;
-      else break;
-    } else break;
-  }
-
-  for (const value of candidates) {
-    if (typeof value === "string" && /^0x[a-fA-F0-9]{64}$/.test(value)) {
-      return value as Hash;
-    }
-  }
-
-  const text =
-    error instanceof Error
-      ? `${error.message} ${error.cause instanceof Error ? error.cause.message : ""}`
-      : String(error);
-  const match = text.match(/0x[a-fA-F0-9]{64}/);
-  return match ? (match[0] as Hash) : null;
-}
+import { extractSubmittedTxHash } from "@/lib/tx-hash";
 
 /**
  * Wallet write of ArcadeXRewards.checkIn (Base, Avalanche, or Vara)
@@ -77,44 +51,28 @@ export async function checkInOnChain(
   }
 
   const chain = isAvalancheRewardsChainId(chainId) ? avalanche : base;
-  const walletClient = createEvmWalletClient(chain);
-  if (!walletClient) {
+
+  let account: Address;
+  let walletClient;
+  try {
+    const resolved = await resolveEvmAccountForSession(
+      chain,
+      opts?.expectedWallet
+    );
+    account = resolved.account;
+    walletClient = resolved.walletClient;
+  } catch (err) {
+    if (err instanceof WalletSessionMismatchError) {
+      throw err;
+    }
     throw new Error(
-      "MetaMask not found. Open MetaMask in this browser, unlock it, then try again."
+      err instanceof Error
+        ? err.message
+        : "No wallet account available. Unlock your wallet, connect this site, pick your signed-in account, then try again."
     );
   }
 
-  let [account] = await walletClient.getAddresses();
-  if (!account) {
-    try {
-      const requested = await walletClient.requestAddresses();
-      account = requested[0];
-    } catch {
-      // User rejected or provider unavailable
-    }
-  }
-  if (!account) {
-    throw new Error(
-      "No wallet account available. Unlock MetaMask, connect this site, pick your signed-in account, then try again."
-    );
-  }
-
-  if (opts?.expectedWallet) {
-    try {
-      if (getAddress(account) !== getAddress(opts.expectedWallet as Address)) {
-        throw new Error(
-          `MetaMask is on ${account.slice(0, 6)}…${account.slice(-4)}, but you signed in as ${opts.expectedWallet.slice(0, 6)}…${opts.expectedWallet.slice(-4)}. Switch MetaMask to your signed-in account, then try again.`
-        );
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("MetaMask is on")) {
-        throw err;
-      }
-      // Invalid expectedWallet — server sync still enforces match.
-    }
-  }
-
-  // Ensure MetaMask is on Base / Avalanche before checkIn (avoids wrong-chain txs).
+  // Ensure wallet is on Base / Avalanche before checkIn (avoids wrong-chain txs).
   try {
     await walletClient.switchChain({ id: chain.id });
   } catch (err) {

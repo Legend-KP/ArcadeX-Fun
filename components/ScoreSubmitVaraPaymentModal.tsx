@@ -5,6 +5,11 @@ import { createPortal } from "react-dom";
 import { submitPaidScore } from "@/lib/leaderboard-client";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
 import { formatScoreSubmitPrice } from "@/lib/score-submit";
+import {
+  clearPendingScoreSubmitTx,
+  readPendingScoreSubmitTx,
+  savePendingScoreSubmitTx,
+} from "@/lib/score-submit-pending-tx";
 import { SHOP_TOKEN_DECIMALS } from "@/lib/shop";
 import {
   VARA_SHOP_PAYMENT_TOKENS,
@@ -15,6 +20,7 @@ import {
   isVaraPaymentProgramConfigured,
   varaPaymentFee,
 } from "@/lib/vara-payment";
+import { VARA_CHAIN_ID } from "@/lib/vara-rewards";
 
 interface ScoreSubmitVaraPaymentModalProps {
   open: boolean;
@@ -45,9 +51,9 @@ async function confirmScoreSubmitWithRetries(params: {
   tokenAddress: string;
 }): Promise<number> {
   let lastError: unknown;
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, 1200 + attempt * 600));
+      await new Promise((r) => setTimeout(r, 500 + attempt * 400));
     }
     try {
       const { submittedBest } = await submitPaidScore(params.gameId, {
@@ -57,7 +63,9 @@ async function confirmScoreSubmitWithRetries(params: {
         name: params.playerName,
         tokenAddress: params.tokenAddress,
         ecosystem: "vara",
+        chainId: VARA_CHAIN_ID,
       });
+      clearPendingScoreSubmitTx();
       return submittedBest;
     } catch (err) {
       lastError = err;
@@ -70,7 +78,7 @@ async function confirmScoreSubmitWithRetries(params: {
       ) {
         continue;
       }
-      if (attempt >= 2) throw err;
+      if (attempt >= 1) throw err;
     }
   }
   throw lastError instanceof Error
@@ -151,6 +159,18 @@ export default function ScoreSubmitVaraPaymentModal({
       setStatus("Submitting score…");
       setTxHash(hash);
 
+      savePendingScoreSubmitTx({
+        gameId,
+        score,
+        walletAddress,
+        txHash: hash,
+        tokenAddress: token.programId,
+        chainId: VARA_CHAIN_ID,
+        ecosystem: "vara",
+        playerName,
+        savedAt: Date.now(),
+      });
+
       try {
         const submittedBest = await confirmScoreSubmitWithRetries({
           gameId,
@@ -200,8 +220,17 @@ export default function ScoreSubmitVaraPaymentModal({
       );
     }
 
+    const pending = readPendingScoreSubmitTx(gameId, walletAddress);
+    if (pending?.txHash) {
+      setTxHash(pending.txHash);
+      const match = VARA_SHOP_PAYMENT_TOKENS.find(
+        (t) => t.programId.toLowerCase() === pending.tokenAddress.toLowerCase()
+      );
+      if (match) setSelectedToken(match);
+    }
+
     void loadBalances();
-  }, [open, loadBalances, programConfigured]);
+  }, [open, loadBalances, programConfigured, gameId, walletAddress]);
 
   const handlePay = useCallback(
     async (token?: VaraShopPaymentToken) => {

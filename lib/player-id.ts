@@ -11,6 +11,7 @@ const PLAYER_ID_KEY = "arcadex_player_id";
 const PLAYER_NAME_KEY = "arcadex_player_name";
 const WALLET_KEY = "arcadex_wallet_address";
 const ECOSYSTEM_KEY = "arcadex_ecosystem";
+const WALLET_CONNECTOR_KEY = "arcadex_wallet_connector";
 
 export function clearInvalidCachedWallet(): void {
   if (typeof window === "undefined") return;
@@ -61,12 +62,26 @@ export function getCachedPlayerId(): string | null {
 export function setCachedSession(
   ecosystem: WalletEcosystem,
   address: string,
-  playerId: string
+  playerId: string,
+  connectorId?: string | null
 ): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(ECOSYSTEM_KEY, ecosystem);
   localStorage.setItem(WALLET_KEY, address);
   localStorage.setItem(PLAYER_ID_KEY, playerId);
+  if (connectorId) {
+    localStorage.setItem(WALLET_CONNECTOR_KEY, connectorId);
+  }
+}
+
+export function getCachedWalletConnectorId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(WALLET_CONNECTOR_KEY);
+}
+
+export function setCachedWalletConnectorId(connectorId: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(WALLET_CONNECTOR_KEY, connectorId);
 }
 
 export function clearCachedSession(): void {
@@ -75,6 +90,7 @@ export function clearCachedSession(): void {
   localStorage.removeItem(WALLET_KEY);
   localStorage.removeItem(PLAYER_ID_KEY);
   localStorage.removeItem(PLAYER_NAME_KEY);
+  localStorage.removeItem(WALLET_CONNECTOR_KEY);
 }
 
 /** @deprecated Use setCachedSession */

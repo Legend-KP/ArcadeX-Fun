@@ -24,15 +24,15 @@ async function getAvalanchePaymentReceipt(txHash: Hash) {
   try {
     return await waitForAvalancheTransactionReceipt(txHash, {
       confirmations: 1,
-      timeoutMs: 12_000,
+      timeoutMs: 6_000,
     });
   } catch (error) {
     lastError = error;
     if (!isPaymentStillConfirmingError(error)) throw error;
   }
 
-  for (let attempt = 0; attempt < 10; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 800 + attempt * 400));
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 400 + attempt * 250));
     resetAvalanchePublicClient();
     try {
       const receipt = await getAvalanchePublicClient().getTransactionReceipt({

@@ -63,6 +63,7 @@ import {
   warmVaraWallet,
 } from "@/lib/vara-wallet-client";
 import { getEcosystemLabel } from "@/lib/wallet-ecosystems";
+import { setCachedWalletConnectorId } from "@/lib/player-id";
 import type { ChainKey, WalletEcosystem } from "@/types";
 import type { Wallet } from "@mysten/wallet-standard";
 
@@ -97,6 +98,7 @@ export default function ConnectWalletModal({
     null
   );
   const [pendingEvmAddress, setPendingEvmAddress] = useState("");
+  const [pendingConnectorId, setPendingConnectorId] = useState("");
   const [pendingChainId, setPendingChainId] = useState<number>(PRIMARY_EVM_CHAIN_ID);
   const starknetConnectorRef = useRef<Connector | null>(null);
   const suiWalletRef = useRef<Wallet | null>(null);
@@ -112,6 +114,7 @@ export default function ConnectWalletModal({
       setStep("select-network");
       setSelectedChainKey(null);
       setPendingEvmAddress("");
+      setPendingConnectorId("");
       setPendingChainId(PRIMARY_EVM_CHAIN_ID);
     }
   }, [open]);
@@ -158,15 +161,19 @@ export default function ConnectWalletModal({
   async function completeEvmSignIn(
     connectedAddress: string,
     activeChainId: number,
-    targetChainId: number
+    targetChainId: number,
+    connectorId: string
   ) {
     if (activeChainId !== targetChainId) {
       setPendingEvmAddress(connectedAddress);
+      setPendingConnectorId(connectorId);
       setPendingChainId(targetChainId);
       setStep("switch-network");
+      setCachedWalletConnectorId(connectorId);
       return;
     }
 
+    setCachedWalletConnectorId(connectorId);
     const session = await handleEvmSignIn(connectedAddress, activeChainId);
     onSignedIn(session);
   }
@@ -251,7 +258,8 @@ export default function ConnectWalletModal({
               await completeEvmSignIn(
                 connectedEvmAddress,
                 activeChainId,
-                targetChainId
+                targetChainId,
+                connector.id
               );
               return;
             }
@@ -259,7 +267,8 @@ export default function ConnectWalletModal({
           await completeEvmSignIn(
             connectedEvmAddress,
             activeChainId,
-            targetChainId
+            targetChainId,
+            connector.id
           );
           return;
         }
@@ -273,7 +282,12 @@ export default function ConnectWalletModal({
           throw new Error("Could not read wallet address.");
         }
         const activeChainId = result.chainId ?? chainId ?? targetChainId;
-        await completeEvmSignIn(connectedAddress, activeChainId, targetChainId);
+        await completeEvmSignIn(
+          connectedAddress,
+          activeChainId,
+          targetChainId,
+          connector.id
+        );
         return;
       }
 
@@ -363,6 +377,7 @@ export default function ConnectWalletModal({
     setStep("select-network");
     setSelectedChainKey(null);
     setPendingEvmAddress("");
+    setPendingConnectorId("");
     setPendingChainId(PRIMARY_EVM_CHAIN_ID);
     setError("");
   }
@@ -370,6 +385,7 @@ export default function ConnectWalletModal({
   function goBackToWallets() {
     setStep("select-wallet");
     setPendingEvmAddress("");
+    setPendingConnectorId("");
     setPendingChainId(PRIMARY_EVM_CHAIN_ID);
     setError("");
   }

@@ -6,9 +6,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
-import { useDisconnect } from "wagmi";
+import { useDisconnect, useAccount } from "wagmi";
+import { getAddress } from "viem";
 import { disconnect as disconnectStarknet } from "starknetkit";
 import { disconnectSlushWallet } from "@/lib/sui-wallet-client";
 import { disconnectPetraWallet } from "@/lib/aptos-wallet-client";
@@ -33,8 +35,14 @@ import {
   getPendingDailyCheckInTx,
   recoverPendingDailyCheckIn,
   refreshSessionFromCheckIn,
+  SessionRefreshError,
   type StreakStatus,
 } from "@/lib/streak-client";
+import {
+  clearCompletedCheckIn,
+  readCompletedCheckIn,
+} from "@/lib/streak-done";
+import { clearPendingCheckInTx } from "@/lib/streak-pending-tx";
 import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 import {
   bootstrapPlayerProfile,
@@ -88,6 +96,7 @@ export default function PlayerProfileProvider({
   children: React.ReactNode;
 }) {
   const { disconnectAsync } = useDisconnect();
+  const { address: wagmiAddress, isConnected: wagmiConnected } = useAccount();
   const [playerId, setPlayerId] = useState("");
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [walletAddress, setWalletAddress] = useState("");
@@ -105,13 +114,18 @@ export default function PlayerProfileProvider({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  /** Prevents the daily modal from re-opening mid-session (e.g. while playing). */
+  const dailyPromptedRef = useRef(false);
 
   const maybePromptDailyPlay = useCallback(
-    async (session: {
-      address: string;
-      ecosystem: WalletEcosystem;
-      chainId?: number;
-    }) => {
+    async (
+      session: {
+        address: string;
+        ecosystem: WalletEcosystem;
+        chainId?: number;
+      },
+      opts?: { force?: boolean }
+    ) => {
       const sessionChainId =
         session.chainId == null ? undefined : Number(session.chainId);
 
@@ -145,6 +159,11 @@ export default function PlayerProfileProvider({
         return;
       }
 
+      // Already decided for this page session — don't interrupt gameplay.
+      if (dailyPromptedRef.current && !opts?.force) {
+        return;
+      }
+
       try {
         // Prefer cache after connect — fresh RPC is reserved for check-in / recover.
         const config = await fetchDailyPlayConfig();
@@ -153,6 +172,53 @@ export default function PlayerProfileProvider({
           config.mode === "shuffle"
             ? config.campaignId
             : getStreakCampaignIdForChain(resolvedChainId);
+
+        const completed = readCompletedCheckIn(
+          session.address,
+          resolvedChainId,
+          campaignId
+        );
+        // Local proof of today's ceremony — don't re-open after reload/RPC lag.
+        if (completed) {
+          try {
+            await refreshSessionFromCheckIn(
+              session.address,
+              campaignId,
+              resolvedChainId,
+              completed.txHash
+            );
+            try {
+              const status = await fetchStreakStatus(
+                session.address,
+                campaignId,
+                { chainId: resolvedChainId }
+              );
+              setStreakStatus(status);
+            } catch {
+              // Keep modal closed even if status RPC flakes.
+            }
+            dailyPromptedRef.current = true;
+            setShowDailyPlay(false);
+            return;
+          } catch (err) {
+            if (
+              err instanceof SessionRefreshError &&
+              (err.code === "NEED_CHECKIN" ||
+                err.message.toLowerCase().includes("need check"))
+            ) {
+              clearCompletedCheckIn();
+            } else {
+              console.warn(
+                "[daily-play] session mint from completed check-in failed",
+                err
+              );
+              // Still skip the modal — local done flag is trustworthy enough.
+              dailyPromptedRef.current = true;
+              setShowDailyPlay(false);
+              return;
+            }
+          }
+        }
 
         const pendingTx = getPendingDailyCheckInTx(
           session.address,
@@ -171,11 +237,14 @@ export default function PlayerProfileProvider({
                 chainId: resolvedChainId,
               });
               setStreakStatus(status);
+              dailyPromptedRef.current = true;
               setShowDailyPlay(false);
               return;
             }
           } catch (err) {
             console.warn("[daily-play] pending tx recovery failed", err);
+            // Bogus calldata-as-hash leftovers — drop so we don't loop "Confirm".
+            clearPendingCheckInTx();
           }
         }
 
@@ -191,19 +260,37 @@ export default function PlayerProfileProvider({
               session.address,
               campaignId,
               resolvedChainId,
-              pendingTx ?? undefined
+              pendingTx ?? completed?.txHash
             );
           } catch (err) {
             console.warn("[daily-play] session mint from check-in failed", err);
           }
+          dailyPromptedRef.current = true;
           setShowDailyPlay(false);
           return;
         }
 
+        dailyPromptedRef.current = true;
         setShowDailyPlay(true);
       } catch (err) {
-        // Status unknown — still prompt so the user can check in / recover.
+        // Status unknown — only fail-open when there is no local proof of today.
         console.warn("[daily-play] status fetch failed", err);
+        const configCampaignId = getStreakCampaignIdForChain(resolvedChainId);
+        const localDone = readCompletedCheckIn(
+          session.address,
+          resolvedChainId,
+          configCampaignId
+        );
+        if (localDone) {
+          dailyPromptedRef.current = true;
+          setShowDailyPlay(false);
+          return;
+        }
+        // Don't interrupt an already-active session on a flaky status fetch.
+        if (dailyPromptedRef.current && !opts?.force) {
+          return;
+        }
+        dailyPromptedRef.current = true;
         setStreakStatus(null);
         setShowDailyPlay(true);
       }
@@ -258,6 +345,7 @@ export default function PlayerProfileProvider({
     setShowDailyPlay(false);
     setStreakStatus(null);
     setStreakSuccess(null);
+    dailyPromptedRef.current = false;
     setShowConnect(true);
   }, []);
 
@@ -360,6 +448,30 @@ export default function PlayerProfileProvider({
     };
   }, [loadProfileForSession]);
 
+  // Drop stale wagmi sessions when another extension/account is active.
+  useEffect(() => {
+    if (!isReady || !isAuthenticated || ecosystem !== "evm" || !walletAddress) {
+      return;
+    }
+    if (!wagmiConnected || !wagmiAddress) return;
+
+    try {
+      if (getAddress(wagmiAddress) !== getAddress(walletAddress)) {
+        void disconnectAsync().catch(() => undefined);
+      }
+    } catch {
+      void disconnectAsync().catch(() => undefined);
+    }
+  }, [
+    isReady,
+    isAuthenticated,
+    ecosystem,
+    walletAddress,
+    wagmiConnected,
+    wagmiAddress,
+    disconnectAsync,
+  ]);
+
   const handleSignedIn = useCallback(
     async (signedInSession?: {
       playerId: string;
@@ -412,7 +524,7 @@ export default function PlayerProfileProvider({
           address: session?.address ?? walletAddress,
           ecosystem: session?.ecosystem ?? ecosystem,
           chainId: session?.chainId ?? chainId,
-        });
+        }, { force: true });
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Could not save your profile."
@@ -430,6 +542,7 @@ export default function PlayerProfileProvider({
       milestone: boolean;
       infiniteSparkGranted: boolean;
     }) => {
+      dailyPromptedRef.current = true;
       setShowDailyPlay(false);
       if (result && dailyPlayMode !== "shuffle") {
         setStreakSuccess({

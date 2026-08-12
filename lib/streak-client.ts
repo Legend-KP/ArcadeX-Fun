@@ -18,11 +18,13 @@ import {
   readPendingCheckInTx,
   savePendingCheckInTx,
 } from "@/lib/streak-pending-tx";
+import { saveCompletedCheckIn } from "@/lib/streak-done";
+import { isPlausibleEvmTxHash } from "@/lib/tx-hash";
 import { setWalletSessionToken, walletAuthHeaders } from "@/lib/wallet-session-client";
 import type { SparkSnapshot, StoredSparkState } from "@/types";
 
-const API_TIMEOUT_MS = 25_000;
-const SYNC_MAX_ATTEMPTS = 5;
+const API_TIMEOUT_MS = 18_000;
+const SYNC_MAX_ATTEMPTS = 3;
 
 export interface StreakStatus {
   configured: boolean;
@@ -57,6 +59,54 @@ function resolveStreakChainId(chainId?: number | null): number {
   return PRIMARY_EVM_CHAIN_ID;
 }
 
+function markCheckInComplete(opts: {
+  walletAddress: string;
+  chainId: number;
+  campaignId: number;
+  txHash?: string;
+  day?: number;
+  minIntervalSeconds?: number;
+  status?: StreakStatus;
+}): void {
+  saveCompletedCheckIn({
+    walletAddress: opts.walletAddress,
+    chainId: opts.chainId,
+    campaignId: opts.campaignId,
+    txHash: opts.txHash,
+    day: opts.day,
+    minIntervalSeconds:
+      opts.minIntervalSeconds ?? opts.status?.campaign.minIntervalSeconds,
+  });
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const optimistic: StreakStatus = opts.status
+    ? {
+        ...opts.status,
+        canCheckIn: false,
+        lastCheckInAt: opts.status.lastCheckInAt || nowSec,
+        currentDay: opts.day ?? opts.status.currentDay,
+      }
+    : {
+        configured: true,
+        campaignId: opts.campaignId,
+        currentDay: opts.day ?? 1,
+        lastCheckInAt: nowSec,
+        milestoneReached: false,
+        onChainClaimed: false,
+        canCheckIn: false,
+        streakWouldReset: false,
+        campaign: {
+          active: true,
+          requiredDays: 7,
+          minIntervalSeconds: opts.minIntervalSeconds ?? 86_400,
+          rewardMode: 0,
+          resetAfterMilestone: false,
+        },
+      };
+
+  writeCachedStreakStatus(opts.walletAddress, optimistic, opts.chainId);
+}
+
 async function fetchJsonWithTimeout<T>(
   input: RequestInfo | URL,
   init?: RequestInit
@@ -83,7 +133,7 @@ async function fetchJsonWithTimeout<T>(
 
 function attachTxHash(error: unknown, txHash?: string): Error {
   const err = error instanceof Error ? error : new Error(String(error));
-  if (txHash && /^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+  if (txHash && isPlausibleEvmTxHash(txHash)) {
     (err as Error & { txHash?: string }).txHash = txHash;
   }
   return err;
@@ -99,7 +149,11 @@ export async function fetchStreakStatus(
     campaignId ?? getStreakCampaignIdForChain(chainId);
 
   if (!opts?.fresh) {
-    const cached = readCachedStreakStatus(walletAddress, resolvedCampaignId);
+    const cached = readCachedStreakStatus(
+      walletAddress,
+      resolvedCampaignId,
+      chainId
+    );
     if (
       cached &&
       Number(cached.campaignId) === Number(resolvedCampaignId) &&
@@ -127,7 +181,7 @@ export async function fetchStreakStatus(
     throw new Error(data.error ?? "Could not load streak status.");
   }
 
-  writeCachedStreakStatus(walletAddress, data);
+  writeCachedStreakStatus(walletAddress, data, chainId);
   return data;
 }
 
@@ -177,7 +231,7 @@ export async function syncStreakCheckIn(opts: {
   let lastError: unknown;
   for (let attempt = 0; attempt < SYNC_MAX_ATTEMPTS; attempt++) {
     if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, 1000 + attempt * 800));
+      await new Promise((r) => setTimeout(r, 400 + attempt * 350));
     }
     try {
       const { res, data } = await fetchJsonWithTimeout<
@@ -198,7 +252,13 @@ export async function syncStreakCheckIn(opts: {
       }
 
       setWalletSessionToken(data.token);
-      clearCachedStreakStatus();
+      markCheckInComplete({
+        walletAddress: opts.walletAddress,
+        chainId,
+        campaignId,
+        txHash: opts.txHash,
+        day: data.day,
+      });
       clearPendingCheckInTx();
       return data;
     } catch (err) {
@@ -274,6 +334,12 @@ export async function refreshSessionFromCheckIn(
   }
 
   setWalletSessionToken(data.token);
+  markCheckInComplete({
+    walletAddress,
+    chainId: resolvedChainId,
+    campaignId: resolvedCampaignId,
+    txHash,
+  });
   if (txHash) clearPendingCheckInTx();
   return data.token;
 }
@@ -291,9 +357,40 @@ async function sessionFromExistingCheckIn(
     resolvedChainId,
     txHash
   );
-  const status = await fetchStreakStatus(walletAddress, campaignId, {
-    fresh: true,
+
+  // Prefer cached/optimistic status — avoid a blocking fresh RPC after success.
+  let status: StreakStatus;
+  try {
+    status = await fetchStreakStatus(walletAddress, campaignId, {
+      chainId: resolvedChainId,
+    });
+  } catch {
+    status = {
+      configured: true,
+      campaignId,
+      currentDay: 1,
+      lastCheckInAt: Math.floor(Date.now() / 1000),
+      milestoneReached: false,
+      onChainClaimed: false,
+      canCheckIn: false,
+      streakWouldReset: false,
+      campaign: {
+        active: true,
+        requiredDays: 7,
+        minIntervalSeconds: 86_400,
+        rewardMode: 0,
+        resetAfterMilestone: false,
+      },
+    };
+  }
+
+  markCheckInComplete({
+    walletAddress,
     chainId: resolvedChainId,
+    campaignId,
+    txHash,
+    day: status.currentDay,
+    status,
   });
 
   return {
@@ -325,6 +422,12 @@ export async function submitDailyCheckInTx(
     chainId: resolvedChainId,
     expectedWallet: walletAddress,
   });
+
+  if (!isPlausibleEvmTxHash(submitted.txHash)) {
+    throw new Error(
+      "Wallet did not return a valid transaction hash. Try check-in again."
+    );
+  }
 
   savePendingCheckInTx({
     walletAddress,
@@ -455,6 +558,22 @@ export async function performDailyCheckIn(
   const resolvedChainId = resolveStreakChainId(chainId);
   const resolvedCampaignId =
     campaignId ?? getStreakCampaignIdForChain(resolvedChainId);
+
+  // Resume a pending tx immediately — skip another fresh status RPC.
+  const pending = readPendingCheckInTx(
+    walletAddress,
+    resolvedChainId,
+    resolvedCampaignId
+  );
+  if (pending?.txHash) {
+    opts?.onTxSubmitted?.(pending.txHash);
+    return completeDailyCheckInSync({
+      walletAddress,
+      txHash: pending.txHash,
+      campaignId: resolvedCampaignId,
+      chainId: resolvedChainId,
+    });
+  }
 
   // Avoid MetaMask "likely to fail" when already checked in today (TooSoon).
   try {

@@ -78,6 +78,7 @@ export async function submitPaidScore(
     name?: string;
     tokenAddress?: string;
     ecosystem?: string;
+    chainId?: number;
   }
 ): Promise<{ submittedBest: number }> {
   const res = await fetch(`/api/games/${gameId}/leaderboard/submit`, {
@@ -90,6 +91,7 @@ export async function submitPaidScore(
       name: params.name,
       tokenAddress: params.tokenAddress,
       ecosystem: params.ecosystem,
+      chainId: params.chainId,
     }),
   });
 

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import {
   useAccount,
   useChainId,
+  useDisconnect,
   useReadContracts,
   useSwitchChain,
   useWriteContract,
@@ -14,6 +15,11 @@ import { avalanche } from "@/lib/chains";
 import { formatChainError } from "@/lib/base-public-client";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
 import { purchaseSparkItem } from "@/lib/spark-client";
+import { usePlayerProfile } from "@/components/PlayerProfileProvider";
+import {
+  isWalletMismatchMessage,
+  WalletSessionMismatchError,
+} from "@/lib/evm-session-wallet";
 import {
   erc20Abi,
   formatShopPrice,
@@ -137,8 +143,10 @@ export default function SparkShopAvalanchePaymentModal({
   const product = productId ? SHOP_PRODUCTS[productId] : null;
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
+  const { disconnectAsync } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
+  const { openConnect } = usePlayerProfile();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<PaymentStep>("token");
   const [selectedToken, setSelectedToken] =
@@ -146,6 +154,16 @@ export default function SparkShopAvalanchePaymentModal({
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  const handleReconnectWallet = useCallback(async () => {
+    setError("");
+    try {
+      await disconnectAsync();
+    } catch {
+      // ignore
+    }
+    openConnect();
+  }, [disconnectAsync, openConnect]);
 
   const onAvalanche = chainId === AVALANCHE_CHAIN_ID;
   const sessionMatchesWallet = (() => {
@@ -290,7 +308,7 @@ export default function SparkShopAvalanchePaymentModal({
 
       if (!sessionMatchesWallet) {
         setError(
-          `MetaMask is on ${address.slice(0, 6)}…${address.slice(-4)}, but you signed in as ${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}. Switch MetaMask to your signed-in account (and Avalanche), then try again.`
+          new WalletSessionMismatchError(address, walletAddress).message
         );
         return;
       }
@@ -424,11 +442,20 @@ export default function SparkShopAvalanchePaymentModal({
 
           {isConnected && address && !sessionMatchesWallet && (
             <p className="spark-shop-payment__error" role="alert">
-              MetaMask is on {address.slice(0, 6)}…{address.slice(-4)}, but you
-              signed in as {walletAddress.slice(0, 6)}…
-              {walletAddress.slice(-4)}. Switch MetaMask to your signed-in
-              account on Avalanche.
+              {new WalletSessionMismatchError(address, walletAddress).message}
             </p>
+          )}
+
+          {isConnected && address && !sessionMatchesWallet && (
+            <div className="spark-shop-payment__section">
+              <button
+                type="button"
+                className="spark-shop-payment__primary"
+                onClick={() => void handleReconnectWallet()}
+              >
+                Reconnect wallet
+              </button>
+            </div>
           )}
 
           {step === "network" && (
