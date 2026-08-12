@@ -281,7 +281,7 @@ export default function DailyCheckInModal({
   );
 
   const streakHint = wouldReset
-    ? "You missed a day — check in to start fresh."
+    ? "A day slipped by — check in to start a fresh run."
     : displayStreak <= 0
       ? "Check in today to begin your 7-day run."
       : isFinalDay

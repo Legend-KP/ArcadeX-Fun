@@ -3542,6 +3542,121 @@ a { color: inherit; text-decoration: none; }
   margin-top: 8px;
 }
 
+/* ?? Daily streak broken (fresh start) ??????????????????? */
+.daily-streak-broken {
+  gap: 0;
+  background:
+    radial-gradient(ellipse 90% 45% at 50% -8%, rgba(167, 139, 250, 0.16), transparent 55%),
+    #fff;
+}
+
+.daily-streak-broken__eyebrow {
+  color: #6d28d9;
+}
+
+.daily-streak-broken__status {
+  margin: 0 0 18px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #c2410c;
+}
+
+.daily-streak-broken__counter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.daily-streak-broken__counter-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.daily-streak-broken__flip {
+  width: min(112px, 36vw);
+  height: 112px;
+  perspective: 900px;
+}
+
+.daily-streak-broken__flip-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.daily-streak-broken__flip--play .daily-streak-broken__flip-card {
+  transform: rotateX(-180deg);
+}
+
+.daily-streak-broken__flip-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  border: 1px solid rgba(124, 58, 237, 0.22);
+  background:
+    linear-gradient(180deg, #f5f3ff 0%, #ede9fe 48%, #ddd6fe 52%, #c4b5fd 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 10px 28px rgba(109, 40, 217, 0.14);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.daily-streak-broken__flip-face span {
+  font-family: var(--font-display);
+  font-size: 56px;
+  font-weight: 800;
+  line-height: 1;
+  color: #4c1d95;
+}
+
+.daily-streak-broken__flip-face--front::after,
+.daily-streak-broken__flip-face--back::after {
+  content: "";
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 50%;
+  height: 1px;
+  background: rgba(91, 33, 182, 0.18);
+  pointer-events: none;
+}
+
+.daily-streak-broken__flip-face--back {
+  transform: rotateX(180deg);
+  background:
+    linear-gradient(180deg, #faf5ff 0%, #f3e8ff 48%, #e9d5ff 52%, #d8b4fe 100%);
+}
+
+.daily-streak-broken .spark-shop-success__btn {
+  margin-top: 4px;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  border: none;
+  color: #fff;
+}
+
+.daily-streak-broken .spark-shop-success__btn:hover {
+  filter: brightness(1.05);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .daily-streak-broken__flip-card {
+    transition: none;
+  }
+}
+
 /* ?? Daily streak check-in ??????????????????????????????? */
 .daily-checkin-modal {
   position: relative;

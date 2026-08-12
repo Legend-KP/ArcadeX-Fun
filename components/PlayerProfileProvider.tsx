@@ -21,6 +21,9 @@ import DailyShuffleModal from "@/components/DailyShuffleModal";
 import DailyStreakSuccessModal, {
   type DailyStreakSuccess,
 } from "@/components/DailyStreakSuccessModal";
+import DailyStreakBrokenModal, {
+  type DailyStreakBroken,
+} from "@/components/DailyStreakBrokenModal";
 import ConnectWalletModal from "@/components/ConnectWalletModal";
 import {
   isArcadeXRewardsConfiguredForChain,
@@ -42,6 +45,10 @@ import {
   clearCompletedCheckIn,
   readCompletedCheckIn,
 } from "@/lib/streak-done";
+import {
+  hasSeenStreakBroken,
+  markStreakBrokenSeen,
+} from "@/lib/streak-broken-seen";
 import { clearPendingCheckInTx } from "@/lib/streak-pending-tx";
 import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 import {
@@ -112,6 +119,15 @@ export default function PlayerProfileProvider({
   const [streakSuccess, setStreakSuccess] = useState<DailyStreakSuccess | null>(
     null
   );
+  const [streakBroken, setStreakBroken] = useState<DailyStreakBroken | null>(
+    null
+  );
+  const [streakBrokenMeta, setStreakBrokenMeta] = useState<{
+    walletAddress: string;
+    chainId: number;
+    campaignId: number;
+    lastCheckInAt: number;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   /** Prevents the daily modal from re-opening mid-session (e.g. while playing). */
@@ -271,6 +287,32 @@ export default function PlayerProfileProvider({
         }
 
         dailyPromptedRef.current = true;
+        // Soft "streak paused" moment before check-in when a day was missed.
+        if (
+          config.mode !== "shuffle" &&
+          status.streakWouldReset &&
+          status.currentDay > 0 &&
+          !hasSeenStreakBroken({
+            walletAddress: session.address,
+            chainId: resolvedChainId,
+            campaignId,
+            lastCheckInAt: status.lastCheckInAt,
+          })
+        ) {
+          setStreakBroken({
+            previousDays: status.currentDay,
+            requiredDays: status.campaign.requiredDays,
+          });
+          setStreakBrokenMeta({
+            walletAddress: session.address,
+            chainId: resolvedChainId,
+            campaignId,
+            lastCheckInAt: status.lastCheckInAt,
+          });
+        } else {
+          setStreakBroken(null);
+          setStreakBrokenMeta(null);
+        }
         setShowDailyPlay(true);
       } catch (err) {
         // RPC flake (e.g. Cloudflare 521) — never force the ceremony open.
@@ -349,9 +391,19 @@ export default function PlayerProfileProvider({
     setShowDailyPlay(false);
     setStreakStatus(null);
     setStreakSuccess(null);
+    setStreakBroken(null);
+    setStreakBrokenMeta(null);
     dailyPromptedRef.current = false;
     setShowConnect(true);
   }, []);
+
+  const handleStreakBrokenContinue = useCallback(() => {
+    if (streakBrokenMeta) {
+      markStreakBrokenSeen(streakBrokenMeta);
+    }
+    setStreakBroken(null);
+    setStreakBrokenMeta(null);
+  }, [streakBrokenMeta]);
 
   const loadProfileForSession = useCallback(
     async (
@@ -548,6 +600,8 @@ export default function PlayerProfileProvider({
     }) => {
       dailyPromptedRef.current = true;
       setShowDailyPlay(false);
+      setStreakBroken(null);
+      setStreakBrokenMeta(null);
       if (result && dailyPlayMode !== "shuffle") {
         setStreakSuccess({
           day: result.day,
@@ -605,6 +659,8 @@ export default function PlayerProfileProvider({
       openConnect: () => {
         setShowOnboarding(false);
         setShowDailyPlay(false);
+        setStreakBroken(null);
+        setStreakBrokenMeta(null);
         setShowConnect(true);
       },
       logout,
@@ -659,7 +715,9 @@ export default function PlayerProfileProvider({
         }}
       />
       <DailyCheckInModal
-        open={dailyOpen && dailyPlayMode !== "shuffle"}
+        open={
+          dailyOpen && dailyPlayMode !== "shuffle" && !streakBroken
+        }
         walletAddress={walletAddress}
         chainId={
           ecosystem === "vara"
@@ -681,6 +739,11 @@ export default function PlayerProfileProvider({
         }
         status={streakStatus}
         onComplete={handleDailyPlayComplete}
+      />
+      <DailyStreakBrokenModal
+        open={Boolean(streakBroken) && dailyOpen && dailyPlayMode !== "shuffle"}
+        result={streakBroken}
+        onContinue={handleStreakBrokenContinue}
       />
       <DailyStreakSuccessModal
         open={Boolean(streakSuccess)}
