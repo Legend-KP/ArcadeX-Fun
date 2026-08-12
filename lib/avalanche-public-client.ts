@@ -84,12 +84,19 @@ function isTransientRpcError(error: unknown): boolean {
     message.includes("timeout") ||
     message.includes("fetch failed") ||
     message.includes("network") ||
+    message.includes("http request failed") ||
     message.includes("429") ||
     message.includes("403") ||
     message.includes("rate limit") ||
     message.includes("over rate limit") ||
     message.includes("usage limit") ||
     message.includes("requested resource not found") ||
+    message.includes("520") ||
+    message.includes("521") ||
+    message.includes("522") ||
+    message.includes("523") ||
+    message.includes("524") ||
+    message.includes("525") ||
     message.includes("503") ||
     message.includes("502")
   );

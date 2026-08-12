@@ -90,7 +90,8 @@ export default function ConnectWalletModal({
   const chainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
   const { signMessageAsync } = useSignMessage();
-  const { isWalletOptionEnabled } = useChainSettings();
+  const { isWalletOptionEnabled, loading: chainSettingsLoading } =
+    useChainSettings();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [step, setStep] = useState<ConnectStep>("select-network");
@@ -410,7 +411,16 @@ export default function ConnectWalletModal({
         aria-labelledby="connect-modal-title"
       >
         <Logo variant="login" />
-        {step === "select-network" ? (
+        {chainSettingsLoading ? (
+          <>
+            <h2 id="connect-modal-title" className="player-modal-title">
+              Loading networks
+            </h2>
+            <p className="player-modal-hint">
+              Checking which networks are available…
+            </p>
+          </>
+        ) : step === "select-network" ? (
           <>
             <h2 id="connect-modal-title" className="player-modal-title">
               Choose a network

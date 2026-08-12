@@ -10,9 +10,9 @@ const DEFAULT_RPC_URLS = [
   "https://mainnet.base.org",
   "https://base.drpc.org",
   "https://base.meowrpc.com",
-  "https://base.llamarpc.com",
-  // 1rpc free tier rate-limits hard — keep last as fallback only.
+  // 1rpc / llamarpc flake with Cloudflare 521 — keep last.
   "https://1rpc.io/base",
+  "https://base.llamarpc.com",
 ] as const;
 
 function getRpcUrls(): string[] {
@@ -93,6 +93,7 @@ function isTransientRpcError(error: unknown): boolean {
     message.includes("timeout") ||
     message.includes("fetch failed") ||
     message.includes("network") ||
+    message.includes("http request failed") ||
     message.includes("429") ||
     message.includes("403") ||
     message.includes("rate limit") ||
@@ -101,6 +102,11 @@ function isTransientRpcError(error: unknown): boolean {
     message.includes("requested resource not found") ||
     message.includes("missing or invalid parameters") ||
     message.includes("invalid parameters") ||
+    message.includes("520") ||
+    message.includes("521") ||
+    message.includes("522") ||
+    message.includes("523") ||
+    message.includes("525") ||
     message.includes("503") ||
     message.includes("502") ||
     message.includes("524") ||
@@ -172,7 +178,7 @@ export function formatChainError(error: unknown): string {
 
 type ReadContractParams = Parameters<BasePublicClient["readContract"]>[0];
 
-const RETRY_DELAYS_MS = [0, 400, 900];
+const RETRY_DELAYS_MS = [0, 300, 700, 1200];
 
 /** Read with RPC rotation — public Base endpoints rate-limit Workers hard. */
 export async function readBaseContractWithFailover<T>(

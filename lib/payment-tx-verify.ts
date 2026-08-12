@@ -49,7 +49,14 @@ export function isPaymentStillConfirmingError(error: unknown): boolean {
     message.includes("429") ||
     message.includes("503") ||
     message.includes("502") ||
+    message.includes("520") ||
+    message.includes("521") ||
+    message.includes("522") ||
+    message.includes("523") ||
+    message.includes("524") ||
+    message.includes("525") ||
     message.includes("network") ||
+    message.includes("http request failed") ||
     message.includes("fetch failed")
   );
 }

@@ -273,26 +273,30 @@ export default function PlayerProfileProvider({
         dailyPromptedRef.current = true;
         setShowDailyPlay(true);
       } catch (err) {
-        // Status unknown — only fail-open when there is no local proof of today.
+        // RPC flake (e.g. Cloudflare 521) — never force the ceremony open.
+        // Only show check-in when we positively know canCheckIn === true.
         console.warn("[daily-play] status fetch failed", err);
+        dailyPromptedRef.current = true;
+        setShowDailyPlay(false);
+
         const configCampaignId = getStreakCampaignIdForChain(resolvedChainId);
         const localDone = readCompletedCheckIn(
           session.address,
           resolvedChainId,
           configCampaignId
         );
-        if (localDone) {
-          dailyPromptedRef.current = true;
-          setShowDailyPlay(false);
-          return;
+        if (localDone?.txHash) {
+          try {
+            await refreshSessionFromCheckIn(
+              session.address,
+              configCampaignId,
+              resolvedChainId,
+              localDone.txHash
+            );
+          } catch {
+            // Best-effort; stay in-app without the modal.
+          }
         }
-        // Don't interrupt an already-active session on a flaky status fetch.
-        if (dailyPromptedRef.current && !opts?.force) {
-          return;
-        }
-        dailyPromptedRef.current = true;
-        setStreakStatus(null);
-        setShowDailyPlay(true);
       }
     },
     []
@@ -619,12 +623,20 @@ export default function PlayerProfileProvider({
     ]
   );
 
-  // Strict order: connect (network → wallet) → onboarding (new) → daily (if needed).
-  const connectOpen = showConnect;
+  // Strict order: wait for session bootstrap, then connect → onboarding → daily.
+  const connectOpen = showConnect && isReady;
   const onboardingOpen =
-    showOnboarding && !showConnect && isAuthenticated && Boolean(walletAddress);
+    showOnboarding &&
+    !showConnect &&
+    isReady &&
+    isAuthenticated &&
+    Boolean(walletAddress);
   const dailyOpen =
-    showDailyPlay && !showConnect && !showOnboarding && isAuthenticated;
+    showDailyPlay &&
+    !showConnect &&
+    !showOnboarding &&
+    isReady &&
+    isAuthenticated;
 
   return (
     <PlayerProfileContext.Provider value={value}>
