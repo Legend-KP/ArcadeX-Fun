@@ -8,6 +8,7 @@ import {
   deleteGameOnServer,
   fetchGameFromServer,
   isGameVisible,
+  toPublicGame,
   updateGameContestOnServer,
   updateGameOnServer,
 } from "@/lib/firestore-server";
@@ -32,7 +33,7 @@ export async function GET(
       return NextResponse.json({ error: "Game not found." }, { status: 404 });
     }
 
-    return metric.finish(NextResponse.json({ game }));
+    return metric.finish(NextResponse.json({ game: toPublicGame(game) }));
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load game.";

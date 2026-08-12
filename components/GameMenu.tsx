@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import GameTutorialModal from "@/components/GameTutorialModal";
+import { usePlayerProfile } from "@/components/PlayerProfileProvider";
+import { gameHasContestLiveForSession } from "@/lib/contest-chains";
 import { gameAssetCandidates, gameFallbackCandidates } from "@/lib/game-assets";
 import {
   getTutorialImageUrl,
@@ -10,7 +12,7 @@ import {
   hasTutorial,
   markTutorialSeen,
 } from "@/lib/game-tutorial";
-import { Game, gameHasContestLive, gameHasLeaderboard } from "@/types";
+import { Game, gameHasLeaderboard } from "@/types";
 
 interface GameMenuProps {
   game: Game;
@@ -28,6 +30,8 @@ export default function GameMenu({
   spending = false,
 }: GameMenuProps) {
   const router = useRouter();
+  const { chainId, ecosystem } = usePlayerProfile();
+  const contestLive = gameHasContestLiveForSession(game, { chainId, ecosystem });
   const tutorialUrl = useMemo(() => getTutorialImageUrl(game), [game]);
   const showTutorialButton = hasTutorial(game);
 
@@ -75,7 +79,7 @@ export default function GameMenu({
   return (
     <>
       <div className="game-menu">
-        {gameHasContestLive(game) && (
+        {contestLive && (
           <div className="game-menu-contest-stripe" aria-hidden>
             <div className="game-menu-contest-stripe__track">
               {Array.from({ length: 16 }).map((_, i) => (

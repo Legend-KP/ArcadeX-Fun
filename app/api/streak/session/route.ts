@@ -3,18 +3,24 @@ import {
   getStreakCampaignIdForChain,
   isArcadeXRewardsConfiguredForChain,
 } from "@/lib/arcadex-rewards";
-import { getStreakProgressCached } from "@/lib/streak-progress-cache";
+import { verifyCheckInTx } from "@/lib/arcadex-rewards-verify";
+import { getStreakProgressCached, invalidateStreakProgressCache } from "@/lib/streak-progress-cache";
 import {
   checkRateLimit,
   getClientIp,
   rateLimitResponse,
 } from "@/lib/rate-limit";
 import {
+  recordCheckInTxOnServer,
+  StreakSyncError,
+} from "@/lib/rtdb-server";
+import {
   isStreakWalletAddress,
   normalizeStreakWalletAddress,
 } from "@/lib/streak-wallet";
 import { createWalletSessionToken } from "@/lib/wallet-session";
 import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
+import type { Hash } from "viem";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +42,11 @@ export async function POST(request: Request) {
       walletAddress?: string;
       campaignId?: number;
       chainId?: number;
+      txHash?: string;
     };
 
     const rawWallet = body.walletAddress?.trim() ?? "";
+    const txHash = body.txHash?.trim() ?? "";
     const chainId =
       typeof body.chainId === "number" && Number.isFinite(body.chainId)
         ? body.chainId
@@ -72,6 +80,43 @@ export async function POST(request: Request) {
     const wallet = normalizeStreakWalletAddress(chainId, rawWallet);
     if (!(await checkRateLimit(`streak-session-wallet:${wallet}`, 20, 60_000))) {
       return rateLimitResponse();
+    }
+
+    // Fast path: verify a known check-in tx when on-chain progress reads lag.
+    if (txHash && /^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+      try {
+        const verified = await verifyCheckInTx(
+          wallet,
+          txHash as Hash,
+          campaignId,
+          chainId
+        );
+        await recordCheckInTxOnServer(wallet, txHash, verified.day, campaignId);
+        await invalidateStreakProgressCache(wallet, campaignId, chainId);
+        const token = await createWalletSessionToken(wallet);
+        return NextResponse.json({
+          ok: true,
+          token,
+          walletAddress: wallet,
+          chainId,
+          expiresIn: SESSION_TTL_SEC,
+          lastCheckInAt: Number(verified.timestamp),
+          recoveredViaTx: true,
+        });
+      } catch (err) {
+        if (err instanceof StreakSyncError) {
+          return NextResponse.json(
+            { error: err.message, code: err.code },
+            { status: err.code === "TX_ALREADY_USED" ? 409 : 400 }
+          );
+        }
+        const message =
+          err instanceof Error ? err.message : "Invalid check-in transaction.";
+        return NextResponse.json(
+          { error: message, code: "INVALID_TX" },
+          { status: 400 }
+        );
+      }
     }
 
     // Auth gate must not use a stale canCheckIn after an on-chain check-in.

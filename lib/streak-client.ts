@@ -13,8 +13,16 @@ import {
   shouldUseCachedStreakStatus,
   writeCachedStreakStatus,
 } from "@/lib/streak-client-cache";
+import {
+  clearPendingCheckInTx,
+  readPendingCheckInTx,
+  savePendingCheckInTx,
+} from "@/lib/streak-pending-tx";
 import { setWalletSessionToken, walletAuthHeaders } from "@/lib/wallet-session-client";
 import type { SparkSnapshot, StoredSparkState } from "@/types";
+
+const API_TIMEOUT_MS = 25_000;
+const SYNC_MAX_ATTEMPTS = 5;
 
 export interface StreakStatus {
   configured: boolean;
@@ -47,6 +55,38 @@ function resolveStreakChainId(chainId?: number | null): number {
     return Number(chainId);
   }
   return PRIMARY_EVM_CHAIN_ID;
+}
+
+async function fetchJsonWithTimeout<T>(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<{ res: Response; data: T }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const res = await fetch(input, {
+      ...init,
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    const data = (await res.json().catch(() => ({}))) as T;
+    return { res, data };
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Request timed out. Tap Confirm check-in to retry.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function attachTxHash(error: unknown, txHash?: string): Error {
+  const err = error instanceof Error ? error : new Error(String(error));
+  if (txHash && /^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+    (err as Error & { txHash?: string }).txHash = txHash;
+  }
+  return err;
 }
 
 export async function fetchStreakStatus(
@@ -135,12 +175,14 @@ export async function syncStreakCheckIn(opts: {
   const campaignId =
     opts.campaignId ?? getStreakCampaignIdForChain(chainId);
   let lastError: unknown;
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < SYNC_MAX_ATTEMPTS; attempt++) {
     if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, 1200 + attempt * 600));
+      await new Promise((r) => setTimeout(r, 1000 + attempt * 800));
     }
     try {
-      const res = await fetch("/api/streak/sync", {
+      const { res, data } = await fetchJsonWithTimeout<
+        StreakSyncResult & { error?: string }
+      >("/api/streak/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -149,12 +191,7 @@ export async function syncStreakCheckIn(opts: {
           campaignId,
           chainId,
         }),
-        cache: "no-store",
       });
-
-      const data = (await res.json().catch(() => ({}))) as StreakSyncResult & {
-        error?: string;
-      };
 
       if (!res.ok || !data.token) {
         throw new Error(data.error ?? "Could not sync check-in.");
@@ -162,6 +199,7 @@ export async function syncStreakCheckIn(opts: {
 
       setWalletSessionToken(data.token);
       clearCachedStreakStatus();
+      clearPendingCheckInTx();
       return data;
     } catch (err) {
       lastError = err;
@@ -173,16 +211,21 @@ export async function syncStreakCheckIn(opts: {
         msg.includes("rate limit") ||
         msg.includes("could not confirm") ||
         msg.includes("still confirming") ||
-        msg.includes("no checkedin event")
+        msg.includes("no checkedin event") ||
+        msg.includes("timed out") ||
+        msg.includes("timeout")
       ) {
         continue;
       }
-      if (attempt >= 2) throw err;
+      if (attempt >= 1) throw attachTxHash(err, opts.txHash);
     }
   }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Could not sync check-in yet. Tap Confirm check-in to retry.");
+  throw attachTxHash(
+    lastError instanceof Error
+      ? lastError
+      : new Error("Could not sync check-in yet. Tap Confirm check-in to retry."),
+    opts.txHash
+  );
 }
 
 export class SessionRefreshError extends Error {
@@ -202,27 +245,26 @@ export class SessionRefreshError extends Error {
 export async function refreshSessionFromCheckIn(
   walletAddress: string,
   campaignId?: number,
-  chainId?: number | null
+  chainId?: number | null,
+  txHash?: string
 ): Promise<string> {
   const resolvedChainId = resolveStreakChainId(chainId);
   const resolvedCampaignId =
     campaignId ?? getStreakCampaignIdForChain(resolvedChainId);
-  const res = await fetch("/api/streak/session", {
+  const { res, data } = await fetchJsonWithTimeout<{
+    token?: string;
+    error?: string;
+    code?: string;
+  }>("/api/streak/session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       walletAddress,
       campaignId: resolvedCampaignId,
       chainId: resolvedChainId,
+      ...(txHash ? { txHash } : {}),
     }),
-    cache: "no-store",
   });
-
-  const data = (await res.json().catch(() => ({}))) as {
-    token?: string;
-    error?: string;
-    code?: string;
-  };
 
   if (!res.ok || !data.token) {
     throw new SessionRefreshError(
@@ -232,19 +274,22 @@ export async function refreshSessionFromCheckIn(
   }
 
   setWalletSessionToken(data.token);
+  if (txHash) clearPendingCheckInTx();
   return data.token;
 }
 
 async function sessionFromExistingCheckIn(
   walletAddress: string,
   campaignId: number,
-  chainId?: number | null
+  chainId?: number | null,
+  txHash?: string
 ): Promise<StreakSyncResult> {
   const resolvedChainId = resolveStreakChainId(chainId);
   const token = await refreshSessionFromCheckIn(
     walletAddress,
     campaignId,
-    resolvedChainId
+    resolvedChainId,
+    txHash
   );
   const status = await fetchStreakStatus(walletAddress, campaignId, {
     fresh: true,
@@ -264,6 +309,137 @@ async function sessionFromExistingCheckIn(
 }
 
 /**
+ * Submit the on-chain check-in tx only. Persists the hash immediately so the
+ * app can recover if sync fails or the page reloads.
+ */
+export async function submitDailyCheckInTx(
+  walletAddress: string,
+  campaignId?: number,
+  chainId?: number | null
+): Promise<{ txHash: string; campaignId: number; chainId: number }> {
+  const resolvedChainId = resolveStreakChainId(chainId);
+  const resolvedCampaignId =
+    campaignId ?? getStreakCampaignIdForChain(resolvedChainId);
+
+  const submitted = await checkInOnChain(resolvedCampaignId, {
+    chainId: resolvedChainId,
+    expectedWallet: walletAddress,
+  });
+
+  savePendingCheckInTx({
+    walletAddress,
+    txHash: submitted.txHash,
+    campaignId: resolvedCampaignId,
+    chainId: resolvedChainId,
+    savedAt: Date.now(),
+  });
+
+  return {
+    txHash: submitted.txHash,
+    campaignId: resolvedCampaignId,
+    chainId: resolvedChainId,
+  };
+}
+
+/** Sync a submitted check-in tx into a wallet session (no new on-chain tx). */
+export async function completeDailyCheckInSync(opts: {
+  walletAddress: string;
+  txHash: string;
+  campaignId?: number;
+  chainId?: number | null;
+}): Promise<StreakSyncResult> {
+  const resolvedChainId = resolveStreakChainId(opts.chainId);
+  const resolvedCampaignId =
+    opts.campaignId ?? getStreakCampaignIdForChain(resolvedChainId);
+
+  try {
+    return await syncStreakCheckIn({
+      walletAddress: opts.walletAddress,
+      txHash: opts.txHash,
+      campaignId: resolvedCampaignId,
+      chainId: resolvedChainId,
+    });
+  } catch (syncErr) {
+    try {
+      return await sessionFromExistingCheckIn(
+        opts.walletAddress,
+        resolvedCampaignId,
+        resolvedChainId,
+        opts.txHash
+      );
+    } catch {
+      throw attachTxHash(syncErr, opts.txHash);
+    }
+  }
+}
+
+/** Read a persisted pending tx for this wallet/campaign (if any). */
+export function getPendingDailyCheckInTx(
+  walletAddress: string,
+  campaignId?: number,
+  chainId?: number | null
+): string | null {
+  const resolvedChainId = resolveStreakChainId(chainId);
+  const resolvedCampaignId =
+    campaignId ?? getStreakCampaignIdForChain(resolvedChainId);
+  return (
+    readPendingCheckInTx(walletAddress, resolvedChainId, resolvedCampaignId)
+      ?.txHash ?? null
+  );
+}
+
+/**
+ * Best-effort recovery when a tx landed but the app never finished syncing.
+ * Tries pending tx sync, then on-chain status + session mint.
+ */
+export async function recoverPendingDailyCheckIn(
+  walletAddress: string,
+  campaignId?: number,
+  chainId?: number | null
+): Promise<StreakSyncResult | null> {
+  const resolvedChainId = resolveStreakChainId(chainId);
+  const resolvedCampaignId =
+    campaignId ?? getStreakCampaignIdForChain(resolvedChainId);
+
+  const pending = readPendingCheckInTx(
+    walletAddress,
+    resolvedChainId,
+    resolvedCampaignId
+  );
+  if (pending?.txHash) {
+    try {
+      return await completeDailyCheckInSync({
+        walletAddress,
+        txHash: pending.txHash,
+        campaignId: resolvedCampaignId,
+        chainId: resolvedChainId,
+      });
+    } catch {
+      // Fall through to status-based recovery.
+    }
+  }
+
+  try {
+    const status = await fetchStreakStatus(walletAddress, resolvedCampaignId, {
+      fresh: true,
+      chainId: resolvedChainId,
+    });
+    if (!status.canCheckIn && status.lastCheckInAt > 0) {
+      return await sessionFromExistingCheckIn(
+        walletAddress,
+        resolvedCampaignId,
+        resolvedChainId,
+        pending?.txHash
+      );
+    }
+  } catch {
+    // No recovery yet.
+  }
+
+  return null;
+}
+
+/**
  * Primary wallet sign-in: on-chain `checkIn` on ArcadeXRewards
  * (Base or Avalanche) + `/api/streak/sync` JWT.
  *
@@ -273,7 +449,8 @@ async function sessionFromExistingCheckIn(
 export async function performDailyCheckIn(
   walletAddress: string,
   campaignId?: number,
-  chainId?: number | null
+  chainId?: number | null,
+  opts?: { onTxSubmitted?: (txHash: string) => void }
 ): Promise<StreakSyncResult> {
   const resolvedChainId = resolveStreakChainId(chainId);
   const resolvedCampaignId =
@@ -302,38 +479,26 @@ export async function performDailyCheckIn(
 
   let txHash: string | undefined;
   try {
-    const submitted = await checkInOnChain(resolvedCampaignId, {
-      chainId: resolvedChainId,
-      expectedWallet: walletAddress,
-    });
+    const submitted = await submitDailyCheckInTx(
+      walletAddress,
+      resolvedCampaignId,
+      resolvedChainId
+    );
     txHash = submitted.txHash;
-    try {
-      return await syncStreakCheckIn({
-        walletAddress,
-        txHash,
-        campaignId: resolvedCampaignId,
-        chainId: resolvedChainId,
-      });
-    } catch (syncErr) {
-      // Tx is on-chain — mint session from progress even if sync verify flaked.
-      try {
-        return await sessionFromExistingCheckIn(
-          walletAddress,
-          resolvedCampaignId,
-          resolvedChainId
-        );
-      } catch {
-        const err = syncErr instanceof Error ? syncErr : new Error(String(syncErr));
-        (err as Error & { txHash?: string }).txHash = txHash;
-        throw err;
-      }
-    }
+    opts?.onTxSubmitted?.(txHash);
+    return await completeDailyCheckInSync({
+      walletAddress,
+      txHash,
+      campaignId: resolvedCampaignId,
+      chainId: resolvedChainId,
+    });
   } catch (err) {
     if (isAlreadyCheckedInError(err)) {
       return sessionFromExistingCheckIn(
         walletAddress,
         resolvedCampaignId,
-        resolvedChainId
+        resolvedChainId,
+        txHash
       );
     }
 
@@ -352,17 +517,15 @@ export async function performDailyCheckIn(
         return await sessionFromExistingCheckIn(
           walletAddress,
           resolvedCampaignId,
-          resolvedChainId
+          resolvedChainId,
+          txHash
         );
       }
     } catch {
       // Fall through to original error
     }
 
-    if (txHash && err instanceof Error) {
-      (err as Error & { txHash?: string }).txHash = txHash;
-    }
-    throw err;
+    throw attachTxHash(err, txHash);
   }
 }
 
@@ -373,27 +536,12 @@ export async function confirmExistingCheckIn(
   campaignId?: number,
   chainId?: number | null
 ): Promise<StreakSyncResult> {
-  const resolvedChainId = resolveStreakChainId(chainId);
-  const resolvedCampaignId =
-    campaignId ?? getStreakCampaignIdForChain(resolvedChainId);
-  try {
-    return await syncStreakCheckIn({
-      walletAddress,
-      txHash,
-      campaignId: resolvedCampaignId,
-      chainId: resolvedChainId,
-    });
-  } catch (syncErr) {
-    try {
-      return await sessionFromExistingCheckIn(
-        walletAddress,
-        resolvedCampaignId,
-        resolvedChainId
-      );
-    } catch {
-      throw syncErr;
-    }
-  }
+  return completeDailyCheckInSync({
+    walletAddress,
+    txHash,
+    campaignId,
+    chainId,
+  });
 }
 
 /** Alias — daily streak check-in is the app's wallet sign-in. */

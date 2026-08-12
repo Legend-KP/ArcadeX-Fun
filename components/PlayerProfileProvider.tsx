@@ -30,6 +30,8 @@ import { fetchDailyPlayConfig } from "@/lib/daily-play-config-client";
 import type { DailyPlayMode } from "@/lib/daily-play-mode";
 import {
   fetchStreakStatus,
+  getPendingDailyCheckInTx,
+  recoverPendingDailyCheckIn,
   refreshSessionFromCheckIn,
   type StreakStatus,
 } from "@/lib/streak-client";
@@ -151,6 +153,32 @@ export default function PlayerProfileProvider({
           config.mode === "shuffle"
             ? config.campaignId
             : getStreakCampaignIdForChain(resolvedChainId);
+
+        const pendingTx = getPendingDailyCheckInTx(
+          session.address,
+          campaignId,
+          resolvedChainId
+        );
+        if (pendingTx) {
+          try {
+            const recovered = await recoverPendingDailyCheckIn(
+              session.address,
+              campaignId,
+              resolvedChainId
+            );
+            if (recovered) {
+              const status = await fetchStreakStatus(session.address, campaignId, {
+                chainId: resolvedChainId,
+              });
+              setStreakStatus(status);
+              setShowDailyPlay(false);
+              return;
+            }
+          } catch (err) {
+            console.warn("[daily-play] pending tx recovery failed", err);
+          }
+        }
+
         const status = await fetchStreakStatus(session.address, campaignId, {
           chainId: resolvedChainId,
         });
@@ -162,7 +190,8 @@ export default function PlayerProfileProvider({
             await refreshSessionFromCheckIn(
               session.address,
               campaignId,
-              resolvedChainId
+              resolvedChainId,
+              pendingTx ?? undefined
             );
           } catch (err) {
             console.warn("[daily-play] session mint from check-in failed", err);

@@ -192,7 +192,7 @@ export function isGameVisible(game: Game): boolean {
 
 /** Public catalog fields only — strip anything admin-only if added later. */
 export function toPublicGame(game: Game): Game {
-  return {
+  const publicGame: Game = {
     id: game.id,
     name: game.name,
     thumbnail: game.thumbnail,
@@ -205,13 +205,21 @@ export function toPublicGame(game: Game): Game {
     hasLeaderboard: game.hasLeaderboard,
     order: game.order,
     createdAt: game.createdAt,
-    contestTask: game.contestTask,
-    contestLive: game.contestLive,
-    contestStartedAt: game.contestStartedAt,
-    contestEndsAt: game.contestEndsAt,
-    contestDurationDays: game.contestDurationDays,
     ...(game.chainContests ? { chainContests: game.chainContests } : {}),
   };
+
+  // Legacy top-level contest fields only when per-chain overlays aren't stored.
+  // Base contests also sync legacy fields for older paths — omit them here so
+  // clients can't show a Base/Vara contest on the wrong chain.
+  if (!game.chainContests) {
+    publicGame.contestTask = game.contestTask;
+    publicGame.contestLive = game.contestLive;
+    publicGame.contestStartedAt = game.contestStartedAt;
+    publicGame.contestEndsAt = game.contestEndsAt;
+    publicGame.contestDurationDays = game.contestDurationDays;
+  }
+
+  return publicGame;
 }
 
 export async function fetchGamesFromServer(): Promise<Game[]> {

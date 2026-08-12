@@ -15,6 +15,21 @@ export type DailyPlayNetworkCopy = {
   gasHint: string;
 };
 
+/** Block explorer URL for a daily check-in transaction hash. */
+export function getDailyCheckInTxExplorerUrl(
+  chainId: number | null | undefined,
+  txHash: string
+): string | null {
+  if (!txHash || !/^0x[a-fA-F0-9]{64}$/.test(txHash)) return null;
+  if (isVaraRewardsChainId(chainId)) {
+    return `https://vara.subscan.io/extrinsic/${txHash}`;
+  }
+  if (isAvalancheRewardsChainId(chainId)) {
+    return `https://snowtrace.io/tx/${txHash}`;
+  }
+  return `https://basescan.org/tx/${txHash}`;
+}
+
 /** UI copy for the daily streak / shuffle ceremony on each rewards network. */
 export function getDailyPlayNetworkCopy(
   chainId?: number | null

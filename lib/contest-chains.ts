@@ -5,6 +5,7 @@ import {
 } from "@/lib/rtdb-resolver";
 import type { WalletEcosystem } from "@/lib/player-identity";
 import {
+  gameHasContestLive,
   getContestStatus,
   type ChainContestState,
   type ContestChainKey,
@@ -103,6 +104,39 @@ export function applyContestForChain(
     contestEndsAt: contest.contestEndsAt,
     contestDurationDays: contest.contestDurationDays,
   };
+}
+
+/** Whether this game has an active contest on a specific chain. */
+export function gameHasContestLiveForChain(
+  game: Game,
+  chainKey: ContestChainKey,
+  now = Date.now()
+): boolean {
+  return gameHasContestLive(applyContestForChain(game, chainKey), now);
+}
+
+/** Chain-scoped contest live check from the player's connected chain. */
+export function gameHasContestLiveForSession(
+  game: Game,
+  opts: {
+    chainId?: number | null;
+    ecosystem?: WalletEcosystem | null;
+    chainKey?: string | null;
+    /** When true, hide contest UI until a chain/ecosystem is known. */
+    requireChain?: boolean;
+  },
+  now = Date.now()
+): boolean {
+  if (
+    opts.requireChain &&
+    opts.chainId == null &&
+    !opts.ecosystem &&
+    !opts.chainKey
+  ) {
+    return false;
+  }
+  const chainKey = resolveContestChainKey(opts);
+  return gameHasContestLiveForChain(game, chainKey, now);
 }
 
 export function resolveContestChainKey(opts: {

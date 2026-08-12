@@ -4,11 +4,13 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatChainError } from "@/lib/base-public-client";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
-import { getDailyPlayNetworkCopy } from "@/lib/daily-play-ui";
+import { getDailyPlayNetworkCopy, getDailyCheckInTxExplorerUrl } from "@/lib/daily-play-ui";
 import {
   confirmExistingCheckIn,
   fetchStreakStatus,
+  getPendingDailyCheckInTx,
   performDailyCheckIn,
+  recoverPendingDailyCheckIn,
   refreshSessionFromCheckIn,
   type StreakStatus,
 } from "@/lib/streak-client";
@@ -125,6 +127,9 @@ export default function DailyCheckInModal({
   onComplete,
 }: DailyCheckInModalProps) {
   const [loading, setLoading] = useState(false);
+  const [loadingPhase, setLoadingPhase] = useState<"wallet" | "sync" | null>(
+    null
+  );
   const [error, setError] = useState("");
   const [liveStatus, setLiveStatus] = useState<StreakStatus | null>(status);
   const [pendingTxHash, setPendingTxHash] = useState<string | null>(null);
@@ -140,15 +145,40 @@ export default function DailyCheckInModal({
     if (!open || !walletAddress || recoverAttemptedRef.current) return;
     recoverAttemptedRef.current = true;
 
+    const campaignId = status?.campaignId;
+    const storedPending = getPendingDailyCheckInTx(
+      walletAddress,
+      campaignId,
+      chainId
+    );
+    if (storedPending) {
+      setPendingTxHash(storedPending);
+    }
+
     // Parent already loaded a check-in-needed status — skip another fresh RPC.
-    if (status?.canCheckIn) {
+    if (status?.canCheckIn && !storedPending) {
       return;
     }
 
-    const campaignId = status?.campaignId;
     let cancelled = false;
     (async () => {
       try {
+        const recovered = await recoverPendingDailyCheckIn(
+          walletAddress,
+          campaignId,
+          chainId
+        );
+        if (cancelled) return;
+        if (recovered) {
+          setPendingTxHash(null);
+          onComplete({
+            day: recovered.day,
+            milestone: recovered.milestone,
+            infiniteSparkGranted: Boolean(recovered.reward?.granted),
+          });
+          return;
+        }
+
         const fresh = await fetchStreakStatus(walletAddress, campaignId, {
           fresh: true,
           chainId,
@@ -158,7 +188,12 @@ export default function DailyCheckInModal({
 
         if (!fresh.canCheckIn && fresh.lastCheckInAt > 0) {
           try {
-            await refreshSessionFromCheckIn(walletAddress, campaignId, chainId);
+            await refreshSessionFromCheckIn(
+              walletAddress,
+              campaignId,
+              chainId,
+              storedPending ?? undefined
+            );
           } catch {
             // Session mint is best-effort; still dismiss the ceremony.
           }
@@ -177,10 +212,25 @@ export default function DailyCheckInModal({
   useEffect(() => {
     if (!open) {
       recoverAttemptedRef.current = false;
-      setPendingTxHash(null);
       setError("");
+      setLoadingPhase(null);
     }
   }, [open]);
+
+  // Never trap the user on an endless "Confirming…" spinner.
+  useEffect(() => {
+    if (!loading) return;
+    const watchdog = window.setTimeout(() => {
+      setLoading(false);
+      setLoadingPhase(null);
+      setError(
+        pendingTxHash
+          ? "Sync is taking longer than expected. Tap Confirm check-in below — do not send another transaction."
+          : "Check-in is taking longer than expected. If your wallet already confirmed, wait a moment and tap the button again."
+      );
+    }, 75_000);
+    return () => window.clearTimeout(watchdog);
+  }, [loading, pendingTxHash]);
 
   if (!open || typeof document === "undefined") return null;
 
@@ -233,12 +283,19 @@ export default function DailyCheckInModal({
 
   async function handleCheckIn() {
     setLoading(true);
+    setLoadingPhase(pendingTxHash ? "sync" : "wallet");
     setError("");
     try {
       const result = await performDailyCheckIn(
         walletAddress,
         view?.campaignId ?? status?.campaignId,
-        chainId
+        chainId,
+        {
+          onTxSubmitted: (txHash) => {
+            setPendingTxHash(txHash);
+            setLoadingPhase("sync");
+          },
+        }
       );
       await finishWithResult({
         day: result.day,
@@ -249,13 +306,27 @@ export default function DailyCheckInModal({
       const maybeHash =
         err && typeof err === "object" && "txHash" in err
           ? String((err as { txHash?: string }).txHash ?? "")
-          : "";
+          : pendingTxHash ?? "";
       if (maybeHash && /^0x[a-fA-F0-9]{64}$/.test(maybeHash)) {
         setPendingTxHash(maybeHash);
       }
 
       // Tx may have landed even when the UI error path fired — recover session.
       try {
+        const recovered = await recoverPendingDailyCheckIn(
+          walletAddress,
+          view?.campaignId ?? status?.campaignId,
+          chainId
+        );
+        if (recovered) {
+          await finishWithResult({
+            day: recovered.day,
+            milestone: recovered.milestone,
+            infiniteSparkGranted: Boolean(recovered.reward?.granted),
+          });
+          return;
+        }
+
         const fresh = await fetchStreakStatus(
           walletAddress,
           view?.campaignId ?? status?.campaignId,
@@ -266,7 +337,8 @@ export default function DailyCheckInModal({
           await refreshSessionFromCheckIn(
             walletAddress,
             view?.campaignId ?? status?.campaignId,
-            chainId
+            chainId,
+            maybeHash || undefined
           );
           await finishWithResult({
             day: fresh.currentDay,
@@ -280,17 +352,19 @@ export default function DailyCheckInModal({
       }
       setError(
         isPaymentStillConfirmingError(err)
-          ? "Check-in submitted on-chain. Sync is catching up — tap Confirm check-in (do not send another tx)."
+          ? "Check-in submitted on-chain. Tap Confirm check-in below — do not send another tx."
           : formatChainError(err) || "Check-in failed. Try again."
       );
     } finally {
       setLoading(false);
+      setLoadingPhase(null);
     }
   }
 
   async function handleConfirmPendingTx() {
     if (!pendingTxHash) return;
     setLoading(true);
+    setLoadingPhase("sync");
     setError("");
     try {
       const result = await confirmExistingCheckIn(
@@ -306,6 +380,20 @@ export default function DailyCheckInModal({
       });
     } catch (err) {
       try {
+        const recovered = await recoverPendingDailyCheckIn(
+          walletAddress,
+          view?.campaignId ?? status?.campaignId,
+          chainId
+        );
+        if (recovered) {
+          await finishWithResult({
+            day: recovered.day,
+            milestone: recovered.milestone,
+            infiniteSparkGranted: Boolean(recovered.reward?.granted),
+          });
+          return;
+        }
+
         const fresh = await fetchStreakStatus(
           walletAddress,
           view?.campaignId ?? status?.campaignId,
@@ -316,7 +404,8 @@ export default function DailyCheckInModal({
           await refreshSessionFromCheckIn(
             walletAddress,
             view?.campaignId ?? status?.campaignId,
-            chainId
+            chainId,
+            pendingTxHash
           );
           await finishWithResult({
             day: fresh.currentDay,
@@ -335,8 +424,25 @@ export default function DailyCheckInModal({
       );
     } finally {
       setLoading(false);
+      setLoadingPhase(null);
     }
   }
+
+  const txExplorerUrl = pendingTxHash
+    ? getDailyCheckInTxExplorerUrl(chainId, pendingTxHash)
+    : null;
+  const loadingLabel =
+    loadingPhase === "wallet"
+      ? "Approve in your wallet…"
+      : loadingPhase === "sync"
+        ? "Syncing check-in…"
+        : "Confirming…";
+  const loadingSubLabel =
+    loadingPhase === "wallet"
+      ? `Confirm the ${chainLabel} transaction`
+      : pendingTxHash
+        ? `Verifying tx on ${explorerName}`
+        : `Syncing your ${chainLabel} check-in`;
 
   return createPortal(
     <div className="player-modal-backdrop" role="dialog" aria-modal="true">
@@ -442,7 +548,18 @@ export default function DailyCheckInModal({
         {pendingTxHash && !loading ? (
           <p className="daily-checkin-streak-hint" style={{ marginBottom: 10 }}>
             Tx {pendingTxHash.slice(0, 10)}…{pendingTxHash.slice(-8)} is on{" "}
-            {chainLabel}. Confirm below — do not check in again.
+            {chainLabel}.{" "}
+            {txExplorerUrl ? (
+              <a
+                href={txExplorerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="daily-checkin-sub-accent"
+              >
+                View on {explorerName}
+              </a>
+            ) : null}{" "}
+            Confirm below — do not check in again.
           </p>
         ) : null}
 
@@ -465,7 +582,7 @@ export default function DailyCheckInModal({
           <span className="daily-checkin-btn-main">
             <ShieldCheckIcon />
             {loading
-              ? "Confirming…"
+              ? loadingLabel
               : alreadyCheckedInToday
                 ? "Continue"
                 : pendingTxHash
@@ -474,7 +591,7 @@ export default function DailyCheckInModal({
           </span>
           <span className="daily-checkin-btn-sub">
             {loading
-              ? `Syncing your ${chainLabel} check-in`
+              ? loadingSubLabel
               : alreadyCheckedInToday
                 ? "Come back tomorrow"
                 : pendingTxHash

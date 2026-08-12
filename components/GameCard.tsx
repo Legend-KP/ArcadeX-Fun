@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { usePlayerProfile } from "@/components/PlayerProfileProvider";
+import { gameHasContestLiveForSession } from "@/lib/contest-chains";
 import { gameAssetCandidates, gameFallbackCandidates } from "@/lib/game-assets";
 import { formatPlayCount } from "@/lib/format-play-count";
-import { Game, gameHasContestLive, gameIsLive } from "@/types";
+import { Game, gameIsLive } from "@/types";
 
 interface GameCardProps {
   game: Game;
@@ -12,8 +14,13 @@ interface GameCardProps {
 }
 
 export default function GameCard({ game, playCount = 0 }: GameCardProps) {
+  const { chainId, ecosystem, isAuthenticated } = usePlayerProfile();
   const isLive = gameIsLive(game);
-  const contestLive = gameHasContestLive(game);
+  const contestLive = gameHasContestLiveForSession(game, {
+    chainId,
+    ecosystem,
+    requireChain: !isAuthenticated,
+  });
 
   const thumbCandidates = useMemo(
     () => gameAssetCandidates(game, "thumbnail"),
