@@ -76,6 +76,14 @@ export interface Game {
    * Top-level contest* fields remain as Base legacy / summary.
    */
   chainContests?: Partial<Record<ContestChainKey, ChainContestState>>;
+  /**
+   * Optional score integrity bounds (server-side only; not exposed in public catalog).
+   * Soft-logged by default; hard-reject when SCORE_BOUNDS_ENFORCE=true.
+   */
+  scoreBounds?: {
+    maxPossibleScore?: number;
+    minTimeToMaxMs?: number;
+  };
 }
 
 /** Chains that support dedicated contest + leaderboard databases. */

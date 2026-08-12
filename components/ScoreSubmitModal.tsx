@@ -53,6 +53,7 @@ interface ScoreSubmitModalProps {
   score: number;
   playerName: string;
   walletAddress: string;
+  playSessionId: string;
   /** When true, paid score also counts on the live contest board. */
   contestLive?: boolean;
   onClose: () => void;
@@ -78,6 +79,7 @@ async function confirmScoreSubmitWithRetries(params: {
   txHash: Hash;
   tokenAddress: string;
   chainId: number;
+  playSessionId: string;
 }): Promise<number> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -93,6 +95,7 @@ async function confirmScoreSubmitWithRetries(params: {
         tokenAddress: params.tokenAddress,
         ecosystem: "evm",
         chainId: params.chainId,
+        playSessionId: params.playSessionId,
       });
       clearPendingScoreSubmitTx();
       return submittedBest;
@@ -121,6 +124,7 @@ export default function ScoreSubmitModal({
   score,
   playerName,
   walletAddress,
+  playSessionId,
   contestLive = false,
   onClose,
   onSuccess,
@@ -312,6 +316,7 @@ export default function ScoreSubmitModal({
           txHash: hash,
           tokenAddress: token.address,
           chainId: targetChainId,
+          playSessionId,
         });
         onSuccess(submittedBest);
         onClose();
@@ -332,6 +337,7 @@ export default function ScoreSubmitModal({
       address,
       walletAddress,
       playerName,
+      playSessionId,
       onSuccess,
       onClose,
       networkLabel,

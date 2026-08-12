@@ -9,6 +9,12 @@ import {
   playPurposeKeccak,
 } from "@/lib/arcadex-tx-hub";
 import { verifyArcadeXTxHubSignIn } from "@/lib/arcadex-tx-hub-server";
+import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
+import { getTxVerifyCache, setTxVerifyCache } from "@/lib/tx-verify-cache";
 import type { Hash } from "viem";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +40,18 @@ export async function POST(request: Request) {
       );
     }
 
+    const ip = getClientIp(request);
+    if (
+      !(await checkRateLimit(
+        `txhub-signin:player:${session.playerId}`,
+        10,
+        60_000
+      )) ||
+      !(await checkRateLimit(`txhub-signin:ip:${ip}`, 20, 60_000))
+    ) {
+      return rateLimitResponse();
+    }
+
     const body = (await request.json()) as {
       txHash?: string;
       gameId?: string;
@@ -56,11 +74,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const verified = await verifyArcadeXTxHubSignIn({
-      txHash: txHash as Hash,
-      expectedFrom: session.address,
-      gameId,
-    });
+    const cacheKey = `base-txhub:${txHash.toLowerCase()}:${session.address.toLowerCase()}:${gameId}`;
+    type Verified = Awaited<ReturnType<typeof verifyArcadeXTxHubSignIn>>;
+    let verified = getTxVerifyCache<Verified>(cacheKey);
+    if (!verified) {
+      verified = await verifyArcadeXTxHubSignIn({
+        txHash: txHash as Hash,
+        expectedFrom: session.address,
+        gameId,
+      });
+      setTxVerifyCache(cacheKey, verified);
+    }
 
     const { reused } = await recordBaseTxHubSignInOnServer({
       walletAddress: session.address,

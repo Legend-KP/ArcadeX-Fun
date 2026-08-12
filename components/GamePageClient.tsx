@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useSignMessage } from "wagmi";
 import { Game, gameHasLeaderboard, gameIsLive } from "@/types";
 import GameClient from "@/components/GameClient";
 import GameMenu from "@/components/GameMenu";
@@ -17,6 +18,8 @@ import { verifyBasePlaySignIn } from "@/lib/arcadex-tx-hub-api";
 import { isVaraTxHubConfigured } from "@/lib/vara-tx-hub";
 import { signInOnVaraTxHub } from "@/lib/vara-tx-hub-client";
 import { verifyVaraPlaySignIn } from "@/lib/vara-tx-hub-api";
+import { shouldRequireAvalanchePlayGate } from "@/lib/avalanche-play-gate";
+import { signAvalanchePlayIntent } from "@/lib/avalanche-play-gate-client";
 
 export default function GamePageClient() {
   const { id } = useParams<{ id: string }>();
@@ -31,8 +34,10 @@ export default function GamePageClient() {
     chainId,
   } = usePlayerProfile();
   const { sparks, spendForGame } = useSparks();
+  const { signMessageAsync } = useSignMessage();
   const [game, setGame] = useState<Game | null>(null);
   const [started, setStarted] = useState(false);
+  const [playSessionId, setPlaySessionId] = useState<string | null>(null);
   const [lbOpen, setLbOpen] = useState(false);
   const [lbMode, setLbMode] = useState<LeaderboardMode>("default");
   const [loading, setLoading] = useState(true);
@@ -124,6 +129,8 @@ export default function GamePageClient() {
 
     setSpending(true);
     try {
+      let playGate: { message: string; signature: string } | undefined;
+
       if (ecosystem === "vara") {
         if (!isVaraTxHubConfigured()) {
           throw new Error(
@@ -149,9 +156,22 @@ export default function GamePageClient() {
         setSparkError("Confirming sign-in…");
         await verifyBasePlaySignIn({ txHash, gameId: game.id });
         setSparkError("");
+      } else if (shouldRequireAvalanchePlayGate({ ecosystem, chainId })) {
+        setSparkError("Sign play intent in your wallet…");
+        playGate = await signAvalanchePlayIntent({
+          gameId: game.id,
+          address: walletAddress,
+          chainId: chainId ?? undefined,
+          signMessageAsync,
+        });
+        setSparkError("");
       }
 
-      await spendForGame();
+      const { playSessionId: sessionId } = await spendForGame({
+        gameId: game.id,
+        playGate,
+      });
+      setPlaySessionId(sessionId);
       setStarted(true);
     } catch (err) {
       if (err instanceof SparkClientError && err.code === "NO_SPARKS") {
@@ -175,7 +195,7 @@ export default function GamePageClient() {
 
   return (
     <>
-      {!started ? (
+      {!started || !playSessionId ? (
         <GameMenu
           game={game}
           onStart={handleStart}
@@ -186,6 +206,7 @@ export default function GamePageClient() {
       ) : (
         <GameClient
           game={game}
+          playSessionId={playSessionId}
           onScoreSubmitted={() => openLeaderboard("postSubmit")}
         />
       )}

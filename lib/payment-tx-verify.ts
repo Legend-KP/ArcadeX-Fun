@@ -33,7 +33,12 @@ function collectErrorText(error: unknown): string {
 
 export function isPaymentStillConfirmingError(error: unknown): boolean {
   const message = collectErrorText(error).toLowerCase();
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "").toLowerCase()
+      : "";
   return (
+    code === "payment_confirming" ||
     isBlockOutOfRangeError(error) ||
     message.includes("could not be found") ||
     message.includes("not be found") ||

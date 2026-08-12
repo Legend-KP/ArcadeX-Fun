@@ -1,7 +1,9 @@
 import { fetchGameFromServer } from "@/lib/firestore-server";
 import {
   fetchUserFromServer,
-  isScoreSubmitTxProcessed,
+  claimScoreSubmitTxOnServer,
+  confirmScoreSubmitTxOnServer,
+  releaseScoreSubmitTxClaimOnServer,
   submitPublicScoreOnServer,
   ShopPurchaseError,
 } from "@/lib/rtdb-server";
@@ -18,8 +20,6 @@ import { verifyScoreSubmitPayment } from "@/lib/score-submit-server";
 import {
   isValidAddress,
   normalizeAddress,
-  parsePlayerId,
-  resolvePlayerId,
   type WalletEcosystem,
 } from "@/lib/player-identity";
 import { readSessionFromCookies } from "@/lib/auth-session";
@@ -32,21 +32,22 @@ import {
   applyContestForChain,
   resolveContestChainKey,
 } from "@/lib/contest-chains";
+import {
+  evaluateScoreAnomaly,
+  shouldEnforceScoreBounds,
+} from "@/lib/play-session";
+import {
+  assertPlaySessionActive,
+  consumePlaySessionOnServer,
+  flagAnomalousScoreOnServer,
+  PlaySessionError,
+} from "@/lib/play-session-server";
+import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
 
 export const dynamic = "force-dynamic";
 
 export async function OPTIONS(request: Request) {
   return handleCorsPreflightRequest(request);
-}
-
-function resolveEcosystem(body: {
-  ecosystem?: WalletEcosystem;
-  walletAddress?: string;
-}): WalletEcosystem {
-  if (body.ecosystem) return body.ecosystem;
-  const playerId = resolvePlayerId(body.walletAddress ?? "");
-  const parsed = playerId ? parsePlayerId(playerId) : null;
-  return parsed?.ecosystem ?? "evm";
 }
 
 export async function POST(
@@ -80,6 +81,25 @@ export async function POST(
       );
     }
 
+    const session = await readSessionFromCookies();
+    if (!session) {
+      return corsJsonResponse(
+        request,
+        { error: "Sign in to submit a score.", code: "NO_SESSION" },
+        { status: 401 }
+      );
+    }
+
+    if (
+      !(await checkRateLimit(
+        `score-submit:player:${session.playerId}`,
+        20,
+        60_000
+      ))
+    ) {
+      return rateLimitResponse();
+    }
+
     const game = await fetchGameFromServer(id);
     if (!game || !gameHasLeaderboard(game)) {
       return corsJsonResponse(
@@ -95,6 +115,7 @@ export async function POST(
       ecosystem?: WalletEcosystem;
       playerName?: string;
       chainId?: number;
+      playSessionId?: string;
     };
 
     const score = body.score;
@@ -115,21 +136,86 @@ export async function POST(
       );
     }
 
-    const ecosystem = resolveEcosystem(body);
-    const rawWallet = body.walletAddress?.trim() ?? "";
-    if (!isValidAddress(ecosystem, rawWallet)) {
+    const playSessionId = body.playSessionId?.trim() ?? "";
+    if (!playSessionId) {
       return corsJsonResponse(
         request,
-        { error: "walletAddress is required." },
+        {
+          error: "playSessionId is required. Start the game again.",
+          code: "NO_PLAY_SESSION",
+        },
         { status: 400 }
       );
     }
-    const wallet = normalizeAddress(ecosystem, rawWallet);
-    const session = await readSessionFromCookies();
+
+    // Bind identity from authenticated session — never trust client wallet for verify.
+    const ecosystem = session.ecosystem;
+    const wallet = normalizeAddress(ecosystem, session.address);
     const chainId =
-      typeof body.chainId === "number" && Number.isFinite(body.chainId)
-        ? body.chainId
-        : session?.chainId;
+      typeof session.chainId === "number" && Number.isFinite(session.chainId)
+        ? session.chainId
+        : typeof body.chainId === "number" && Number.isFinite(body.chainId)
+          ? body.chainId
+          : undefined;
+
+    // Optional sanity cross-check against client-supplied wallet.
+    const rawWallet = body.walletAddress?.trim() ?? "";
+    if (rawWallet && isValidAddress(ecosystem, rawWallet)) {
+      const clientWallet = normalizeAddress(ecosystem, rawWallet);
+      if (clientWallet !== wallet) {
+        return corsJsonResponse(
+          request,
+          {
+            error: "Wallet does not match your signed-in session.",
+            code: "WALLET_MISMATCH",
+          },
+          { status: 403 }
+        );
+      }
+    }
+
+    const playSession = await assertPlaySessionActive({
+      playSessionId,
+      playerId: session.playerId,
+      gameId: id,
+      chainId,
+      ecosystem,
+    });
+
+    const anomaly = evaluateScoreAnomaly({
+      score,
+      scoreBounds: game.scoreBounds,
+      sessionStartedAt: playSession.startedAt,
+    });
+    if (anomaly.flagged) {
+      await flagAnomalousScoreOnServer({
+        gameId: id,
+        playerId: session.playerId,
+        score,
+        playSessionId,
+        reasons: anomaly.reasons,
+        scoreBounds: game.scoreBounds,
+        sessionStartedAt: playSession.startedAt,
+        elapsedMs: Date.now() - playSession.startedAt,
+        chainId,
+        ecosystem,
+        source: "leaderboard_submit",
+      }).catch(() => {
+        // Flagging is best-effort
+      });
+
+      if (shouldEnforceScoreBounds()) {
+        return corsJsonResponse(
+          request,
+          {
+            error: "Score failed integrity checks.",
+            code: "SCORE_ANOMALY",
+            reasons: anomaly.reasons,
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     let name = body.name?.trim() || body.playerName?.trim() || "";
     if (!name) {
@@ -150,24 +236,62 @@ export async function POST(
 
     const contestChainKey = resolveContestChainKey({
       chainId,
-      ecosystem: session?.ecosystem ?? ecosystem,
+      ecosystem,
     });
     const chainGame = applyContestForChain(game, contestChainKey);
 
-    const alreadyProcessed = await isScoreSubmitTxProcessed({
+    const claim = await claimScoreSubmitTxOnServer({
       txHash,
       gameId: id,
       walletAddress: wallet,
+      playerId: session.playerId,
       ecosystem: shopEcosystem,
       chainId,
     });
 
-    if (!alreadyProcessed) {
-      await verifyScoreSubmitPayment({
-        ecosystem,
+    if (claim.outcome === "conflict") {
+      return corsJsonResponse(
+        request,
+        {
+          error: "This transaction was already used.",
+          code: "TX_ALREADY_USED",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (claim.outcome !== "already_confirmed") {
+      const canReleaseClaim = claim.outcome === "claimed";
+      try {
+        await verifyScoreSubmitPayment({
+          ecosystem,
+          txHash,
+          tokenAddress: body.tokenAddress,
+          expectedFrom: wallet,
+          chainId,
+        });
+      } catch (err) {
+        if (isPaymentStillConfirmingError(err)) {
+          // Leave pending claim so concurrent retries serialize on the same hash.
+          throw err;
+        }
+        if (canReleaseClaim) {
+          await releaseScoreSubmitTxClaimOnServer({
+            txHash,
+            ecosystem: shopEcosystem,
+            chainId,
+            reason: err instanceof Error ? err.message : "verify_failed",
+          });
+        }
+        throw err;
+      }
+
+      await confirmScoreSubmitTxOnServer({
         txHash,
-        tokenAddress: body.tokenAddress,
-        expectedFrom: wallet,
+        gameId: id,
+        walletAddress: wallet,
+        playerId: session.playerId,
+        ecosystem: shopEcosystem,
         chainId,
       });
     }
@@ -191,6 +315,17 @@ export async function POST(
       ecosystem: shopEcosystem,
       contestStartedAt,
       chainId,
+      skipClaimWrite: true,
+    });
+
+    await consumePlaySessionOnServer({
+      playSessionId,
+      playerId: session.playerId,
+      gameId: id,
+      chainId,
+      ecosystem,
+    }).catch(() => {
+      // Score already credited; consume is best-effort
     });
 
     return corsJsonResponse(request, {
@@ -199,11 +334,33 @@ export async function POST(
       score,
     });
   } catch (err) {
+    if (err instanceof PlaySessionError) {
+      return corsJsonResponse(
+        request,
+        { error: err.message, code: err.code },
+        { status: 400 }
+      );
+    }
+
     if (err instanceof ShopPurchaseError) {
       return corsJsonResponse(
         request,
         { error: err.message, code: err.code },
         { status: 400 }
+      );
+    }
+
+    if (isPaymentStillConfirmingError(err)) {
+      return corsJsonResponse(
+        request,
+        {
+          error:
+            err instanceof Error
+              ? err.message
+              : "Payment is still confirming.",
+          code: "PAYMENT_CONFIRMING",
+        },
+        { status: 409 }
       );
     }
 

@@ -49,8 +49,13 @@ export async function fetchSparkData(
 
 export async function spendSpark(
   playerId: string,
-  opts?: { chainId?: number; ecosystem?: string }
-): Promise<SparkApiResponse> {
+  opts?: {
+    chainId?: number;
+    ecosystem?: string;
+    gameId?: string;
+    playGate?: { message: string; signature: string };
+  }
+): Promise<SparkApiResponse & { playSessionId?: string }> {
   const res = await fetch("/api/sparks/spend", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -58,10 +63,13 @@ export async function spendSpark(
       playerId,
       chainId: opts?.chainId,
       ecosystem: opts?.ecosystem,
+      gameId: opts?.gameId,
+      playGate: opts?.playGate,
     }),
   });
 
   const data = (await res.json()) as SparkApiResponse & {
+    playSessionId?: string;
     error?: string;
     code?: string;
   };

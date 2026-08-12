@@ -95,6 +95,20 @@ function docToGame(doc: FirestoreDocument): Game {
       | Game["contestDurationDays"]
       | undefined,
     ...(Object.keys(chainContests).length > 0 ? { chainContests } : {}),
+    ...((): { scoreBounds?: Game["scoreBounds"] } => {
+      const raw = parseField(fields.scoreBounds) as
+        | Record<string, unknown>
+        | undefined;
+      if (!raw || typeof raw !== "object") return {};
+      const maxPossibleScore =
+        typeof raw.maxPossibleScore === "number"
+          ? raw.maxPossibleScore
+          : undefined;
+      const minTimeToMaxMs =
+        typeof raw.minTimeToMaxMs === "number" ? raw.minTimeToMaxMs : undefined;
+      if (maxPossibleScore == null && minTimeToMaxMs == null) return {};
+      return { scoreBounds: { maxPossibleScore, minTimeToMaxMs } };
+    })(),
   };
 }
 
@@ -244,7 +258,7 @@ export async function fetchGameFromServer(id: string): Promise<Game | null> {
 export { invalidateGameCache };
 
 export async function createGameOnServer(
-  data: Omit<Game, "id" | "createdAt" | "chainContests">
+  data: Omit<Game, "id" | "createdAt" | "chainContests" | "scoreBounds">
 ): Promise<string> {
   const existing = sortGames((await listDocuments("games")).map(docToGame));
   const hasCustomOrder = existing.some((game) => game.order != null);
@@ -284,7 +298,7 @@ export async function createGameOnServer(
 
 export async function updateGameOnServer(
   id: string,
-  data: Partial<Omit<Game, "id" | "chainContests">>
+  data: Partial<Omit<Game, "id" | "chainContests" | "scoreBounds">>
 ): Promise<void> {
   const keys = Object.keys(data);
   if (keys.length === 0) return;

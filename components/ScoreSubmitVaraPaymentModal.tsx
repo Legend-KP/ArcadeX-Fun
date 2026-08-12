@@ -28,6 +28,7 @@ interface ScoreSubmitVaraPaymentModalProps {
   score: number;
   playerName: string;
   walletAddress: string;
+  playSessionId: string;
   /** When true, paid score also counts on the live contest board. */
   contestLive?: boolean;
   onClose: () => void;
@@ -51,6 +52,7 @@ async function confirmScoreSubmitWithRetries(params: {
   playerName: string;
   txHash: string;
   tokenAddress: string;
+  playSessionId: string;
 }): Promise<number> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -66,6 +68,7 @@ async function confirmScoreSubmitWithRetries(params: {
         tokenAddress: params.tokenAddress,
         ecosystem: "vara",
         chainId: VARA_CHAIN_ID,
+        playSessionId: params.playSessionId,
       });
       clearPendingScoreSubmitTx();
       return submittedBest;
@@ -94,6 +97,7 @@ export default function ScoreSubmitVaraPaymentModal({
   score,
   playerName,
   walletAddress,
+  playSessionId,
   contestLive = false,
   onClose,
   onSuccess,
@@ -182,6 +186,7 @@ export default function ScoreSubmitVaraPaymentModal({
           playerName,
           txHash: hash,
           tokenAddress: token.programId,
+          playSessionId,
         });
         onSuccess(submittedBest);
         onClose();
@@ -199,7 +204,7 @@ export default function ScoreSubmitVaraPaymentModal({
         setBusy(false);
       }
     },
-    [gameId, score, walletAddress, playerName, onSuccess, onClose]
+    [gameId, score, walletAddress, playerName, playSessionId, onSuccess, onClose]
   );
 
   useEffect(() => {

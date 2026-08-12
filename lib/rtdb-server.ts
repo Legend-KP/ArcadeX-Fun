@@ -684,6 +684,38 @@ export async function submitContestLeaderboardEntryOnServer(
   );
 }
 
+type ShopPurchaseEcosystem = "evm" | "sui" | "vara";
+
+export class ShopPurchaseError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string
+  ) {
+    super(message);
+    this.name = "ShopPurchaseError";
+  }
+}
+
+function normalizeShopTxKey(
+  ecosystem: ShopPurchaseEcosystem,
+  txHash: string
+): string {
+  const trimmed = txHash.trim();
+  if (ecosystem === "evm" || ecosystem === "vara") {
+    const key = trimmed.toLowerCase();
+    if (!/^0x[0-9a-f]{64}$/.test(key)) {
+      throw new ShopPurchaseError("Invalid transaction hash.", "INVALID_TX");
+    }
+    return key;
+  }
+
+  if (!/^[1-9A-HJ-NP-Za-km-z]{43,90}$/.test(trimmed)) {
+    throw new ShopPurchaseError("Invalid transaction digest.", "INVALID_TX");
+  }
+
+  return trimmed;
+}
+
 function processedScoreSubmitTxPath(
   ecosystem: ShopPurchaseEcosystem,
   txKey: string
@@ -692,6 +724,217 @@ function processedScoreSubmitTxPath(
     return `scoreSubmit/processedTxs/${txKey}`;
   }
   return `scoreSubmit/processedTxs/${ecosystem}/${txKey}`;
+}
+
+type ScoreSubmitClaimStatus = "pending" | "confirmed" | "failed";
+
+type ScoreSubmitClaimRecord = {
+  status: ScoreSubmitClaimStatus;
+  /** Normalized wallet for claimGuard-style matching. */
+  wallet: string;
+  walletAddress: string;
+  gameId: string;
+  claimedBy: string;
+  claimedAt: number;
+  processedAt?: number;
+  failedAt?: number;
+  failReason?: string;
+};
+
+export type ScoreSubmitClaimOutcome =
+  | { outcome: "claimed"; record: ScoreSubmitClaimRecord }
+  | { outcome: "pending_same"; record: ScoreSubmitClaimRecord }
+  | { outcome: "already_confirmed"; record: ScoreSubmitClaimRecord }
+  | { outcome: "conflict" };
+
+/**
+ * Optimistic lock: claim tx hash BEFORE on-chain verify.
+ * Concurrent retries of the same hash are serialized via ETag transaction.
+ */
+export async function claimScoreSubmitTxOnServer(params: {
+  txHash: string;
+  gameId: string;
+  walletAddress: string;
+  playerId: string;
+  ecosystem?: ShopPurchaseEcosystem;
+  chainId?: number | null;
+}): Promise<ScoreSubmitClaimOutcome> {
+  const ecosystem = params.ecosystem ?? "evm";
+  const txKey = normalizeShopTxKey(ecosystem, params.txHash);
+  const processedPath = processedScoreSubmitTxPath(ecosystem, txKey);
+  const connection = leaderboardConnection({
+    chainId: params.chainId,
+    ecosystem,
+  });
+  const wallet = params.walletAddress.trim();
+  const now = Date.now();
+
+  let claimed: ScoreSubmitClaimRecord | null = null;
+  let pendingSame: ScoreSubmitClaimRecord | null = null;
+  let alreadyConfirmed: ScoreSubmitClaimRecord | null = null;
+  let conflict = false;
+
+  const { committed } = await runRtdbTransaction<ScoreSubmitClaimRecord>(
+    processedPath,
+    (current) => {
+      if (!current) {
+        const record: ScoreSubmitClaimRecord = {
+          status: "pending",
+          wallet,
+          walletAddress: wallet,
+          gameId: params.gameId,
+          claimedBy: params.playerId,
+          claimedAt: now,
+        };
+        claimed = record;
+        return record;
+      }
+
+      const sameWallet =
+        (current.wallet || current.walletAddress || "").trim() === wallet;
+      const sameGame = current.gameId === params.gameId;
+
+      if (!sameWallet || !sameGame) {
+        conflict = true;
+        return undefined;
+      }
+
+      // Legacy markers (no status) treated as confirmed.
+      if (!current.status || current.status === "confirmed") {
+        alreadyConfirmed = {
+          ...current,
+          status: "confirmed",
+          wallet: current.wallet || wallet,
+          walletAddress: current.walletAddress || wallet,
+          claimedBy: current.claimedBy || params.playerId,
+          claimedAt: current.claimedAt || current.processedAt || now,
+        };
+        return undefined;
+      }
+
+      if (current.status === "pending") {
+        pendingSame = current;
+        return undefined;
+      }
+
+      // failed → allow re-claim
+      const record: ScoreSubmitClaimRecord = {
+        status: "pending",
+        wallet,
+        walletAddress: wallet,
+        gameId: params.gameId,
+        claimedBy: params.playerId,
+        claimedAt: now,
+      };
+      claimed = record;
+      return record;
+    },
+    RTDB_TRANSACTION_MAX_RETRIES,
+    connection
+  );
+
+  if (claimed && committed) {
+    return { outcome: "claimed", record: claimed };
+  }
+  if (alreadyConfirmed) {
+    return { outcome: "already_confirmed", record: alreadyConfirmed };
+  }
+  if (pendingSame) {
+    return { outcome: "pending_same", record: pendingSame };
+  }
+  if (conflict) {
+    return { outcome: "conflict" };
+  }
+
+  throw new ShopPurchaseError(
+    "Failed to claim score-submit transaction.",
+    "CLAIM_FAILED"
+  );
+}
+
+export async function confirmScoreSubmitTxOnServer(params: {
+  txHash: string;
+  gameId: string;
+  walletAddress: string;
+  playerId: string;
+  ecosystem?: ShopPurchaseEcosystem;
+  chainId?: number | null;
+}): Promise<void> {
+  const ecosystem = params.ecosystem ?? "evm";
+  const txKey = normalizeShopTxKey(ecosystem, params.txHash);
+  const processedPath = processedScoreSubmitTxPath(ecosystem, txKey);
+  const connection = leaderboardConnection({
+    chainId: params.chainId,
+    ecosystem,
+  });
+  const wallet = params.walletAddress.trim();
+  const now = Date.now();
+
+  await runRtdbTransaction<ScoreSubmitClaimRecord>(
+    processedPath,
+    (current) => {
+      if (!current) {
+        return {
+          status: "confirmed",
+          wallet,
+          walletAddress: wallet,
+          gameId: params.gameId,
+          claimedBy: params.playerId,
+          claimedAt: now,
+          processedAt: now,
+        };
+      }
+      return {
+        ...current,
+        status: "confirmed",
+        wallet: current.wallet || wallet,
+        walletAddress: current.walletAddress || wallet,
+        gameId: params.gameId,
+        claimedBy: current.claimedBy || params.playerId,
+        processedAt: now,
+      };
+    },
+    RTDB_TRANSACTION_MAX_RETRIES,
+    connection
+  );
+}
+
+/** Release a pending claim after hard verification failure so retries aren't stuck. */
+export async function releaseScoreSubmitTxClaimOnServer(params: {
+  txHash: string;
+  ecosystem?: ShopPurchaseEcosystem;
+  chainId?: number | null;
+  reason?: string;
+}): Promise<void> {
+  const ecosystem = params.ecosystem ?? "evm";
+  let txKey: string;
+  try {
+    txKey = normalizeShopTxKey(ecosystem, params.txHash);
+  } catch {
+    return;
+  }
+  const processedPath = processedScoreSubmitTxPath(ecosystem, txKey);
+  const connection = leaderboardConnection({
+    chainId: params.chainId,
+    ecosystem,
+  });
+
+  await runRtdbTransaction<ScoreSubmitClaimRecord>(
+    processedPath,
+    (current) => {
+      if (!current || current.status === "confirmed") {
+        return undefined;
+      }
+      return {
+        ...current,
+        status: "failed",
+        failedAt: Date.now(),
+        failReason: params.reason?.slice(0, 200),
+      };
+    },
+    RTDB_TRANSACTION_MAX_RETRIES,
+    connection
+  );
 }
 
 /** Fast path for client retries — skip on-chain verify when tx was already accepted. */
@@ -713,7 +956,7 @@ export async function isScoreSubmitTxProcessed(params: {
     chainId: params.chainId,
     ecosystem,
   });
-  const existing = await rtdbRead<{ gameId: string; walletAddress?: string }>(
+  const existing = await rtdbRead<ScoreSubmitClaimRecord>(
     processedScoreSubmitTxPath(ecosystem, txKey),
     undefined,
     connection
@@ -726,6 +969,8 @@ export async function isScoreSubmitTxProcessed(params: {
   ) {
     return false;
   }
+  // Legacy markers without status count as confirmed.
+  if (existing.status && existing.status !== "confirmed") return false;
   return true;
 }
 
@@ -736,43 +981,24 @@ export async function submitPublicScoreOnServer(params: {
   ecosystem?: ShopPurchaseEcosystem;
   contestStartedAt?: number;
   chainId?: number | null;
+  /** When true, skip claim write (already confirmed via claimScoreSubmitTxOnServer). */
+  skipClaimWrite?: boolean;
 }): Promise<{ submittedBest: number }> {
   const ecosystem = params.ecosystem ?? "evm";
-  const txKey = normalizeShopTxKey(ecosystem, params.txHash);
-  const processedPath = processedScoreSubmitTxPath(ecosystem, txKey);
   const scope: LeaderboardChainScope = {
     chainId: params.chainId,
     ecosystem,
   };
-  const connection = leaderboardConnection(scope);
 
-  const existing = await rtdbRead<{ gameId: string; walletAddress?: string }>(
-    processedPath,
-    undefined,
-    connection
-  );
-  if (existing) {
-    if (
-      existing.gameId !== params.gameId ||
-      (existing.walletAddress &&
-        params.entry.walletAddress &&
-        existing.walletAddress !== params.entry.walletAddress.trim())
-    ) {
-      throw new ShopPurchaseError(
-        "This transaction was already used.",
-        "TX_ALREADY_USED"
-      );
-    }
-  } else {
-    await rtdbWrite(
-      processedPath,
-      {
-        gameId: params.gameId,
-        walletAddress: params.entry.walletAddress?.trim(),
-        processedAt: Date.now(),
-      },
-      { silent: true, connection }
-    );
+  if (!params.skipClaimWrite) {
+    await confirmScoreSubmitTxOnServer({
+      txHash: params.txHash,
+      gameId: params.gameId,
+      walletAddress: params.entry.walletAddress?.trim() ?? "",
+      playerId: params.entry.walletAddress?.trim() ?? "",
+      ecosystem,
+      chainId: params.chainId,
+    });
   }
 
   await submitLeaderboardEntryOnServer(params.gameId, params.entry, scope);
@@ -1017,38 +1243,6 @@ function processedShopTxPath(ecosystem: ShopPurchaseEcosystem, txKey: string): s
   }
 
   return `shop/processedTxs/${ecosystem}/${txKey}`;
-}
-
-type ShopPurchaseEcosystem = "evm" | "sui" | "vara";
-
-export class ShopPurchaseError extends Error {
-  constructor(
-    message: string,
-    readonly code?: string
-  ) {
-    super(message);
-    this.name = "ShopPurchaseError";
-  }
-}
-
-function normalizeShopTxKey(
-  ecosystem: ShopPurchaseEcosystem,
-  txHash: string
-): string {
-  const trimmed = txHash.trim();
-  if (ecosystem === "evm" || ecosystem === "vara") {
-    const key = trimmed.toLowerCase();
-    if (!/^0x[0-9a-f]{64}$/.test(key)) {
-      throw new ShopPurchaseError("Invalid transaction hash.", "INVALID_TX");
-    }
-    return key;
-  }
-
-  if (!/^[1-9A-HJ-NP-Za-km-z]{43,90}$/.test(trimmed)) {
-    throw new ShopPurchaseError("Invalid transaction digest.", "INVALID_TX");
-  }
-
-  return trimmed;
 }
 
 export async function applyShopPurchaseOnServer(

@@ -22,6 +22,7 @@ import {
 
 interface GameClientProps {
   game: Game;
+  playSessionId: string;
   onScoreSubmitted?: () => void;
 }
 
@@ -29,7 +30,11 @@ const GAME_LOAD_FALLBACK_MS = 12000;
 const SHELL_LAYOUT_FALLBACK_MS = 4500;
 const PROGRESS_RETRY_DELAYS_MS = [0, 600, 1500, 3000] as const;
 
-export default function GameClient({ game, onScoreSubmitted }: GameClientProps) {
+export default function GameClient({
+  game,
+  playSessionId,
+  onScoreSubmitted,
+}: GameClientProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const loadFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shellLayoutFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -329,6 +334,7 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
           try {
             const result = await saveGameProgress(game.id, activePlayerId, progressValue, {
               playerName: playerName || profile?.name || undefined,
+              playSessionId,
             });
             sendToUnity(iframeRef, "OnProgressSaved", {
               success: true,
@@ -366,6 +372,7 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
       shellOrigin,
       playerId,
       resolvedPlayerId,
+      playSessionId,
       markGameReady,
       scheduleProgressRetries,
     ]
@@ -446,6 +453,7 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
           walletAddress={
             pendingScore.walletAddress || resolvedWallet || ""
           }
+          playSessionId={playSessionId}
           contestLive={contestLive}
           onClose={() => {
             setScoreSubmitOpen(false);
@@ -476,6 +484,7 @@ export default function GameClient({ game, onScoreSubmitted }: GameClientProps) 
           walletAddress={
             pendingScore.walletAddress || resolvedWallet || ""
           }
+          playSessionId={playSessionId}
           contestLive={contestLive}
           onClose={() => {
             setScoreSubmitOpen(false);

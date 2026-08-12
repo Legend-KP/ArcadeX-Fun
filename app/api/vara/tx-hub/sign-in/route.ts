@@ -7,6 +7,12 @@ import {
 import { isValidVaraExtrinsicHash } from "@/lib/shop-vara";
 import { playPurpose } from "@/lib/vara-tx-hub";
 import { verifyVaraTxHubSignIn } from "@/lib/vara-tx-hub-server";
+import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
+import { getTxVerifyCache, setTxVerifyCache } from "@/lib/tx-verify-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +28,18 @@ export async function POST(request: Request) {
         { error: "Sign in with a Vara wallet first.", code: "NO_SESSION" },
         { status: 401 }
       );
+    }
+
+    const ip = getClientIp(request);
+    if (
+      !(await checkRateLimit(
+        `vara-txhub-signin:player:${session.playerId}`,
+        10,
+        60_000
+      )) ||
+      !(await checkRateLimit(`vara-txhub-signin:ip:${ip}`, 20, 60_000))
+    ) {
+      return rateLimitResponse();
     }
 
     const body = (await request.json()) as {
@@ -46,11 +64,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const verified = await verifyVaraTxHubSignIn({
-      txHash,
-      expectedFrom: session.address,
-      gameId,
-    });
+    const cacheKey = `vara-txhub:${txHash.toLowerCase()}:${session.address}:${gameId}`;
+    type Verified = Awaited<ReturnType<typeof verifyVaraTxHubSignIn>>;
+    let verified = getTxVerifyCache<Verified>(cacheKey);
+    if (!verified) {
+      verified = await verifyVaraTxHubSignIn({
+        txHash,
+        expectedFrom: session.address,
+        gameId,
+      });
+      setTxVerifyCache(cacheKey, verified);
+    }
 
     const { reused } = await recordVaraTxHubSignInOnServer({
       walletAddress: session.address,

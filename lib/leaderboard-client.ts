@@ -79,6 +79,7 @@ export async function submitPaidScore(
     tokenAddress?: string;
     ecosystem?: string;
     chainId?: number;
+    playSessionId?: string;
   }
 ): Promise<{ submittedBest: number }> {
   const res = await fetch(`/api/games/${gameId}/leaderboard/submit`, {
@@ -92,6 +93,7 @@ export async function submitPaidScore(
       tokenAddress: params.tokenAddress,
       ecosystem: params.ecosystem,
       chainId: params.chainId,
+      playSessionId: params.playSessionId,
     }),
   });
 
@@ -102,7 +104,11 @@ export async function submitPaidScore(
   };
 
   if (!res.ok) {
-    throw new Error(data.error ?? "Could not submit score.");
+    const err = new Error(data.error ?? "Could not submit score.") as Error & {
+      code?: string;
+    };
+    err.code = data.code;
+    throw err;
   }
 
   return { submittedBest: data.submittedBest ?? params.score };

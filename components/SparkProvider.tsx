@@ -26,7 +26,10 @@ interface SparkContextValue {
   loading: boolean;
   error: string;
   refresh: () => Promise<void>;
-  spendForGame: () => Promise<void>;
+  spendForGame: (opts: {
+    gameId: string;
+    playGate?: { message: string; signature: string };
+  }) => Promise<{ playSessionId: string }>;
 }
 
 const SparkContext = createContext<SparkContextValue | null>(null);
@@ -99,21 +102,40 @@ export default function SparkProvider({
     return computeSparkSnapshot(normalized, tick);
   }, [playerId, isAuthenticated, storedState, tick]);
 
-  const spendForGame = useCallback(async () => {
-    if (!playerId || !isAuthenticated) {
-      throw new SparkClientError(
-        "Connect your wallet to play.",
-        "NO_WALLET",
-        400
-      );
-    }
+  const spendForGame = useCallback(
+    async (opts: {
+      gameId: string;
+      playGate?: { message: string; signature: string };
+    }) => {
+      if (!playerId || !isAuthenticated) {
+        throw new SparkClientError(
+          "Connect your wallet to play.",
+          "NO_WALLET",
+          400
+        );
+      }
 
-    const data = await spendSpark(playerId, {
-      chainId,
-      ecosystem: ecosystem ?? undefined,
-    });
-    setStoredState(data.state);
-  }, [playerId, isAuthenticated, chainId, ecosystem]);
+      const data = await spendSpark(playerId, {
+        chainId,
+        ecosystem: ecosystem ?? undefined,
+        gameId: opts.gameId,
+        playGate: opts.playGate,
+      });
+      setStoredState(data.state);
+
+      const playSessionId = data.playSessionId?.trim() ?? "";
+      if (!playSessionId) {
+        throw new SparkClientError(
+          "Play session was not created. Try starting again.",
+          "NO_PLAY_SESSION",
+          500
+        );
+      }
+
+      return { playSessionId };
+    },
+    [playerId, isAuthenticated, chainId, ecosystem]
+  );
 
   const value = useMemo(
     () => ({

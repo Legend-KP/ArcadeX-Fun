@@ -12,6 +12,20 @@ import { resolvePlayerId } from "@/lib/player-identity";
 import { cachedGetProgress, invalidateProgressCache } from "@/lib/progress-response-cache";
 import { coalesceProgressWrite } from "@/lib/progress-write-coalesce";
 import { readSessionFromCookies } from "@/lib/auth-session";
+import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
+import {
+  evaluateScoreAnomaly,
+  shouldEnforceScoreBounds,
+} from "@/lib/play-session";
+import {
+  assertPlaySessionActive,
+  flagAnomalousScoreOnServer,
+  PlaySessionError,
+} from "@/lib/play-session-server";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +52,6 @@ export async function GET(
     const playerId =
       resolvePlayerId(searchParams.get("playerId") ?? "") ??
       resolvePlayerId(searchParams.get("wallet") ?? "");
-    const name = searchParams.get("name") ?? undefined;
 
     if (!playerId) {
       return corsJsonResponse(
@@ -83,6 +96,27 @@ export async function POST(
       );
     }
 
+    const session = await readSessionFromCookies();
+    if (!session) {
+      return corsJsonResponse(
+        request,
+        { error: "Sign in to save progress.", code: "NO_SESSION" },
+        { status: 401 }
+      );
+    }
+
+    const ip = getClientIp(request);
+    if (
+      !(await checkRateLimit(
+        `progress:player:${session.playerId}:game:${id}`,
+        30,
+        60_000
+      )) ||
+      !(await checkRateLimit(`progress:ip:${ip}`, 90, 60_000))
+    ) {
+      return rateLimitResponse();
+    }
+
     const body = (await request.json()) as {
       playerId?: string;
       walletAddress?: string;
@@ -90,19 +124,44 @@ export async function POST(
       score?: number;
       name?: string;
       playerName?: string;
+      playSessionId?: string;
     };
 
-    const playerId =
+    const bodyPlayerId =
       resolvePlayerId(body.playerId ?? "") ??
       resolvePlayerId(body.walletAddress ?? "");
 
-    if (!playerId) {
+    if (bodyPlayerId && bodyPlayerId !== session.playerId) {
       return corsJsonResponse(
         request,
-        { error: "playerId or walletAddress is required." },
+        {
+          error: "Player does not match your signed-in session.",
+          code: "PLAYER_MISMATCH",
+        },
+        { status: 403 }
+      );
+    }
+
+    const playerId = session.playerId;
+    const playSessionId = body.playSessionId?.trim() ?? "";
+    if (!playSessionId) {
+      return corsJsonResponse(
+        request,
+        {
+          error: "playSessionId is required. Start the game again.",
+          code: "NO_PLAY_SESSION",
+        },
         { status: 400 }
       );
     }
+
+    const playSession = await assertPlaySessionActive({
+      playSessionId,
+      playerId,
+      gameId: id,
+      chainId: session.chainId,
+      ecosystem: session.ecosystem,
+    });
 
     const scoreValue =
       typeof body.value === "number"
@@ -119,9 +178,41 @@ export async function POST(
       );
     }
 
+    const anomaly = evaluateScoreAnomaly({
+      score: scoreValue,
+      scoreBounds: game.scoreBounds,
+      sessionStartedAt: playSession.startedAt,
+    });
+    if (anomaly.flagged) {
+      await flagAnomalousScoreOnServer({
+        gameId: id,
+        playerId,
+        score: scoreValue,
+        playSessionId,
+        reasons: anomaly.reasons,
+        scoreBounds: game.scoreBounds,
+        sessionStartedAt: playSession.startedAt,
+        elapsedMs: Date.now() - playSession.startedAt,
+        chainId: session.chainId,
+        ecosystem: session.ecosystem,
+        source: "progress",
+      }).catch(() => {});
+
+      if (shouldEnforceScoreBounds()) {
+        return corsJsonResponse(
+          request,
+          {
+            error: "Score failed integrity checks.",
+            code: "SCORE_ANOMALY",
+            reasons: anomaly.reasons,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     const hasLeaderboard = gameHasLeaderboard(game);
     const playerName = body.playerName ?? body.name;
-    const session = await readSessionFromCookies();
 
     const progress = await coalesceProgressWrite(
       playerId,
@@ -130,8 +221,8 @@ export async function POST(
       hasLeaderboard,
       {
         playerName,
-        chainId: session?.chainId,
-        ecosystem: session?.ecosystem,
+        chainId: session.chainId,
+        ecosystem: session.ecosystem,
       },
       (v, hl, opts) =>
         saveGameProgressOnServer(playerId, id, v, hl, {
@@ -144,11 +235,18 @@ export async function POST(
         })
     );
 
-    // Bust the read cache so the next GET reflects the new value immediately
     invalidateProgressCache(playerId, id);
 
     return corsJsonResponse(request, { success: true, progress, hasLeaderboard });
   } catch (err) {
+    if (err instanceof PlaySessionError) {
+      return corsJsonResponse(
+        request,
+        { error: err.message, code: err.code },
+        { status: 400 }
+      );
+    }
+
     const message =
       err instanceof Error ? err.message : "Failed to save game progress.";
     return corsJsonResponse(request, { error: message }, { status: 500 });
