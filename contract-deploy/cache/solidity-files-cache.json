@@ -803,6 +803,43 @@
       "artifacts": [
         "SparkRefill"
       ]
+    },
+    "E:\\kushal paliwal\\Coding\\ArcadeX-Fun\\contract-deploy\\contracts\\ArcadeXTxHub.sol": {
+      "lastModificationDate": 1786540635802,
+      "contentHash": "18c273c85439a7e4a4e62f7167427f87",
+      "sourceName": "contracts/ArcadeXTxHub.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "viaIR": true,
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "ArcadeXTxHub"
+      ]
     }
   }
 }

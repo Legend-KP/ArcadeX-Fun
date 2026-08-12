@@ -1471,6 +1471,71 @@ function varaTxHubSignInPath(txHash: string): string {
   return `vara/txHub/signIns/${txHash}`;
 }
 
+export class BaseTxHubSignInError extends Error {
+  constructor(
+    message: string,
+    readonly code?: "INVALID_TX" | "TX_ALREADY_USED" | "NO_WALLET"
+  ) {
+    super(message);
+    this.name = "BaseTxHubSignInError";
+  }
+}
+
+function baseTxHubSignInPath(txHash: string): string {
+  return `txHub/signIns/${txHash.toLowerCase()}`;
+}
+
+/** Replay-protect free ArcadeXTxHub.signIn txs on Base. */
+export async function recordBaseTxHubSignInOnServer(params: {
+  walletAddress: string;
+  txHash: string;
+  gameId: string;
+  purpose: string;
+  chainId?: number | null;
+}): Promise<{ reused: boolean }> {
+  if (!isRewardsWallet(params.walletAddress)) {
+    throw new BaseTxHubSignInError(
+      "A valid wallet address is required.",
+      "NO_WALLET"
+    );
+  }
+
+  const wallet = normalizeRewardsWallet(params.walletAddress);
+  const normalizedTxHash = params.txHash.trim().toLowerCase();
+  if (!/^0x[0-9a-f]{64}$/.test(normalizedTxHash)) {
+    throw new BaseTxHubSignInError(
+      "A valid transaction hash is required.",
+      "INVALID_TX"
+    );
+  }
+
+  const connection = getPlayerRtdbConnection({
+    chainId: params.chainId ?? 8453,
+    ecosystem: "evm",
+  });
+
+  const claim = await claimGuardRecord(
+    baseTxHubSignInPath(normalizedTxHash),
+    wallet,
+    () => ({
+      wallet,
+      gameId: params.gameId.trim(),
+      purpose: params.purpose.trim().toLowerCase(),
+      syncedAt: Date.now(),
+    }),
+    connection
+  );
+
+  if (claim.status === "conflict_other_wallet") {
+    throw new BaseTxHubSignInError(
+      "This transaction was already used.",
+      "TX_ALREADY_USED"
+    );
+  }
+
+  return { reused: claim.status === "exists" };
+}
+
 /** Replay-protect free ArcadeXTxHub sign_in extrinsics. */
 export async function recordVaraTxHubSignInOnServer(params: {
   walletAddress: string;

@@ -12,6 +12,7 @@ export const BASE_MAINNET_DEPLOYMENTS = {
   sparkRefill: "0xfB01e841E1bF81b44048b9a219f55F7f3BAF7E0C",
   infiniteSpark: "0xe179550c0b745591ae0113d97eB072129e14F75f",
   scoreSubmit: "0xf0E45525FCC4716eFa65f24318b1Ea1A8f567333",
+  arcadeXTxHub: "0xB7aCD17187CC0e5e55BC7B9952C1682057b5cf0f",
   streakCampaignId: 3,
   shuffleCampaignId: 2,
 } as const satisfies Record<string, string | number>;

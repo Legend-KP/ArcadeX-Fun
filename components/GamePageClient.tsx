@@ -11,6 +11,9 @@ import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import { useSparks } from "@/components/SparkProvider";
 import { SparkClientError } from "@/lib/spark-client";
 import { formatSparkCountdown } from "@/lib/spark";
+import { shouldRequireBaseTxHubSignIn } from "@/lib/arcadex-tx-hub";
+import { signInOnArcadeXTxHub } from "@/lib/arcadex-tx-hub-client";
+import { verifyBasePlaySignIn } from "@/lib/arcadex-tx-hub-api";
 import { isVaraTxHubConfigured } from "@/lib/vara-tx-hub";
 import { signInOnVaraTxHub } from "@/lib/vara-tx-hub-client";
 import { verifyVaraPlaySignIn } from "@/lib/vara-tx-hub-api";
@@ -135,6 +138,16 @@ export default function GamePageClient() {
         });
         setSparkError("Confirming sign-in…");
         await verifyVaraPlaySignIn({ txHash, gameId: game.id });
+        setSparkError("");
+      } else if (shouldRequireBaseTxHubSignIn({ ecosystem, chainId })) {
+        setSparkError("Approve free play sign-in in your wallet…");
+        const txHash = await signInOnArcadeXTxHub({
+          fromAddress: walletAddress,
+          gameId: game.id,
+          onStatus: (message) => setSparkError(message),
+        });
+        setSparkError("Confirming sign-in…");
+        await verifyBasePlaySignIn({ txHash, gameId: game.id });
         setSparkError("");
       }
 

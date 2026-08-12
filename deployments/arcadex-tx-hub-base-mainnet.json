@@ -1,0 +1,21 @@
+{
+  "contract": "ArcadeXTxHub",
+  "network": "base-mainnet",
+  "chainId": 8453,
+  "address": "0xB7aCD17187CC0e5e55BC7B9952C1682057b5cf0f",
+  "deployer": "0x11015f39Ac7389201aEc778Be8e3D84f2aF44A70",
+  "owner": "0x11015f39Ac7389201aEc778Be8e3D84f2aF44A70",
+  "deployedAt": "2026-08-12T13:23:27.070Z",
+  "txHash": "0x2ae24efe753b12782956b91d0eedbdf9a5586fd1ce01739409f5cc8a75b83627",
+  "notes": {
+    "playPurpose": "keccak256(UTF-8 \"PLAY:{gameId}\")",
+    "signInMethod": "signIn(bytes32)",
+    "env": "NEXT_PUBLIC_ARCADEX_TX_HUB_CONTRACT=<address>"
+  },
+  "verified": true,
+  "verifiedAt": "2026-08-12T13:24:38.448Z",
+  "verification": {
+    "basescan": "https://basescan.org/address/0xB7aCD17187CC0e5e55BC7B9952C1682057b5cf0f#code",
+    "sourcify": "https://repo.sourcify.dev/8453/0xB7aCD17187CC0e5e55BC7B9952C1682057b5cf0f"
+  }
+}
