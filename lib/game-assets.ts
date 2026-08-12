@@ -9,6 +9,22 @@ const LOCAL_GAME_FOLDERS = [
   "orbit-flow",
 ] as const;
 
+/**
+ * Flat logo files in public/games/ (not per-folder).
+ * Keys are game name/id slugs from slugifyGameName / Firestore id.
+ */
+const FLAT_LOGO_BY_SLUG: Record<string, string> = {
+  "line-link": "/games/line-logo.webp",
+  "coin-sort": "/games/coin-logo.webp",
+  "arrow-out": "/games/arrowout-logo.webp",
+  arrowout: "/games/arrowout-logo.webp",
+  "sand-drop": "/games/sanddrop-logo.webp",
+  sanddrop: "/games/sanddrop-logo.webp",
+  burger: "/games/burger-logo.webp",
+  cake: "/games/cake-logo.webp",
+  dunk: "/games/Dunk-logo.webp",
+};
+
 export function slugifyGameName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
@@ -29,6 +45,16 @@ function resolveLocalGameFolder(game: Game): string | null {
       return id;
     }
   }
+
+  return null;
+}
+
+function resolveFlatLogo(game: Game): string | null {
+  const nameSlug = slugifyGameName(game.name);
+  if (FLAT_LOGO_BY_SLUG[nameSlug]) return FLAT_LOGO_BY_SLUG[nameSlug];
+
+  const id = game.id.trim().toLowerCase();
+  if (id && FLAT_LOGO_BY_SLUG[id]) return FLAT_LOGO_BY_SLUG[id];
 
   return null;
 }
@@ -66,6 +92,10 @@ export function gameAssetCandidates(
   const localFolder = resolveLocalGameFolder(game);
 
   // Prefer bundled assets so they show even when remote URLs fail.
+  if (kind === "logo") {
+    push(resolveFlatLogo(game) ?? undefined);
+  }
+
   if (localFolder) {
     pushLocalGameAssets(push, localFolder, kind);
   }
