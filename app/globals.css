@@ -3239,14 +3239,6 @@ a { color: inherit; text-decoration: none; }
   text-align: center;
 }
 
-.spark-shop-payment__primary--contest-live {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
-}
-
-.spark-shop-payment__primary--contest-off {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-}
-
 .spark-shop-payment__primary--ghost {
   background: transparent;
   color: var(--navy);
@@ -3293,6 +3285,7 @@ a { color: inherit; text-decoration: none; }
   text-align: left;
   font-family: var(--font-body);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   transition:
     border-color 0.15s ease,
     background 0.15s ease,
@@ -3324,6 +3317,11 @@ a { color: inherit; text-decoration: none; }
   transform: translateY(-1px);
 }
 
+.spark-shop-payment__token:active:not(:disabled) {
+  background: #f8f9fb;
+  transform: none;
+}
+
 .spark-shop-payment__token.is-selected {
   border-color: var(--navy);
   background: #111827;
@@ -3346,6 +3344,41 @@ a { color: inherit; text-decoration: none; }
 .spark-shop-payment__token.is-disabled::after,
 .spark-shop-payment__token:disabled::after {
   display: none;
+}
+
+/* Score-submit: select token only — no fake Pay pill / balance CTA look */
+.spark-shop-payment__token--select-only {
+  padding-right: 16px;
+}
+
+.spark-shop-payment__token--select-only::after {
+  content: none;
+  display: none;
+}
+
+.spark-shop-payment__token--select-only .spark-shop-payment__token-balance {
+  display: none;
+}
+
+.spark-shop-payment__token--select-only.is-selected {
+  background: #eef2ff;
+  border-color: var(--navy);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.spark-shop-payment__token--select-only.is-selected:hover:not(:disabled),
+.spark-shop-payment__token--select-only.is-selected:active:not(:disabled) {
+  background: #e8edff;
+  border-color: var(--navy);
+  transform: none;
+}
+
+.spark-shop-payment__token--select-only.is-selected .spark-shop-payment__token-name {
+  color: var(--navy);
+}
+
+.spark-shop-payment__token--select-only.is-selected .spark-shop-payment__token-balance {
+  color: var(--muted);
 }
 
 .spark-shop-payment__token-name {
@@ -3384,11 +3417,50 @@ a { color: inherit; text-decoration: none; }
   font-size: 14px;
   font-weight: 800;
   cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.spark-shop-payment__primary:hover:not(:disabled),
+.spark-shop-payment__primary:focus-visible:not(:disabled) {
+  color: #fff;
+  filter: brightness(1.05);
+}
+
+.spark-shop-payment__primary:active:not(:disabled) {
+  color: #fff;
+  filter: brightness(0.92);
+}
+
+.spark-shop-payment__primary--contest-live,
+.spark-shop-payment__primary--contest-live:hover:not(:disabled),
+.spark-shop-payment__primary--contest-live:focus-visible:not(:disabled),
+.spark-shop-payment__primary--contest-live:active:not(:disabled) {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #fff;
+}
+
+.spark-shop-payment__primary--contest-off,
+.spark-shop-payment__primary--contest-off:hover:not(:disabled),
+.spark-shop-payment__primary--contest-off:focus-visible:not(:disabled),
+.spark-shop-payment__primary--contest-off:active:not(:disabled) {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff;
+}
+
+.spark-shop-payment__primary--ghost:hover:not(:disabled),
+.spark-shop-payment__primary--ghost:focus-visible:not(:disabled),
+.spark-shop-payment__primary--ghost:active:not(:disabled) {
+  color: var(--navy);
+  background: #f8f9fb;
+  filter: none;
 }
 
 .spark-shop-payment__primary:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+  filter: none;
 }
 
 .spark-shop-payment__error {

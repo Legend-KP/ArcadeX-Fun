@@ -240,6 +240,19 @@ export default function ScoreSubmitVaraPaymentModal({
     void loadBalances();
   }, [open, loadBalances, programConfigured, gameId, walletAddress]);
 
+  useEffect(() => {
+    if (!open || balancesLoading) return;
+    if (selectedToken) {
+      const stillOk = tokenOptions.some(
+        (option) =>
+          option.token.id === selectedToken.id && option.sufficient
+      );
+      if (stillOk) return;
+    }
+    const first = tokenOptions.find((option) => option.sufficient);
+    setSelectedToken(first?.token ?? null);
+  }, [open, balancesLoading, tokenOptions, selectedToken]);
+
   const handlePay = useCallback(
     async (token?: VaraShopPaymentToken) => {
       const payToken = token ?? selectedToken;
@@ -391,7 +404,7 @@ export default function ScoreSubmitVaraPaymentModal({
                     <button
                       key={option.token.id}
                       type="button"
-                      className={`spark-shop-payment__token${
+                      className={`spark-shop-payment__token spark-shop-payment__token--select-only${
                         option.sufficient ? "" : " is-disabled"
                       }${
                         selectedToken?.id === option.token.id
@@ -405,9 +418,6 @@ export default function ScoreSubmitVaraPaymentModal({
                     >
                       <span className="spark-shop-payment__token-name">
                         {option.token.symbol}
-                      </span>
-                      <span className="spark-shop-payment__token-balance">
-                        {option.balanceLabel}
                       </span>
                       {!option.sufficient && (
                         <span className="spark-shop-payment__token-note">
@@ -456,32 +466,32 @@ export default function ScoreSubmitVaraPaymentModal({
               </button>
             </div>
           ) : null}
+        </div>
 
-          <div className="spark-shop-payment__footer">
-            {showTokenStep && !txHash ? (
-              <button
-                type="button"
-                className={payBtnClass}
-                onClick={() => void handlePay()}
-                disabled={busy || !selectedToken}
-              >
-                {busy ? "Processing…" : "Pay & Submit"}
-              </button>
-            ) : null}
-            {!contestLive ? (
-              <p className="spark-shop-payment__contest-status">
-                Contest is not live
-              </p>
-            ) : null}
+        <div className="spark-shop-payment__footer">
+          {showTokenStep && !txHash ? (
             <button
               type="button"
-              className="spark-shop-payment__primary spark-shop-payment__primary--ghost"
-              onClick={onClose}
-              disabled={busy}
+              className={payBtnClass}
+              onClick={() => void handlePay()}
+              disabled={busy || !selectedToken}
             >
-              Cancel
+              {busy ? "Processing…" : "Pay & Submit"}
             </button>
-          </div>
+          ) : null}
+          {!contestLive ? (
+            <p className="spark-shop-payment__contest-status">
+              Contest is not live
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="spark-shop-payment__primary spark-shop-payment__primary--ghost"
+            onClick={onClose}
+            disabled={busy}
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>
