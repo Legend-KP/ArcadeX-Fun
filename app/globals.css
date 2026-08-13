@@ -3217,7 +3217,7 @@ a { color: inherit; text-decoration: none; }
   font-weight: 800;
   line-height: 1;
   letter-spacing: -0.02em;
-  color: #f59e0b;
+  color: #0f172a;
   text-align: center;
 }
 
@@ -3361,24 +3361,16 @@ a { color: inherit; text-decoration: none; }
 }
 
 .spark-shop-payment__token--select-only.is-selected {
-  background: #eef2ff;
+  background: #fff;
   border-color: var(--navy);
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08);
 }
 
 .spark-shop-payment__token--select-only.is-selected:hover:not(:disabled),
 .spark-shop-payment__token--select-only.is-selected:active:not(:disabled) {
-  background: #e8edff;
+  background: #fff;
   border-color: var(--navy);
   transform: none;
-}
-
-.spark-shop-payment__token--select-only.is-selected .spark-shop-payment__token-name {
-  color: var(--navy);
-}
-
-.spark-shop-payment__token--select-only.is-selected .spark-shop-payment__token-balance {
-  color: var(--muted);
 }
 
 .spark-shop-payment__token-name {
@@ -3398,6 +3390,14 @@ a { color: inherit; text-decoration: none; }
 
 .spark-shop-payment__token.is-selected .spark-shop-payment__token-balance {
   color: rgba(255, 255, 255, 0.72);
+}
+
+.spark-shop-payment__token--select-only.is-selected .spark-shop-payment__token-name {
+  color: #0f172a;
+}
+
+.spark-shop-payment__token--select-only.is-selected .spark-shop-payment__token-balance {
+  color: var(--muted);
 }
 
 .spark-shop-payment__token-note {
