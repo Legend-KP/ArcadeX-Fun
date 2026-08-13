@@ -23,6 +23,17 @@ const FLAT_LOGO_BY_SLUG: Record<string, string> = {
   burger: "/games/burger-logo.webp",
   cake: "/games/cake-logo.webp",
   dunk: "/games/Dunk-logo.webp",
+  "jelly-jumble": "/games/jelly-logo.webp",
+  jelly: "/games/jelly-logo.webp",
+};
+
+/**
+ * Flat fallback images in public/games/.
+ * Used when thumbnail/logo remote URLs fail.
+ */
+const FLAT_FALLBACK_BY_SLUG: Record<string, string> = {
+  "jelly-jumble": "/games/jelly-logo.webp",
+  jelly: "/games/jelly-logo.webp",
 };
 
 export function slugifyGameName(name: string): string {
@@ -55,6 +66,16 @@ function resolveFlatLogo(game: Game): string | null {
 
   const id = game.id.trim().toLowerCase();
   if (id && FLAT_LOGO_BY_SLUG[id]) return FLAT_LOGO_BY_SLUG[id];
+
+  return null;
+}
+
+function resolveFlatFallback(game: Game): string | null {
+  const nameSlug = slugifyGameName(game.name);
+  if (FLAT_FALLBACK_BY_SLUG[nameSlug]) return FLAT_FALLBACK_BY_SLUG[nameSlug];
+
+  const id = game.id.trim().toLowerCase();
+  if (id && FLAT_FALLBACK_BY_SLUG[id]) return FLAT_FALLBACK_BY_SLUG[id];
 
   return null;
 }
@@ -134,6 +155,8 @@ export function gameFallbackCandidates(game: Game): string[] {
     out.push(url);
   };
 
+  // Prefer bundled flat fallback so remote/empty fallbackImage does not blank the menu.
+  push(resolveFlatFallback(game) ?? undefined);
   push(game.fallbackImage);
 
   const localFolder = resolveLocalGameFolder(game);
