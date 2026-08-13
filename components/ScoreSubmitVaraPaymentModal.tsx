@@ -309,14 +309,16 @@ export default function ScoreSubmitVaraPaymentModal({
       if (!sufficient || busy) return;
       setSelectedToken(token);
       setError("");
-      void handlePay(token);
     },
-    [busy, handlePay]
+    [busy]
   );
 
   if (!open || !mounted) return null;
 
   const showTokenStep = step === "token";
+  const payBtnClass = contestLive
+    ? "spark-shop-payment__primary spark-shop-payment__primary--contest-live"
+    : "spark-shop-payment__primary spark-shop-payment__primary--contest-off";
 
   const modal = (
     <div
@@ -347,36 +349,39 @@ export default function ScoreSubmitVaraPaymentModal({
             ✕
           </button>
 
-          {contestLive && (
+          {contestLive ? (
             <div className="spark-shop-payment__contest-badge" aria-live="polite">
               <span className="lb-contest-live-dot" aria-hidden />
               CONTEST LIVE
             </div>
-          )}
+          ) : null}
 
           <h2 id="score-submit-vara-title" className="spark-panel__title">
-            {contestLive ? "Submit Contest Score" : "Submit to Leaderboard"}
+            Submit score to enter Contest
           </h2>
+          <p className="spark-shop-payment__score">{score.toLocaleString()}</p>
           <p className="spark-shop-payment__price">
             Pay {formatScoreSubmitPrice()} in WUSDC/WUSDT on Vara
           </p>
           <p className="spark-shop-payment__desc">
-            Your score of <strong>{score.toLocaleString()}</strong> will
             {contestLive ? (
               <>
-                {" "}
-                count on the <strong>contest board</strong> and the all-time
-                leaderboard after payment confirms.
+                Your score will count on the <strong>contest board</strong> and
+                the all-time leaderboard after payment confirms.
               </>
             ) : (
-              <> appear on the all-time public leaderboard after payment confirms.</>
+              <>
+                Your score will appear on the all-time public leaderboard after
+                payment confirms.
+              </>
             )}
           </p>
 
           {showTokenStep && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
-                Tap a token to pay. SubWallet will ask you to Approve, then Pay.
+                Select a token, then tap Pay & Submit. SubWallet will ask you to
+                Approve, then Pay.
               </p>
               {balancesLoading ? (
                 <p className="spark-shop-payment__hint">Loading balances…</p>
@@ -388,6 +393,10 @@ export default function ScoreSubmitVaraPaymentModal({
                       type="button"
                       className={`spark-shop-payment__token${
                         option.sufficient ? "" : " is-disabled"
+                      }${
+                        selectedToken?.id === option.token.id
+                          ? " is-selected"
+                          : ""
                       }`}
                       disabled={!option.sufficient || busy}
                       onClick={() =>
@@ -440,7 +449,7 @@ export default function ScoreSubmitVaraPaymentModal({
               </p>
               <button
                 type="button"
-                className="spark-shop-payment__primary"
+                className={payBtnClass}
                 onClick={() => void handleConfirmPendingTx()}
               >
                 Confirm submit (no extra charge)
@@ -449,6 +458,21 @@ export default function ScoreSubmitVaraPaymentModal({
           ) : null}
 
           <div className="spark-shop-payment__footer">
+            {showTokenStep && !txHash ? (
+              <button
+                type="button"
+                className={payBtnClass}
+                onClick={() => void handlePay()}
+                disabled={busy || !selectedToken}
+              >
+                {busy ? "Processing…" : "Pay & Submit"}
+              </button>
+            ) : null}
+            {!contestLive ? (
+              <p className="spark-shop-payment__contest-status">
+                Contest is not live
+              </p>
+            ) : null}
             <button
               type="button"
               className="spark-shop-payment__primary spark-shop-payment__primary--ghost"

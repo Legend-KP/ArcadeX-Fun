@@ -116,7 +116,20 @@ export default function GameMenu({
             aria-label="Back to home"
             onClick={() => router.push("/")}
           >
-            ←
+            <svg
+              className="game-menu-circle-btn__icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden
+            >
+              <path
+                d="M15 5.5 8.5 12 15 18.5"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </button>
           {showTutorialButton && (
             <button
@@ -125,7 +138,27 @@ export default function GameMenu({
               aria-label="How to play"
               onClick={() => setTutorialOpen(true)}
             >
-              ⓘ
+              <svg
+                className="game-menu-circle-btn__icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden
+              >
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="9"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                />
+                <path
+                  d="M12 10.5v6"
+                  stroke="currentColor"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                />
+                <circle cx="12" cy="7.25" r="1.25" fill="currentColor" />
+              </svg>
             </button>
           )}
         </div>
