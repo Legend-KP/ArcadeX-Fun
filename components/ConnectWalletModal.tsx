@@ -76,12 +76,15 @@ interface ConnectWalletModalProps {
   error?: string;
   onSignedIn: (session?: AuthSessionPayload) => void;
   onClose?: () => void;
+  /** Skip network picker and open wallet list for this chain. */
+  initialChainKey?: ChainKey | null;
 }
 
 export default function ConnectWalletModal({
   open,
   error: externalError,
   onSignedIn,
+  initialChainKey = null,
 }: ConnectWalletModalProps) {
   const { connectAsync, connectors } = useConnect();
   const { disconnectAsync } = useDisconnect();
@@ -103,6 +106,7 @@ export default function ConnectWalletModal({
   const [pendingChainId, setPendingChainId] = useState<number>(PRIMARY_EVM_CHAIN_ID);
   const starknetConnectorRef = useRef<Connector | null>(null);
   const suiWalletRef = useRef<Wallet | null>(null);
+  const openedOnWalletSelectRef = useRef(false);
 
   useEffect(() => {
     ensureSlushWalletRegistered();
@@ -110,6 +114,7 @@ export default function ConnectWalletModal({
 
   useEffect(() => {
     if (!open) {
+      openedOnWalletSelectRef.current = false;
       setError("");
       setBusy(false);
       setStep("select-network");
@@ -117,8 +122,30 @@ export default function ConnectWalletModal({
       setPendingEvmAddress("");
       setPendingConnectorId("");
       setPendingChainId(PRIMARY_EVM_CHAIN_ID);
+      return;
     }
-  }, [open]);
+
+    setError("");
+    setBusy(false);
+    setPendingEvmAddress("");
+    setPendingConnectorId("");
+    setPendingChainId(PRIMARY_EVM_CHAIN_ID);
+
+    if (!initialChainKey) {
+      setStep("select-network");
+      setSelectedChainKey(null);
+      return;
+    }
+
+    openedOnWalletSelectRef.current = true;
+    const chain = CHAIN_REGISTRY.find((entry) => entry.key === initialChainKey);
+    setSelectedChainKey(initialChainKey);
+    setStep("select-wallet");
+    prefetchAuthNonce();
+    if (chain?.ecosystem === "vara") {
+      warmVaraWallet();
+    }
+  }, [open, initialChainKey]);
 
   useEffect(() => {
     if (externalError) setError(externalError);
@@ -360,17 +387,26 @@ export default function ConnectWalletModal({
 
   if (!open) return null;
 
+  const landingOnWalletSelect =
+    Boolean(initialChainKey) &&
+    !openedOnWalletSelectRef.current &&
+    step === "select-network";
+  const viewStep: ConnectStep = landingOnWalletSelect ? "select-wallet" : step;
+  const viewChainKey = landingOnWalletSelect
+    ? initialChainKey
+    : selectedChainKey;
+
   const requiredChain = getEvmChainById(pendingChainId) ?? primaryEvmChain;
   const visibleWalletOptions = WALLET_OPTIONS.filter(isWalletOptionEnabled);
   const availableNetworks = CHAIN_REGISTRY.filter((chain) =>
     visibleWalletOptions.some((option) => option.chainKey === chain.key)
   );
-  const selectedNetwork = selectedChainKey
-    ? CHAIN_REGISTRY.find((chain) => chain.key === selectedChainKey)
+  const selectedNetwork = viewChainKey
+    ? CHAIN_REGISTRY.find((chain) => chain.key === viewChainKey)
     : undefined;
-  const walletsForNetwork = selectedChainKey
+  const walletsForNetwork = viewChainKey
     ? visibleWalletOptions.filter(
-        (option) => option.chainKey === selectedChainKey
+        (option) => option.chainKey === viewChainKey
       )
     : [];
 
@@ -420,7 +456,7 @@ export default function ConnectWalletModal({
               Checking which networks are available…
             </p>
           </>
-        ) : step === "select-network" ? (
+        ) : viewStep === "select-network" ? (
           <>
             <h2 id="connect-modal-title" className="player-modal-title">
               Choose a network
@@ -466,7 +502,7 @@ export default function ConnectWalletModal({
               )}
             </div>
           </>
-        ) : step === "select-wallet" ? (
+        ) : viewStep === "select-wallet" ? (
           <>
             <h2 id="connect-modal-title" className="player-modal-title">
               Connect your wallet

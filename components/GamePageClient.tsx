@@ -144,7 +144,7 @@ export default function GamePageClient() {
             "Vara TxHub is missing from this build. Set NEXT_PUBLIC_VARA_ARCADEX_TX_HUB_PROGRAM on Cloudflare and redeploy (NEXT_PUBLIC_ vars are baked at build time)."
           );
         }
-        setSparkError("Approve free play sign-in in SubWallet…");
+        setSparkError("Approve free play sign-in in your wallet…");
         const txHash = await signInOnVaraTxHub({
           fromAddress: walletAddress,
           gameId: game.id,

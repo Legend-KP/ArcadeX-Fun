@@ -15,20 +15,42 @@ import {
 } from "@/lib/vara-address";
 
 const VARA_APP_NAME = "ArcadeX";
-const SUBWALLET_INJECTED_KEY = "subwallet-js";
+const INJECTED_READY_EVENTS = [
+  "subwallet#initialized",
+  "talisman#initialized",
+] as const;
+
+const INJECTED_WALLET_LABELS: Record<string, string> = {
+  "subwallet-js": "SubWallet",
+  "polkadot-js": "polkadot.js",
+  talisman: "Talisman",
+  "nova-wallet": "Nova",
+  nova: "Nova",
+  enkrypt: "Enkrypt",
+  "fearless-wallet": "Fearless",
+  polkagate: "PolkaGate",
+};
 
 let cryptoWarmed = false;
 /** Only cache a successful enable — empty results must be retryable (esp. mobile). */
 let extensionsEnabled = false;
 
-function hasInjectedSubWallet(): boolean {
+/** Friendly name for status copy, e.g. "polkadot.js" or "your wallet". */
+export function varaWalletLabel(injectedName?: string | null): string {
+  if (!injectedName) return "your wallet";
+  return INJECTED_WALLET_LABELS[injectedName] ?? "your wallet";
+}
+
+function hasInjectedSubstrateWallet(): boolean {
   if (typeof window === "undefined") return false;
   const injected = (
     window as Window & {
       injectedWeb3?: Record<string, unknown>;
     }
   ).injectedWeb3;
-  return Boolean(injected?.[SUBWALLET_INJECTED_KEY] || isWeb3Injected);
+  return Boolean(
+    (injected && Object.keys(injected).length > 0) || isWeb3Injected
+  );
 }
 
 function isLikelyMobile(): boolean {
@@ -45,8 +67,10 @@ export function warmVaraWallet(): void {
   });
 }
 
-async function waitForSubWalletInjection(timeoutMs = 2500): Promise<boolean> {
-  if (hasInjectedSubWallet()) return true;
+async function waitForSubstrateWalletInjection(
+  timeoutMs = 2500
+): Promise<boolean> {
+  if (hasInjectedSubstrateWallet()) return true;
 
   return new Promise((resolve) => {
     let settled = false;
@@ -54,16 +78,24 @@ async function waitForSubWalletInjection(timeoutMs = 2500): Promise<boolean> {
       if (settled) return;
       settled = true;
       window.clearTimeout(timer);
-      window.removeEventListener("subwallet#initialized", onReady);
+      window.clearInterval(poll);
+      for (const event of INJECTED_READY_EVENTS) {
+        window.removeEventListener(event, onReady);
+      }
       resolve(ok);
     };
 
-    const onReady = () => finish(hasInjectedSubWallet());
+    const onReady = () => finish(hasInjectedSubstrateWallet());
     const timer = window.setTimeout(
-      () => finish(hasInjectedSubWallet()),
+      () => finish(hasInjectedSubstrateWallet()),
       timeoutMs
     );
-    window.addEventListener("subwallet#initialized", onReady, { once: true });
+    const poll = window.setInterval(() => {
+      if (hasInjectedSubstrateWallet()) finish(true);
+    }, 100);
+    for (const event of INJECTED_READY_EVENTS) {
+      window.addEventListener(event, onReady, { once: true });
+    }
   });
 }
 
@@ -72,9 +104,9 @@ async function ensureVaraExtensions(): Promise<boolean> {
 
   if (extensionsEnabled) return true;
 
-  await waitForSubWalletInjection();
+  await waitForSubstrateWalletInjection();
 
-  if (!hasInjectedSubWallet()) {
+  if (!hasInjectedSubstrateWallet()) {
     return false;
   }
 
@@ -85,9 +117,9 @@ async function ensureVaraExtensions(): Promise<boolean> {
 
 function missingWalletMessage(): string {
   if (isLikelyMobile()) {
-    return "SubWallet not detected. On mobile, open ArcadeX inside the SubWallet app browser (Browser tab → paste arcadex.fun), then connect Vara again.";
+    return "No Substrate wallet detected. On mobile, open ArcadeX inside a wallet in-app browser (SubWallet, Nova, etc.), then connect Vara again.";
   }
-  return "SubWallet / Polkadot.js not found. Install SubWallet and create a Vara (Substrate) account.";
+  return "No Substrate wallet found. Install SubWallet, polkadot.js, Talisman, or Nova and create a Vara (Substrate) account.";
 }
 
 export async function connectVaraWallet(): Promise<string> {
@@ -106,7 +138,7 @@ export async function connectVaraWallet(): Promise<string> {
   const account = substrateAccounts[0] ?? accounts[0];
   if (!account) {
     throw new Error(
-      "No Vara account found. In SubWallet, select a Substrate/Vara account (not EVM)."
+      "No Vara account found. In your wallet, select a Substrate/Vara account (not EVM)."
     );
   }
 
@@ -116,11 +148,11 @@ export async function connectVaraWallet(): Promise<string> {
     !isVaraWalletAddress(account.address)
   ) {
     throw new Error(
-      "SubWallet returned an EVM account. Switch to a Vara / Substrate account, then reconnect."
+      "Wallet returned an EVM account. Switch to a Vara / Substrate account, then reconnect."
     );
   }
 
-  // Keep the extension's SS58 as-is so SubWallet can sign for this account.
+  // Keep the extension's SS58 as-is so the wallet can sign for this account.
   // Server-side normalizeVaraAddress re-encodes to Vara prefix when possible.
   return account.address;
 }

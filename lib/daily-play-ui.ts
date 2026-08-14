@@ -40,7 +40,7 @@ export function getDailyPlayNetworkCopy(
       chainId: VARA_CHAIN_ID,
       label: "Vara",
       explorerName: "Subscan",
-      gasHint: "Approve in SubWallet (VARA for gas)",
+      gasHint: "Approve in your wallet (VARA for gas)",
     };
   }
   if (isAvalancheRewardsChainId(chainId)) {

@@ -280,29 +280,29 @@ export default function SparkBatteryBar() {
     <>
       <button
         type="button"
-        className="spark-battery"
+        className={`spark-battery${showInfinite ? " spark-battery--infinite" : ""}`}
         onClick={() => setOpen(true)}
-        aria-label={`${displayAvailable} of ${sparks.max} Sparks available`}
+        aria-label={
+          showInfinite
+            ? "Infinite Sparks active"
+            : `${displayAvailable} of ${sparks.max} Sparks available`
+        }
         aria-expanded={open}
         aria-haspopup="dialog"
       >
-        <span className="spark-battery__icon" aria-hidden>
-          ⚡
-        </span>
-        <span className="spark-battery__segments" aria-hidden>
-          {sparks.slots.map((slot) => (
-            <span
-              key={slot.index}
-              className={`spark-battery__segment${
-                slot.status === "ready" ? " is-ready" : " is-regenerating"
-              }`}
-            />
-          ))}
-        </span>
-        {showInfinite && (
+        {showInfinite ? (
           <span className="spark-battery__infinite" aria-hidden>
             ∞
           </span>
+        ) : (
+          <>
+            <span className="spark-battery__icon" aria-hidden>
+              ⚡
+            </span>
+            <span className="spark-battery__count">
+              {displayAvailable}/{sparks.max}
+            </span>
+          </>
         )}
       </button>
 

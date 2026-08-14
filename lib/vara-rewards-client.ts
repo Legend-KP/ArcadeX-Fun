@@ -1,5 +1,5 @@
 /**
- * Client: send ArcadeXRewards CheckIn / Spin on Vara via SubWallet.
+ * Client: send ArcadeXRewards CheckIn / Spin on Vara via an injected Substrate wallet.
  */
 "use client";
 
@@ -8,6 +8,7 @@ import { web3FromAddress } from "@polkadot/extension-dapp";
 import { VARA_RPC_URL } from "@/lib/shop-vara";
 import { toVaraActorId } from "@/lib/vara-address";
 import { resolveVaraSigningAddress } from "@/lib/vara-tx-hub-client";
+import { varaWalletLabel } from "@/lib/vara-wallet-client";
 import {
   assertVaraArcadeXRewardsConfigured,
   VARA_STREAK_CAMPAIGN_ID,
@@ -87,7 +88,9 @@ async function sendGearMessage(params: {
       true
     ) as SubmittableExtrinsic<"promise">;
 
-    params.onStatus?.("Approve the transaction in SubWallet…");
+    params.onStatus?.(
+      `Approve the transaction in ${varaWalletLabel(injector.name)}…`
+    );
 
     return await new Promise<string>((resolve, reject) => {
       extrinsic

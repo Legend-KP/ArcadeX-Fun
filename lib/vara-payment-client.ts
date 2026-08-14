@@ -1,5 +1,5 @@
 /**
- * Approve VFT + PayWithUsdt/PayWithUsdc via SubWallet (browser only).
+ * Approve VFT + PayWithUsdt/PayWithUsdc via an injected Substrate wallet (browser only).
  */
 "use client";
 
@@ -8,6 +8,7 @@ import { web3FromAddress } from "@polkadot/extension-dapp";
 import { VARA_RPC_URL } from "@/lib/shop-vara";
 import { ensureVaraCryptoReady, toVaraActorId } from "@/lib/vara-address";
 import { resolveVaraSigningAddress } from "@/lib/vara-tx-hub-client";
+import { varaWalletLabel } from "@/lib/vara-wallet-client";
 import {
   getVaraPaymentProgramId,
   varaPaymentFee,
@@ -98,7 +99,7 @@ async function calculateGas(params: {
         : (BigInt(raw) * BigInt(12)) / BigInt(10);
     return gas.toString();
   } catch (err) {
-    // Still allow SubWallet to open — chain will reject if gas is truly too low.
+    // Still allow the wallet popup to open — chain will reject if gas is truly too low.
     console.warn("[ArcadeX] gas estimate failed, using default:", err);
     return DEFAULT_GAS.toString();
   }
@@ -145,7 +146,9 @@ async function sendGearMessage(params: {
       true
     ) as SubmittableExtrinsic<"promise">;
 
-    params.onStatus?.("Approve the transaction in SubWallet…");
+    params.onStatus?.(
+      `Approve the transaction in ${varaWalletLabel(injector.name)}…`
+    );
 
     return await withTimeout(
       new Promise<string>((resolve, reject) => {
@@ -172,14 +175,14 @@ async function sendGearMessage(params: {
               new Error(
                 formatUnknownError(
                   err,
-                  "SubWallet rejected the transaction or it failed."
+                  "Wallet rejected the transaction or it failed."
                 )
               )
             );
           });
       }),
       TX_TIMEOUT_MS,
-      "Timed out waiting for SubWallet. Unlock SubWallet, approve the transaction, then try again."
+      "Timed out waiting for wallet approval. Unlock your wallet, approve the transaction, then try again."
     );
   } finally {
     await api.disconnect().catch(() => undefined);

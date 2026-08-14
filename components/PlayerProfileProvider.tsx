@@ -64,10 +64,11 @@ import {
   setCachedSession,
 } from "@/lib/player-id";
 import { WalletEcosystem } from "@/lib/player-identity";
-import { PlayerProfile } from "@/types";
+import { PlayerProfile, type ChainKey } from "@/types";
 import { ensureEvmWagmiConnected } from "@/lib/ensure-evm-wallet";
 import { connectVaraWallet } from "@/lib/vara-wallet-client";
 import { reconnectSlushWallet } from "@/lib/sui-wallet-client";
+import { getChainKeyForSession } from "@/lib/chain-registry";
 
 interface PlayerProfileContextValue {
   playerId: string;
@@ -120,6 +121,8 @@ export default function PlayerProfileProvider({
   const [isReady, setIsReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showConnect, setShowConnect] = useState(false);
+  const [connectInitialChainKey, setConnectInitialChainKey] =
+    useState<ChainKey | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showDailyPlay, setShowDailyPlay] = useState(false);
   const [dailyPlayMode, setDailyPlayMode] = useState<DailyPlayMode>("streak");
@@ -538,6 +541,7 @@ export default function PlayerProfileProvider({
   ]);
 
   const openConnect = useCallback(() => {
+    setConnectInitialChainKey(null);
     setShowOnboarding(false);
     setShowDailyPlay(false);
     setStreakBroken(null);
@@ -595,6 +599,7 @@ export default function PlayerProfileProvider({
       chainId?: number;
     }) => {
       setError("");
+      setConnectInitialChainKey(null);
       try {
         const session = signedInSession ?? (await fetchAuthSession());
         if (!session) {
@@ -703,6 +708,16 @@ export default function PlayerProfileProvider({
     await resetToConnect();
   }, [disconnectAsync, resetToConnect]);
 
+  const handleChangeWalletFromDaily = useCallback(async () => {
+    const chainKey = getChainKeyForSession(
+      ecosystem,
+      ecosystem === "vara" ? VARA_CHAIN_ID : chainId
+    );
+    setConnectInitialChainKey(chainKey);
+    setShowDailyPlay(false);
+    await logout();
+  }, [ecosystem, chainId, logout]);
+
   const value = useMemo(
     () => ({
       playerId,
@@ -757,6 +772,7 @@ export default function PlayerProfileProvider({
         open={connectOpen}
         error={error}
         onSignedIn={handleSignedIn}
+        initialChainKey={connectInitialChainKey}
       />
       <OnboardingModal
         open={onboardingOpen}
@@ -766,6 +782,7 @@ export default function PlayerProfileProvider({
         defaultEmail={profile?.email ?? ""}
         onSubmit={handleOnboardingSubmit}
         onChangeWallet={async () => {
+          setConnectInitialChainKey(null);
           setShowOnboarding(false);
           await logout();
         }}
@@ -783,6 +800,9 @@ export default function PlayerProfileProvider({
         }
         status={streakStatus}
         onComplete={handleDailyPlayComplete}
+        onChangeWallet={() => {
+          void handleChangeWalletFromDaily();
+        }}
       />
       <DailyShuffleModal
         open={dailyOpen && dailyPlayMode === "shuffle"}

@@ -1,7 +1,7 @@
 /**
  * Vara address helpers: accept SS58 or 0x ActorId, normalize both forms.
  * Canonical playerId form: Vara SS58 (prefix 137) when encoding works; otherwise
- * the wallet-provided SS58 (SubWallet often uses generic prefix 42).
+ * the wallet-provided SS58 (injected wallets often use generic prefix 42).
  *
  * Uses lite SS58 (no @polkadot/util-crypto WASM) so address paths stay out of
  * the Worker crypto blob.

@@ -312,6 +312,23 @@ export function getChainKeyForEvmChainId(
   )?.key;
 }
 
+/** Chain picker key for the signed-in session (wallet-select step). */
+export function getChainKeyForSession(
+  ecosystem: WalletEcosystem | null | undefined,
+  chainId?: number
+): ChainKey | null {
+  if (!ecosystem) return null;
+  if (ecosystem === "evm") {
+    if (chainId != null && Number.isFinite(chainId)) {
+      return getChainKeyForEvmChainId(chainId) ?? "base";
+    }
+    return "base";
+  }
+  return (
+    CHAIN_REGISTRY.find((entry) => entry.ecosystem === ecosystem)?.key ?? null
+  );
+}
+
 export function chainSupportsShopPaymentsConfig(
   entry: ChainSettingsEntry
 ): boolean {

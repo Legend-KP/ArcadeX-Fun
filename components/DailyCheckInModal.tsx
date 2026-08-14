@@ -27,6 +27,7 @@ interface DailyCheckInModalProps {
     milestone: boolean;
     infiniteSparkGranted: boolean;
   }) => void;
+  onChangeWallet?: () => void;
 }
 
 function FlameIcon({ className }: { className?: string }) {
@@ -127,6 +128,7 @@ export default function DailyCheckInModal({
   chainId,
   status,
   onComplete,
+  onChangeWallet,
 }: DailyCheckInModalProps) {
   const [loading, setLoading] = useState(false);
   const [loadingPhase, setLoadingPhase] = useState<"wallet" | "sync" | null>(
@@ -476,6 +478,7 @@ export default function DailyCheckInModal({
 
   return createPortal(
     <div className="player-modal-backdrop" role="dialog" aria-modal="true">
+      <div className="daily-checkin-stack">
       <div className="player-modal daily-checkin-modal">
         <h2 className="daily-checkin-heading">
           <FlameIcon className="daily-checkin-heading-flame" />
@@ -629,6 +632,17 @@ export default function DailyCheckInModal({
                   : network.gasHint}
           </span>
         </button>
+      </div>
+      {onChangeWallet ? (
+        <button
+          type="button"
+          className="daily-checkin-change-wallet"
+          disabled={loading}
+          onClick={onChangeWallet}
+        >
+          Change wallet
+        </button>
+      ) : null}
       </div>
     </div>,
     document.body

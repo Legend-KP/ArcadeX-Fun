@@ -393,7 +393,7 @@ export default function ScoreSubmitVaraPaymentModal({
           {showTokenStep && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
-                Select a token, then tap Pay & Submit. SubWallet will ask you to
+                Select a token, then tap Pay & Submit. Your wallet will ask you to
                 Approve, then Pay.
               </p>
               {balancesLoading ? (

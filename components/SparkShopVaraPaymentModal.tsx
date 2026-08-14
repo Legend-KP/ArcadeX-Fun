@@ -286,7 +286,7 @@ export default function SparkShopVaraPaymentModal({
           {step === "token" && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
-                Tap a token to pay. Your Polkadot.js wallet will open to approve
+                Tap a token to pay. Your wallet will open to approve
                 the transfer.
               </p>
 
