@@ -2,13 +2,17 @@
 
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import PlayerProfileProvider from "@/components/PlayerProfileProvider";
 import SparkProvider from "@/components/SparkProvider";
 import ChainSettingsProvider from "@/components/ChainSettingsProvider";
 
 const WalletProvider = dynamic(() => import("@/components/WalletProvider"), {
   ssr: false,
 });
+
+const PlayerProfileProvider = dynamic(
+  () => import("@/components/PlayerProfileProvider"),
+  { ssr: false }
+);
 
 export default function AppProviders({
   children,

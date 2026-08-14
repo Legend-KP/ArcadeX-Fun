@@ -1,7 +1,10 @@
 /**
  * sr25519 shuffle spin signatures for Vara ArcadeXRewards lite.
  * Message format must stay in sync with prepare/sync verification.
+ *
+ * ASM.js init avoids the WASM blob that OpenNext/esbuild rejects (`proving\00`).
  */
+import "@polkadot/wasm-crypto/initOnlyAsm";
 import { hexToU8a, stringToU8a, u8aToHex } from "@polkadot/util";
 import {
   cryptoWaitReady,

@@ -1,12 +1,13 @@
 "use client";
 
-import { SiweMessage } from "siwe";
 import { buildSiweStatement } from "@/lib/auth-message";
+import { buildSiweMessage } from "@/lib/siwe-lite";
 import { buildStarknetAuthTypedData } from "@/lib/starknet-auth";
 import { buildSuiAuthMessage } from "@/lib/sui-auth";
 import type { AptosSignMessageOutput } from "@/lib/aptos-auth";
 import { WalletEcosystem } from "@/lib/player-identity";
-import type { TypedData } from "starknet";
+
+type StarknetTypedData = ReturnType<typeof buildStarknetAuthTypedData>;
 
 export type AuthSessionPayload = {
   playerId: string;
@@ -109,17 +110,14 @@ export async function signInWithEvm(params: {
       ? window.location.origin
       : "https://arcadex.fun";
 
-  const siwe = new SiweMessage({
+  const message = buildSiweMessage({
     domain,
     address: params.address,
     statement: buildSiweStatement(),
     uri,
-    version: "1",
     chainId: params.chainId,
     nonce,
   });
-
-  const message = siwe.prepareMessage();
   const signature = await params.signMessageAsync({ message });
 
   return postAuthVerify(
@@ -140,7 +138,9 @@ export async function signInWithEvm(params: {
 
 export async function signInWithStarknet(params: {
   address: string;
-  signTypedData: (typedData: TypedData) => Promise<string[] | readonly string[]>;
+  signTypedData: (
+    typedData: StarknetTypedData
+  ) => Promise<string[] | readonly string[]>;
 }): Promise<AuthSessionPayload> {
   const nonce = await takeAuthNonce();
   const typedData = buildStarknetAuthTypedData(nonce);

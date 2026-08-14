@@ -1,25 +1,11 @@
 import { NextResponse } from "next/server";
-import { SiweMessage } from "siwe";
 import { consumeAuthNonce } from "@/lib/auth-nonce";
 import {
   createSessionToken,
   sessionCookieOptions,
 } from "@/lib/auth-session";
-import {
-  AptosSignMessageOutput,
-  isAptosAuthMessageValid,
-  verifyAptosSignMessage,
-} from "@/lib/aptos-auth";
-import {
-  isMovementAuthMessageValid,
-  verifyMovementSignMessage,
-} from "@/lib/movement-auth";
-import { isStellarAuthMessageValid } from "@/lib/stellar-auth";
-import { verifyStellarSignedMessage } from "@/lib/stellar-verify";
-import { isVaraAuthMessageValid } from "@/lib/vara-auth";
-import { verifyVaraSignature } from "@/lib/vara-verify";
-import { buildStarknetAuthTypedData } from "@/lib/starknet-auth";
-import { isSuiAuthMessageValid } from "@/lib/sui-auth";
+import type { AptosSignMessageOutput } from "@/lib/aptos-auth";
+import { verifySiweMessage } from "@/lib/siwe-lite";
 import {
   buildPlayerId,
   normalizeAddress,
@@ -49,6 +35,16 @@ function getAppOrigin(request: Request): string {
   return new URL(request.url).origin;
 }
 
+async function consumeNonce(nonce: string | undefined): Promise<void> {
+  if (!nonce) {
+    throw new Error("signature, nonce, and address are required.");
+  }
+  const consumed = await consumeAuthNonce(nonce);
+  if (!consumed) {
+    throw new Error("Invalid or expired nonce.");
+  }
+}
+
 async function verifyEvmSiwe(
   body: VerifyBody,
   origin: string
@@ -58,26 +54,14 @@ async function verifyEvmSiwe(
     throw new Error("message, signature, and nonce are required.");
   }
 
-  const consumed = await consumeAuthNonce(nonce);
-  if (!consumed) {
-    throw new Error("Invalid or expired nonce.");
-  }
+  await consumeNonce(nonce);
 
-  const siwe = new SiweMessage(message);
-  const result = await siwe.verify({
+  return verifySiweMessage({
+    message,
     signature,
     nonce,
     domain: new URL(origin).host,
   });
-
-  if (!result.success) {
-    throw new Error("Invalid signature.");
-  }
-
-  return {
-    address: normalizeAddress("evm", siwe.address),
-    chainId: siwe.chainId,
-  };
 }
 
 async function verifyStarknetAuth(
@@ -87,43 +71,13 @@ async function verifyStarknetAuth(
   if (!signature || !nonce || !address) {
     throw new Error("signature, nonce, and address are required.");
   }
-
-  const consumed = await consumeAuthNonce(nonce);
-  if (!consumed) {
-    throw new Error("Invalid or expired nonce.");
-  }
-
-  let sigArray: string[];
-  try {
-    const parsed = JSON.parse(signature) as unknown;
-    if (!Array.isArray(parsed) || parsed.length < 2) {
-      throw new Error("bad sig");
-    }
-    sigArray = parsed.map(String);
-  } catch {
-    throw new Error("Invalid Starknet signature format.");
-  }
-
-  const signer = normalizeAddress("starknet", address);
-  const typedData = buildStarknetAuthTypedData(nonce);
-
-  const { RpcProvider } = await import("starknet");
-  const provider = new RpcProvider({
-    nodeUrl:
-      process.env.STARKNET_RPC_URL?.trim() ||
-      "https://starknet-mainnet.public.blastapi.io/rpc/v0_9",
+  await consumeNonce(nonce);
+  const { verifyStarknetAuthSignature } = await import("@/lib/starknet-verify");
+  const signer = await verifyStarknetAuthSignature({
+    signature,
+    nonce,
+    address,
   });
-
-  const valid = await provider.verifyMessageInStarknet(
-    typedData,
-    sigArray,
-    signer
-  );
-
-  if (!valid) {
-    throw new Error("Invalid Starknet signature.");
-  }
-
   return { address: signer };
 }
 
@@ -132,12 +86,9 @@ async function verifySuiAuth(body: VerifyBody): Promise<{ address: string }> {
   if (!signature || !nonce || !address || !message) {
     throw new Error("signature, nonce, address, and message are required.");
   }
+  await consumeNonce(nonce);
 
-  const consumed = await consumeAuthNonce(nonce);
-  if (!consumed) {
-    throw new Error("Invalid or expired nonce.");
-  }
-
+  const { isSuiAuthMessageValid } = await import("@/lib/sui-auth");
   if (!isSuiAuthMessageValid(message, nonce)) {
     throw new Error("Invalid sign-in message.");
   }
@@ -150,11 +101,9 @@ async function verifySuiAuth(body: VerifyBody): Promise<{ address: string }> {
   const valid = await isValidPersonalMessageSignature(messageBytes, signature, {
     address: signer,
   });
-
   if (!valid) {
     throw new Error("Invalid Sui signature.");
   }
-
   return { address: signer };
 }
 
@@ -163,16 +112,14 @@ async function verifyAptosAuth(body: VerifyBody): Promise<{ address: string }> {
   if (!signedMessage || !nonce || !address) {
     throw new Error("signedMessage, nonce, and address are required.");
   }
+  await consumeNonce(nonce);
 
-  const consumed = await consumeAuthNonce(nonce);
-  if (!consumed) {
-    throw new Error("Invalid or expired nonce.");
-  }
-
+  const { isAptosAuthMessageValid, verifyAptosSignMessage } = await import(
+    "@/lib/aptos-auth"
+  );
   if (!isAptosAuthMessageValid(signedMessage.message, nonce)) {
     throw new Error("Invalid sign-in message.");
   }
-
   if (!verifyAptosSignMessage(signedMessage)) {
     throw new Error("Invalid Aptos signature.");
   }
@@ -181,7 +128,6 @@ async function verifyAptosAuth(body: VerifyBody): Promise<{ address: string }> {
   if (normalizeAddress("aptos", signedMessage.address) !== signer) {
     throw new Error("Aptos address mismatch.");
   }
-
   return { address: signer };
 }
 
@@ -192,16 +138,13 @@ async function verifyMovementAuth(
   if (!signedMessage || !nonce || !address) {
     throw new Error("signedMessage, nonce, and address are required.");
   }
+  await consumeNonce(nonce);
 
-  const consumed = await consumeAuthNonce(nonce);
-  if (!consumed) {
-    throw new Error("Invalid or expired nonce.");
-  }
-
+  const { isMovementAuthMessageValid, verifyMovementSignMessage } =
+    await import("@/lib/movement-auth");
   if (!isMovementAuthMessageValid(signedMessage.message, nonce)) {
     throw new Error("Invalid sign-in message.");
   }
-
   if (!verifyMovementSignMessage(signedMessage)) {
     throw new Error("Invalid Movement signature.");
   }
@@ -210,7 +153,6 @@ async function verifyMovementAuth(
   if (normalizeAddress("movement", signedMessage.address) !== signer) {
     throw new Error("Movement address mismatch.");
   }
-
   return { address: signer };
 }
 
@@ -219,21 +161,18 @@ async function verifyStellarAuth(body: VerifyBody): Promise<{ address: string }>
   if (!signature || !nonce || !address || !message) {
     throw new Error("signature, nonce, address, and message are required.");
   }
+  await consumeNonce(nonce);
 
-  const consumed = await consumeAuthNonce(nonce);
-  if (!consumed) {
-    throw new Error("Invalid or expired nonce.");
-  }
-
+  const { isStellarAuthMessageValid } = await import("@/lib/stellar-auth");
   if (!isStellarAuthMessageValid(message, nonce)) {
     throw new Error("Invalid sign-in message.");
   }
 
+  const { verifyStellarSignedMessage } = await import("@/lib/stellar-verify");
   const signer = normalizeAddress("stellar", address);
   if (!verifyStellarSignedMessage(message, signature, signer)) {
     throw new Error("Invalid Stellar signature.");
   }
-
   return { address: signer };
 }
 
@@ -242,16 +181,14 @@ async function verifyVaraAuth(body: VerifyBody): Promise<{ address: string }> {
   if (!signature || !nonce || !address || !message) {
     throw new Error("signature, nonce, address, and message are required.");
   }
+  await consumeNonce(nonce);
 
-  const consumed = await consumeAuthNonce(nonce);
-  if (!consumed) {
-    throw new Error("Invalid or expired nonce.");
-  }
-
+  const { isVaraAuthMessageValid } = await import("@/lib/vara-auth");
   if (!isVaraAuthMessageValid(message, nonce)) {
     throw new Error("Invalid sign-in message.");
   }
 
+  const { verifyVaraSignature } = await import("@/lib/vara-verify");
   const rawAddress = address.trim();
   const signer = normalizeAddress("vara", rawAddress);
   const valid =
@@ -260,7 +197,6 @@ async function verifyVaraAuth(body: VerifyBody): Promise<{ address: string }> {
   if (!valid) {
     throw new Error("Invalid Vara signature.");
   }
-
   return { address: signer };
 }
 
