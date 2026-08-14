@@ -14,8 +14,13 @@ import { formatUnits, getAddress, type Hash } from "viem";
 import { avalanche } from "@/lib/chains";
 import { formatChainError } from "@/lib/base-public-client";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
-import { purchaseSparkItem } from "@/lib/spark-client";
+import { purchaseSparkItem, SparkClientError } from "@/lib/spark-client";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
+import {
+  clearPendingShopPurchaseTx,
+  readPendingShopPurchaseTx,
+  savePendingShopPurchaseTx,
+} from "@/lib/shop-purchase-pending-tx";
 import {
   isWalletMismatchMessage,
   WalletSessionMismatchError,
@@ -73,9 +78,9 @@ async function confirmPurchaseWithRetries(params: {
   tokenAddress: string;
 }): Promise<void> {
   let lastError: unknown;
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < 10; attempt++) {
     if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, 1200 + attempt * 600));
+      await new Promise((r) => setTimeout(r, 1000 + attempt * 500));
     }
     try {
       await purchaseSparkItem({
@@ -84,26 +89,44 @@ async function confirmPurchaseWithRetries(params: {
         txHash: params.txHash,
         tokenAddress: params.tokenAddress,
       });
+      clearPendingShopPurchaseTx();
       return;
     } catch (err) {
       lastError = err;
-      if (!isPaymentStillConfirmingError(err)) {
+      if (isPaymentStillConfirmingError(err)) continue;
+
+      if (err instanceof SparkClientError) {
         if (
-          err instanceof Error &&
-          (err.message.includes("Sign in") ||
-            err.message.includes("session") ||
-            err.message.includes("Unsupported") ||
-            err.message.includes("Unknown shop") ||
-            err.message.includes("does not match"))
+          err.code === "NO_SESSION" ||
+          err.code === "SESSION_MISMATCH" ||
+          err.code === "UNSUPPORTED_WALLET" ||
+          err.code === "INVALID_PRODUCT" ||
+          err.code === "INVALID_TOKEN" ||
+          err.code === "TX_ALREADY_USED"
         ) {
           throw err;
         }
-        if (attempt >= 2 && !isPaymentStillConfirmingError(err)) {
-          const msg = err instanceof Error ? err.message.toLowerCase() : "";
-          if (!msg.includes("network") && !msg.includes("failed to fetch")) {
-            throw err;
-          }
-        }
+      }
+
+      const msg = err instanceof Error ? err.message.toLowerCase() : "";
+      if (
+        msg.includes("sign in") ||
+        msg.includes("session") ||
+        msg.includes("unsupported") ||
+        msg.includes("unknown shop") ||
+        msg.includes("does not match") ||
+        msg.includes("already used")
+      ) {
+        throw err;
+      }
+
+      if (
+        attempt >= 3 &&
+        !msg.includes("network") &&
+        !msg.includes("failed to fetch") &&
+        !(err instanceof SparkClientError && (err.status ?? 0) >= 500)
+      ) {
+        throw err;
       }
     }
   }
@@ -238,6 +261,15 @@ export default function SparkShopAvalanchePaymentModal({
       setError("");
       setTxHash(hash);
 
+      savePendingShopPurchaseTx({
+        playerId,
+        productId: purchasedProduct.id,
+        txHash: hash,
+        tokenAddress: token.address,
+        network: "avalanche",
+        savedAt: Date.now(),
+      });
+
       try {
         await confirmPurchaseWithRetries({
           playerId,
@@ -278,8 +310,19 @@ export default function SparkShopAvalanchePaymentModal({
       setTxHash(undefined);
       setBusy(false);
       setError("");
+      return;
     }
-  }, [open]);
+
+    if (!productId) return;
+    const pending = readPendingShopPurchaseTx(playerId, productId);
+    if (pending?.txHash) {
+      setTxHash(pending.txHash as `0x${string}`);
+      const match = AVALANCHE_SHOP_PAYMENT_TOKENS.find(
+        (t) => t.address.toLowerCase() === pending.tokenAddress.toLowerCase()
+      );
+      if (match) setSelectedToken(match);
+    }
+  }, [open, playerId, productId]);
 
   useEffect(() => {
     if (!open) return;
@@ -287,9 +330,10 @@ export default function SparkShopAvalanchePaymentModal({
   }, [open, onAvalanche]);
 
   useEffect(() => {
-    if (!open || isConnected) return;
+    if (!open || isConnected || address) return;
+    if (step === "paying" || step === "confirming") return;
     void ensureWalletReady();
-  }, [open, isConnected, ensureWalletReady]);
+  }, [open, isConnected, address, step, ensureWalletReady]);
 
   const handleSwitchNetwork = useCallback(async () => {
     setBusy(true);
@@ -401,11 +445,15 @@ export default function SparkShopAvalanchePaymentModal({
 
   if (!open || !product || !mounted) return null;
 
+  const hasWallet = Boolean(address) || isConnected;
   const affordableCount = tokenOptions.filter((option) => option.sufficient)
     .length;
-  const showTokenStep = step === "token" && onAvalanche;
+  const showTokenStep =
+    step === "token" && onAvalanche && hasWallet && sessionMatchesWallet;
   const showPayFooter =
-    showTokenStep && !balancesLoading && affordableCount > 0;
+    showTokenStep && !balancesLoading && affordableCount > 0 && !txHash;
+  const showConnectPrompt =
+    !hasWallet && step !== "paying" && step !== "confirming";
 
   const modal = (
     <div
@@ -442,19 +490,29 @@ export default function SparkShopAvalanchePaymentModal({
           </p>
           <p className="spark-shop-payment__desc">{product.description}</p>
 
-          {!isConnected && (
-            <p className="spark-shop-payment__error" role="alert">
-              Connect your wallet to continue.
-            </p>
+          {showConnectPrompt && (
+            <div className="spark-shop-payment__section">
+              <p className="spark-shop-payment__hint">
+                Reconnect your wallet to continue.
+              </p>
+              <button
+                type="button"
+                className="spark-shop-payment__primary"
+                onClick={() => void handleReconnectWallet()}
+                disabled={busy}
+              >
+                Connect wallet
+              </button>
+            </div>
           )}
 
-          {isConnected && address && !sessionMatchesWallet && (
+          {hasWallet && address && !sessionMatchesWallet && (
             <p className="spark-shop-payment__error" role="alert">
               {new WalletSessionMismatchError(address, walletAddress).message}
             </p>
           )}
 
-          {isConnected && address && !sessionMatchesWallet && (
+          {hasWallet && address && !sessionMatchesWallet && (
             <div className="spark-shop-payment__section">
               <button
                 type="button"
@@ -466,7 +524,7 @@ export default function SparkShopAvalanchePaymentModal({
             </div>
           )}
 
-          {step === "network" && (
+          {hasWallet && step === "network" && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
                 Switch to Avalanche C-Chain to pay with USDC.

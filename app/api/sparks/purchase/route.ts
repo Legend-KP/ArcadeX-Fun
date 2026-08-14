@@ -24,6 +24,7 @@ import {
 import { verifyVaraPaymentProgramTx } from "@/lib/vara-payment-server";
 import { fetchChainSettingsFromServer } from "@/lib/chain-settings-server";
 import { isShopPaymentsEnabled } from "@/lib/chain-registry";
+import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
 
 const AVALANCHE_C_CHAIN_ID = 43114;
 
@@ -249,6 +250,19 @@ export async function POST(request: Request) {
     if (err instanceof ShopPurchaseError) {
       return NextResponse.json(
         { error: err.message, code: err.code },
+        { status: 409 }
+      );
+    }
+
+    if (isPaymentStillConfirmingError(err)) {
+      return NextResponse.json(
+        {
+          error:
+            err instanceof Error
+              ? err.message
+              : "Payment is still confirming.",
+          code: "PAYMENT_CONFIRMING",
+        },
         { status: 409 }
       );
     }
