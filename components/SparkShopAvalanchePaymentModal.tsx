@@ -146,7 +146,7 @@ export default function SparkShopAvalanchePaymentModal({
   const { disconnectAsync } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
-  const { openConnect } = usePlayerProfile();
+  const { openConnect, ensureWalletReady } = usePlayerProfile();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<PaymentStep>("token");
   const [selectedToken, setSelectedToken] =
@@ -157,13 +157,16 @@ export default function SparkShopAvalanchePaymentModal({
 
   const handleReconnectWallet = useCallback(async () => {
     setError("");
-    try {
-      await disconnectAsync();
-    } catch {
-      // ignore
+    const ready = await ensureWalletReady();
+    if (!ready) {
+      try {
+        await disconnectAsync();
+      } catch {
+        // ignore
+      }
+      openConnect();
     }
-    openConnect();
-  }, [disconnectAsync, openConnect]);
+  }, [ensureWalletReady, disconnectAsync, openConnect]);
 
   const onAvalanche = chainId === AVALANCHE_CHAIN_ID;
   const sessionMatchesWallet = (() => {
@@ -282,6 +285,11 @@ export default function SparkShopAvalanchePaymentModal({
     if (!open) return;
     setStep(onAvalanche ? "token" : "network");
   }, [open, onAvalanche]);
+
+  useEffect(() => {
+    if (!open || isConnected) return;
+    void ensureWalletReady();
+  }, [open, isConnected, ensureWalletReady]);
 
   const handleSwitchNetwork = useCallback(async () => {
     setBusy(true);

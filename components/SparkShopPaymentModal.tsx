@@ -35,6 +35,7 @@ import {
   INFINITE_SPARK_CONTRACT_ADDRESS,
   isInfiniteSparkConfigured,
 } from "@/lib/infinite-spark";
+import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 
 function shopContractForProduct(
   productId: ShopProductId
@@ -165,6 +166,7 @@ export default function SparkShopPaymentModal({
   const chainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
+  const { ensureWalletReady } = usePlayerProfile();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<PaymentStep>("token");
   const [selectedToken, setSelectedToken] = useState<ShopPaymentToken | null>(
@@ -327,6 +329,11 @@ export default function SparkShopPaymentModal({
     if (!open) return;
     setStep(onPrimaryChain ? "token" : "network");
   }, [open, onPrimaryChain]);
+
+  useEffect(() => {
+    if (!open || isConnected) return;
+    void ensureWalletReady();
+  }, [open, isConnected, ensureWalletReady]);
 
   const handleSwitchNetwork = useCallback(async () => {
     setBusy(true);

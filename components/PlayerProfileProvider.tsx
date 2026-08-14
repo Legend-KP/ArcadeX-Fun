@@ -65,6 +65,9 @@ import {
 } from "@/lib/player-id";
 import { WalletEcosystem } from "@/lib/player-identity";
 import { PlayerProfile } from "@/types";
+import { ensureEvmWagmiConnected } from "@/lib/ensure-evm-wallet";
+import { connectVaraWallet } from "@/lib/vara-wallet-client";
+import { reconnectSlushWallet } from "@/lib/sui-wallet-client";
 
 interface PlayerProfileContextValue {
   playerId: string;
@@ -78,6 +81,11 @@ interface PlayerProfileContextValue {
   streakStatus: StreakStatus | null;
   refreshStreakStatus: () => Promise<void>;
   openConnect: () => void;
+  /**
+   * Restore live wallet for signing/payments when an ArcadeX session exists.
+   * Opens the connect modal only if restore fails.
+   */
+  ensureWalletReady: () => Promise<boolean>;
   logout: () => Promise<void>;
 }
 
@@ -504,20 +512,22 @@ export default function PlayerProfileProvider({
     };
   }, [loadProfileForSession]);
 
-  // Drop stale wagmi sessions when another extension/account is active.
+  // Soft-restore EVM connector after session bootstrap (no wallet popup).
   useEffect(() => {
     if (!isReady || !isAuthenticated || ecosystem !== "evm" || !walletAddress) {
       return;
     }
-    if (!wagmiConnected || !wagmiAddress) return;
-
-    try {
-      if (getAddress(wagmiAddress) !== getAddress(walletAddress)) {
-        void disconnectAsync().catch(() => undefined);
+    if (wagmiConnected && wagmiAddress) {
+      try {
+        if (getAddress(wagmiAddress) === getAddress(walletAddress)) return;
+      } catch {
+        // fall through to silent reconnect attempt
       }
-    } catch {
-      void disconnectAsync().catch(() => undefined);
     }
+    void ensureEvmWagmiConnected({
+      expectedAddress: walletAddress,
+      allowPrompt: false,
+    });
   }, [
     isReady,
     isAuthenticated,
@@ -525,8 +535,57 @@ export default function PlayerProfileProvider({
     walletAddress,
     wagmiConnected,
     wagmiAddress,
-    disconnectAsync,
   ]);
+
+  const openConnect = useCallback(() => {
+    setShowOnboarding(false);
+    setShowDailyPlay(false);
+    setStreakBroken(null);
+    setStreakBrokenMeta(null);
+    setShowConnect(true);
+  }, []);
+
+  const ensureWalletReady = useCallback(async () => {
+    if (!isAuthenticated || !walletAddress || !ecosystem) {
+      openConnect();
+      return false;
+    }
+
+    if (ecosystem === "evm") {
+      const result = await ensureEvmWagmiConnected({
+        expectedAddress: walletAddress,
+        allowPrompt: true,
+      });
+      if (result.ok) return true;
+      if (result.reason === "mismatch" && result.error) {
+        setError(result.error.message);
+      }
+      openConnect();
+      return false;
+    }
+
+    if (ecosystem === "vara") {
+      try {
+        await connectVaraWallet();
+        return true;
+      } catch {
+        openConnect();
+        return false;
+      }
+    }
+
+    if (ecosystem === "sui") {
+      try {
+        await reconnectSlushWallet();
+        return true;
+      } catch {
+        openConnect();
+        return false;
+      }
+    }
+
+    return true;
+  }, [isAuthenticated, walletAddress, ecosystem, openConnect]);
 
   const handleSignedIn = useCallback(
     async (signedInSession?: {
@@ -656,13 +715,8 @@ export default function PlayerProfileProvider({
       isAuthenticated,
       streakStatus,
       refreshStreakStatus,
-      openConnect: () => {
-        setShowOnboarding(false);
-        setShowDailyPlay(false);
-        setStreakBroken(null);
-        setStreakBrokenMeta(null);
-        setShowConnect(true);
-      },
+      openConnect,
+      ensureWalletReady,
       logout,
     }),
     [
@@ -675,6 +729,8 @@ export default function PlayerProfileProvider({
       isAuthenticated,
       streakStatus,
       refreshStreakStatus,
+      openConnect,
+      ensureWalletReady,
       logout,
     ]
   );

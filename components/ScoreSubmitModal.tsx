@@ -11,7 +11,9 @@ import {
   useWriteContract,
 } from "wagmi";
 import { formatUnits, getAddress, maxUint256, type Hash } from "viem";
+import { getConnection } from "@wagmi/core";
 import { avalanche, PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
+import { wagmiConfig } from "@/lib/wagmi-config";
 import { formatChainError } from "@/lib/base-public-client";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
 import { extractSubmittedTxHash } from "@/lib/tx-hash";
@@ -134,13 +136,15 @@ export default function ScoreSubmitModal({
   const { disconnectAsync } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
-  const { openConnect, chainId: profileChainId } = usePlayerProfile();
+  const { openConnect, ensureWalletReady, chainId: profileChainId } =
+    usePlayerProfile();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<PaymentStep>("token");
   const [selectedToken, setSelectedToken] = useState<PaymentToken | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [restoringWallet, setRestoringWallet] = useState(false);
   const walletMismatch =
     Boolean(address && walletAddress) &&
     (() => {
@@ -153,13 +157,21 @@ export default function ScoreSubmitModal({
 
   const handleReconnectWallet = useCallback(async () => {
     setError("");
+    setRestoringWallet(true);
     try {
-      await disconnectAsync();
-    } catch {
-      // ignore
+      const ready = await ensureWalletReady();
+      if (!ready) {
+        try {
+          await disconnectAsync();
+        } catch {
+          // ignore
+        }
+        openConnect();
+      }
+    } finally {
+      setRestoringWallet(false);
     }
-    openConnect();
-  }, [disconnectAsync, openConnect]);
+  }, [ensureWalletReady, disconnectAsync, openConnect]);
 
   const isAvalanche = profileChainId === AVALANCHE_CHAIN_ID;
   const targetChainId = isAvalanche ? AVALANCHE_CHAIN_ID : PRIMARY_EVM_CHAIN_ID;
@@ -375,6 +387,20 @@ export default function ScoreSubmitModal({
   }, [open, onTargetChain]);
 
   useEffect(() => {
+    if (!open || isConnected) return;
+    let cancelled = false;
+    setRestoringWallet(true);
+    void ensureWalletReady()
+      .catch(() => false)
+      .finally(() => {
+        if (!cancelled) setRestoringWallet(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isConnected, ensureWalletReady]);
+
+  useEffect(() => {
     if (!open || !onTargetChain || balancesLoading) return;
     if (selectedToken) {
       const stillOk = tokenOptions.some(
@@ -415,18 +441,30 @@ export default function ScoreSubmitModal({
       const payToken = token ?? selectedToken;
       if (!payToken) return;
 
-      if (!isConnected || !address) {
-        setError("Reconnect your wallet to approve the USDC payment.");
-        openConnect();
-        return;
+      let payAddress = address;
+      if (!isConnected || !payAddress) {
+        setBusy(true);
+        setError("");
+        try {
+          const ready = await ensureWalletReady();
+          payAddress = getConnection(wagmiConfig).address;
+          if (!ready || !payAddress) {
+            setError("Reconnect your wallet to approve the USDC payment.");
+            return;
+          }
+        } finally {
+          setBusy(false);
+        }
       }
 
       if (
         walletAddress &&
-        address &&
-        getAddress(address) !== getAddress(walletAddress as `0x${string}`)
+        payAddress &&
+        getAddress(payAddress) !== getAddress(walletAddress as `0x${string}`)
       ) {
-        setError(new WalletSessionMismatchError(address, walletAddress).message);
+        setError(
+          new WalletSessionMismatchError(payAddress, walletAddress).message
+        );
         return;
       }
 
@@ -515,7 +553,8 @@ export default function ScoreSubmitModal({
       selectedToken,
       address,
       isConnected,
-      openConnect,
+      ensureWalletReady,
+      walletAddress,
       tokenOptions,
       writeContractAsync,
       confirmSubmit,
@@ -605,18 +644,21 @@ export default function ScoreSubmitModal({
 
           {!isConnected && (
             <div className="spark-shop-payment__section">
-              <p className="spark-shop-payment__error" role="alert">
-                Wallet disconnected. Reconnect to pay with USDC on{" "}
-                {networkLabel}.
+              <p className="spark-shop-payment__hint">
+                {restoringWallet
+                  ? `Reconnecting wallet for ${networkLabel}…`
+                  : `Wallet disconnected. Reconnect to pay with USDC on ${networkLabel}.`}
               </p>
-              <button
-                type="button"
-                className={payBtnClass}
-                onClick={() => openConnect()}
-                disabled={busy}
-              >
-                Connect wallet
-              </button>
+              {!restoringWallet ? (
+                <button
+                  type="button"
+                  className={payBtnClass}
+                  onClick={() => void handleReconnectWallet()}
+                  disabled={busy}
+                >
+                  Connect wallet
+                </button>
+              ) : null}
             </div>
           )}
 
@@ -724,7 +766,7 @@ export default function ScoreSubmitModal({
         </div>
 
         <div className="spark-shop-payment__footer">
-          {showTokenStep && !txHash ? (
+          {isConnected && showTokenStep && !txHash ? (
             <button
               type="button"
               className={payBtnClass}

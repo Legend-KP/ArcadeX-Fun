@@ -57,7 +57,7 @@ export default function GameClient({
     ecosystem,
     chainId,
     isReady,
-    openConnect,
+    ensureWalletReady,
   } = usePlayerProfile();
 
   const contestChainKey = resolveContestChainKey({
@@ -255,8 +255,8 @@ export default function GameClient({
             resolvedWallet || payloadWallet || profile?.walletAddress || "";
 
           if (!submitWallet) {
-            // Keep the score pending and prompt reconnect — don't silently fail.
-            openConnect();
+            // Keep the score pending and restore wallet — don't silently fail.
+            void ensureWalletReady();
           }
 
           setPendingScore({
@@ -368,7 +368,7 @@ export default function GameClient({
       profile?.walletAddress,
       walletAddress,
       resolvedWallet,
-      openConnect,
+      ensureWalletReady,
       shellOrigin,
       playerId,
       resolvedPlayerId,

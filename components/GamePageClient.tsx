@@ -28,6 +28,7 @@ export default function GamePageClient() {
     walletAddress,
     isAuthenticated,
     openConnect,
+    ensureWalletReady,
     playerId,
     playerName,
     ecosystem,
@@ -117,6 +118,12 @@ export default function GamePageClient() {
     if (!walletAddress || !isAuthenticated) {
       setSparkError("Connect your wallet to play.");
       openConnect();
+      return;
+    }
+
+    const walletReady = await ensureWalletReady();
+    if (!walletReady) {
+      setSparkError("Reconnect your wallet to play.");
       return;
     }
 
