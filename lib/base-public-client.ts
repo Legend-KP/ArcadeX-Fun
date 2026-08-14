@@ -10,19 +10,28 @@ const DEFAULT_RPC_URLS = [
   "https://mainnet.base.org",
   "https://base.drpc.org",
   "https://base.meowrpc.com",
-  // 1rpc / llamarpc flake with Cloudflare 521 — keep last.
-  "https://1rpc.io/base",
-  "https://base.llamarpc.com",
+  "https://base.publicnode.com",
 ] as const;
+
+const FLAKY_RPC_HINTS = ["llamarpc", "1rpc.io"] as const;
+
+function isFlakyRpcUrl(url: string): boolean {
+  const lower = url.toLowerCase();
+  return FLAKY_RPC_HINTS.some((hint) => lower.includes(hint));
+}
 
 function getRpcUrls(): string[] {
   const primary =
     process.env.BASE_RPC_URL?.trim() ||
     process.env.NEXT_PUBLIC_BASE_RPC_URL?.trim();
-  const urls = primary
-    ? [primary, ...DEFAULT_RPC_URLS.filter((url) => url !== primary)]
-    : [...DEFAULT_RPC_URLS];
-  return [...new Set(urls)];
+
+  const defaults = [...DEFAULT_RPC_URLS];
+  const urls = primary ? [primary, ...defaults.filter((url) => url !== primary)] : defaults;
+
+  // Never prefer known-flaky public RPCs (Cloudflare 521 / outages).
+  const stable = urls.filter((url) => !isFlakyRpcUrl(url));
+  const flaky = urls.filter((url) => isFlakyRpcUrl(url));
+  return [...new Set([...stable, ...flaky])];
 }
 
 const publicClientConfig = {
@@ -31,10 +40,10 @@ const publicClientConfig = {
   cacheTime: 0,
 } as const;
 
-function createHttpClient(rpcUrl: string) {
+function createHttpClient(rpcUrl: string, timeoutMs = 12_000) {
   return createPublicClient({
     ...publicClientConfig,
-    transport: http(rpcUrl, { timeout: 12_000 }),
+    transport: http(rpcUrl, { timeout: timeoutMs }),
   });
 }
 
@@ -237,6 +246,45 @@ function isTransientReceiptError(error: unknown): boolean {
     message.includes("timed out") ||
     message.includes("wait for transaction")
   );
+}
+
+/**
+ * Fast receipt lookup across Base RPCs — used by shop / score-submit verify.
+ * Avoids long waitForTransactionReceipt sweeps that stall Workers for minutes
+ * when a public RPC is returning Cloudflare 521.
+ */
+export async function getBaseTransactionReceiptFast(
+  hash: Hash
+): Promise<TransactionReceipt> {
+  let lastError: unknown;
+  const urls = getRpcUrls();
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, 350 + attempt * 250)
+      );
+    }
+
+    for (const rpcUrl of urls) {
+      try {
+        const receipt = await createHttpClient(rpcUrl, 5_000).getTransactionReceipt({
+          hash,
+        });
+        if (receipt) return receipt;
+      } catch (error) {
+        lastError = error;
+        if (!isTransientReceiptError(error)) throw error;
+        // Try next RPC immediately on 521 / timeout / not found.
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(
+        "Payment is still confirming on Base. Wait a moment, then tap Confirm payment."
+      );
 }
 
 export async function waitForBaseTransactionReceipt(

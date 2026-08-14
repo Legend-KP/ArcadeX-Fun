@@ -7,11 +7,9 @@ import {
   type TransactionReceipt,
 } from "viem";
 import {
-  getBasePublicClient,
+  getBaseTransactionReceiptFast,
   readBaseContractWithFailover,
-  resetBasePublicClient,
   isBlockOutOfRangeError,
-  waitForBaseTransactionReceipt,
 } from "@/lib/base-public-client";
 import {
   getAvalanchePublicClient,
@@ -116,30 +114,13 @@ export async function getPaymentTransactionReceipt(
 
   let lastError: unknown;
 
-  // Fast path: short wait on rotating public clients.
+  // Prefer fast getTransactionReceipt across healthy RPCs — public waitFor*
+  // sweeps hang for minutes when llamarpc/1rpc return Cloudflare 521.
   try {
-    return await waitForBaseTransactionReceipt(txHash, {
-      confirmations: 1,
-      timeoutMs: 6_000,
-    });
+    return await getBaseTransactionReceiptFast(txHash);
   } catch (error) {
     lastError = error;
     if (!isTransientReceiptError(error)) throw error;
-  }
-
-  // Poll getTransactionReceipt across RPCs — cheaper than long eth_getLogs waits.
-  for (let attempt = 0; attempt < 5; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 400 + attempt * 250));
-    resetBasePublicClient();
-    try {
-      const receipt = await getBasePublicClient().getTransactionReceipt({
-        hash: txHash,
-      });
-      if (receipt) return receipt;
-    } catch (err) {
-      lastError = err;
-      if (!isTransientReceiptError(err)) throw err;
-    }
   }
 
   throw lastError instanceof Error

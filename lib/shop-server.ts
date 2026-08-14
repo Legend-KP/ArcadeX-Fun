@@ -50,9 +50,9 @@ export async function verifyShopPaymentTx(params: {
         await verifySparkRefillPaymentTx(params.expectedFrom, params.txHash);
         return;
       } catch (err) {
-        // Receipt not indexed yet — bubble up so the client can retry.
+        // Receipt / RPC not ready — bubble up so the client can retry.
         if (isPaymentStillConfirmingError(err)) throw err;
-        // Fall through to legacy transfer verification.
+        // Fall through to legacy transfer verification only for real tx mismatches.
       }
     }
 
@@ -62,7 +62,6 @@ export async function verifyShopPaymentTx(params: {
         return;
       } catch (err) {
         if (isPaymentStillConfirmingError(err)) throw err;
-        // Fall through to legacy transfer verification.
       }
     }
   }

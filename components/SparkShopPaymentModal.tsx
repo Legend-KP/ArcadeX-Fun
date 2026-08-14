@@ -100,9 +100,9 @@ async function confirmPurchaseWithRetries(params: {
   tokenAddress: string;
 }): Promise<void> {
   let lastError: unknown;
-  for (let attempt = 0; attempt < 10; attempt++) {
+  for (let attempt = 0; attempt < 8; attempt++) {
     if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, 1000 + attempt * 500));
+      await new Promise((r) => setTimeout(r, 700 + attempt * 400));
     }
     try {
       await purchaseSparkItem({
@@ -128,12 +128,14 @@ async function confirmPurchaseWithRetries(params: {
         ) {
           throw err;
         }
+        // 5xx / RPC flakes — keep retrying briefly.
+        if ((err.status ?? 0) >= 500 && attempt < 5) continue;
       }
 
       const msg = err instanceof Error ? err.message.toLowerCase() : "";
       if (
         msg.includes("sign in") ||
-        msg.includes("session") ||
+        msg.includes("session mismatch") ||
         msg.includes("unsupported") ||
         msg.includes("unknown shop") ||
         msg.includes("does not match") ||
@@ -142,12 +144,12 @@ async function confirmPurchaseWithRetries(params: {
         throw err;
       }
 
-      // Soft network / 5xx — keep retrying a few times.
       if (
-        attempt >= 3 &&
+        attempt >= 4 &&
         !msg.includes("network") &&
         !msg.includes("failed to fetch") &&
-        !(err instanceof SparkClientError && (err.status ?? 0) >= 500)
+        !msg.includes("521") &&
+        !msg.includes("http request failed")
       ) {
         throw err;
       }
