@@ -10,7 +10,7 @@ import {
   getPlayerRtdbConnection,
   type RtdbConnection,
 } from "@/lib/rtdb-resolver";
-import { rtdbRead, rtdbWrite } from "@/lib/rtdb-rest";
+import { rtdbDelete, rtdbRead, rtdbWrite } from "@/lib/rtdb-rest";
 import type { WalletEcosystem } from "@/lib/player-identity";
 
 export class PlaySessionError extends Error {
@@ -109,6 +109,10 @@ export async function assertPlaySessionActive(params: {
 
   const now = params.now ?? Date.now();
   if (session.expiresAt <= now) {
+    await rtdbDelete(playSessionPath(id), {
+      silent: true,
+      connection,
+    }).catch(() => {});
     throw new PlaySessionError(
       "Play session expired. Start the game again.",
       "SESSION_EXPIRED"

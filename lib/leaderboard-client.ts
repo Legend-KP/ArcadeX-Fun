@@ -56,6 +56,7 @@ export async function savePersonalBest(
 ): Promise<number> {
   const res = await fetch(`/api/games/${gameId}/leaderboard`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(entry),
   });

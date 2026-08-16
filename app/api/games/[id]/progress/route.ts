@@ -39,6 +39,11 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const ip = getClientIp(request);
+    if (!(await checkRateLimit(`progress-get:ip:${ip}`, 90, 60_000))) {
+      return rateLimitResponse();
+    }
+
     const game = await fetchGameFromServer(id);
     if (!game) {
       return corsJsonResponse(
@@ -61,8 +66,19 @@ export async function GET(
       );
     }
 
-    const hasLeaderboard = gameHasLeaderboard(game);
     const session = await readSessionFromCookies();
+    if (session && playerId !== session.playerId) {
+      return corsJsonResponse(
+        request,
+        {
+          error: "Player does not match your signed-in session.",
+          code: "PLAYER_MISMATCH",
+        },
+        { status: 403 }
+      );
+    }
+
+    const hasLeaderboard = gameHasLeaderboard(game);
     const scope = {
       chainId: session?.chainId,
       ecosystem: session?.ecosystem,

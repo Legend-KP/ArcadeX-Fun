@@ -17,6 +17,14 @@ export function getMissingRequiredSecrets(): string[] {
     missing.push("WALLET_SESSION_SECRET");
   }
 
+  if (!process.env.AUTH_SECRET?.trim()) {
+    missing.push("AUTH_SECRET");
+  }
+
+  if (isProductionRuntime() && !process.env.ADMIN_PASSWORD?.trim()) {
+    missing.push("ADMIN_PASSWORD");
+  }
+
   // Fun prefers service-account OAuth for Firestore + RTDB.
   // Legacy FIREBASE_DATABASE_SECRET remains a fallback when no service account is set.
   const hasDbSecret = Boolean(process.env.FIREBASE_DATABASE_SECRET?.trim());

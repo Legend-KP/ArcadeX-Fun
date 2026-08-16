@@ -20,7 +20,7 @@ async function getRateLimitKv(): Promise<KvLike | null> {
   if (process.env.NODE_ENV === "production" && !warnedMissingKv) {
     warnedMissingKv = true;
     console.warn(
-      "[ArcadeX] RATE_LIMIT_KV binding missing — rate limits are per-isolate only. Bind a KV namespace named RATE_LIMIT_KV in wrangler.jsonc."
+      "[ArcadeX] RATE_LIMIT_KV binding missing — rate limits are per-isolate only. Create the namespace, put its id in wrangler.jsonc, and redeploy."
     );
   }
 

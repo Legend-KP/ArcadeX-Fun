@@ -78,7 +78,7 @@ export interface Game {
   chainContests?: Partial<Record<ContestChainKey, ChainContestState>>;
   /**
    * Optional score integrity bounds (server-side only; not exposed in public catalog).
-   * Soft-logged by default; hard-reject when SCORE_BOUNDS_ENFORCE=true.
+   * Hard-reject in production unless SCORE_BOUNDS_ENFORCE=false.
    */
   scoreBounds?: {
     maxPossibleScore?: number;

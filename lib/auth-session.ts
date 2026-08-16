@@ -14,13 +14,11 @@ export interface SessionPayload {
 }
 
 function getAuthSecret(): Uint8Array {
-  const secret =
-    process.env.AUTH_SECRET?.trim() ||
-    process.env.FIREBASE_DATABASE_SECRET?.trim();
+  const secret = process.env.AUTH_SECRET?.trim();
 
   if (!secret) {
     throw new Error(
-      "AUTH_SECRET is missing. Add it to your environment variables."
+      "AUTH_SECRET is missing. Add it as a Cloudflare Worker secret and redeploy. Do not reuse FIREBASE_DATABASE_SECRET."
     );
   }
 

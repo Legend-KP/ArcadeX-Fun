@@ -1,5 +1,7 @@
 /** Play-session binding for progress + paid score submit. */
 
+import { getDeployEnv } from "@/lib/deploy-env";
+
 export const PLAY_SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 export const PLAY_SESSION_ID_RE = /^[a-f0-9]{32}$/;
 
@@ -28,7 +30,7 @@ export type ScoreAnomalyResult = {
   reasons: string[];
 };
 
-/** Soft-launch anomaly checks (log by default; hard-reject when SCORE_BOUNDS_ENFORCE=true). */
+/** Anomaly checks. Hard-reject in production unless SCORE_BOUNDS_ENFORCE=false. */
 export function evaluateScoreAnomaly(params: {
   score: number;
   scoreBounds?: ScoreBounds | null;
@@ -65,7 +67,9 @@ export function evaluateScoreAnomaly(params: {
 
 export function shouldEnforceScoreBounds(): boolean {
   const raw = process.env.SCORE_BOUNDS_ENFORCE?.trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes";
+  if (raw === "0" || raw === "false" || raw === "no") return false;
+  if (raw === "1" || raw === "true" || raw === "yes") return true;
+  return getDeployEnv() === "production";
 }
 
 export function isValidPlaySessionId(value: string | null | undefined): boolean {

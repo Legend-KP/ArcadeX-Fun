@@ -219,6 +219,15 @@ export async function POST(
       return rateLimitResponse();
     }
 
+    const session = await readSessionFromCookies();
+    if (!session) {
+      return corsJsonResponse(
+        request,
+        { error: "Sign in to save your score.", code: "NO_SESSION" },
+        { status: 401 }
+      );
+    }
+
     const { error, game } = await assertLeaderboardEnabled(request, id);
     if (error || !game) return error;
 
@@ -247,16 +256,28 @@ export async function POST(
     }
 
     const wallet = tryNormalizeWalletAddress(body.walletAddress);
-    const playerId =
+    const bodyPlayerId =
       resolvePlayerId(body.playerId ?? "") ?? resolvePlayerId(wallet ?? "");
+
+    if (bodyPlayerId && bodyPlayerId !== session.playerId) {
+      return corsJsonResponse(
+        request,
+        {
+          error: "Player does not match your signed-in session.",
+          code: "PLAYER_MISMATCH",
+        },
+        { status: 403 }
+      );
+    }
+
+    const playerId = session.playerId;
 
     let name = body.name?.trim() || body.playerName?.trim() || "";
 
-    if (!name && wallet) {
-      const session = await readSessionFromCookies();
-      const profile = await fetchUserFromServer(wallet, {
-        chainId: session?.chainId,
-        ecosystem: session?.ecosystem,
+    if (!name) {
+      const profile = await fetchUserFromServer(playerId, {
+        chainId: session.chainId,
+        ecosystem: session.ecosystem,
       });
       name = profile?.name?.trim() || "";
     }
@@ -265,19 +286,10 @@ export async function POST(
       name = `${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
     }
 
-    if (!playerId) {
-      return corsJsonResponse(
-        request,
-        { error: "playerId or walletAddress is required." },
-        { status: 400 }
-      );
-    }
-
-    const session = await readSessionFromCookies();
     const progress = await saveGameProgressOnServer(playerId, id, score, true, {
       playerName: name,
-      chainId: session?.chainId,
-      ecosystem: session?.ecosystem,
+      chainId: session.chainId,
+      ecosystem: session.ecosystem,
     });
 
     return corsJsonResponse(request, {

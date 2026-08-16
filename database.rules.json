@@ -74,6 +74,38 @@
         ".read": false,
         ".write": false
       }
+    },
+
+    "playSessions": {
+      "$sessionId": {
+        ".read": false,
+        ".write": false
+      }
+    },
+
+    "shop": {
+      ".read": false,
+      ".write": false
+    },
+
+    "scoreSubmit": {
+      ".read": false,
+      ".write": false
+    },
+
+    "shuffleDailyBudget": {
+      ".read": false,
+      ".write": false
+    },
+
+    "shufflePending": {
+      ".read": false,
+      ".write": false
+    },
+
+    "flaggedScores": {
+      ".read": false,
+      ".write": false
     }
   }
 }

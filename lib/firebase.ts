@@ -8,9 +8,6 @@ import {
   doc,
   getDocs,
   getDoc,
-  addDoc,
-  updateDoc,
-  deleteDoc,
   query,
   orderBy,
   DocumentData,
@@ -72,28 +69,4 @@ export async function getGame(id: string): Promise<Game | null> {
   const snap = await getDoc(doc(db, "games", id));
   if (!snap.exists()) return null;
   return { id: snap.id, ...snap.data() } as Game;
-}
-
-export async function addGame(
-  data: Omit<Game, "id" | "createdAt">
-): Promise<string> {
-  const { db } = getFirebase();
-  const ref = await addDoc(collection(db, "games"), {
-    ...data,
-    createdAt: Date.now(),
-  });
-  return ref.id;
-}
-
-export async function updateGame(
-  id: string,
-  data: Partial<Omit<Game, "id">>
-): Promise<void> {
-  const { db } = getFirebase();
-  await updateDoc(doc(db, "games", id), data as DocumentData);
-}
-
-export async function deleteGame(id: string): Promise<void> {
-  const { db } = getFirebase();
-  await deleteDoc(doc(db, "games", id));
 }

@@ -8,7 +8,15 @@ export async function POST(request: Request) {
     const body = (await request.json()) as { password?: string };
     const password = body.password ?? "";
 
-    if (!password || password !== getAdminPassword()) {
+    const expected = getAdminPassword();
+    if (!expected) {
+      return NextResponse.json(
+        { error: "Admin is not configured. Set ADMIN_PASSWORD and redeploy." },
+        { status: 503 }
+      );
+    }
+
+    if (!password || password !== expected) {
       return NextResponse.json({ error: "Wrong password." }, { status: 401 });
     }
 

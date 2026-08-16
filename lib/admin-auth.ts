@@ -1,20 +1,21 @@
 import { NextResponse } from "next/server";
 
-export function getAdminPassword(): string {
-  return (
-    process.env.ADMIN_PASSWORD ??
-    process.env.NEXT_PUBLIC_ADMIN_PASSWORD ??
-    "arcadex2024"
-  );
+/** Server-only admin password. Never use NEXT_PUBLIC_* for this. */
+export function getAdminPassword(): string | null {
+  const secret = process.env.ADMIN_PASSWORD?.trim();
+  return secret || null;
 }
 
 export function verifyAdminRequest(request: Request): boolean {
+  const expected = getAdminPassword();
+  if (!expected) return false;
+
   const auth = request.headers.get("Authorization");
   if (auth?.startsWith("Bearer ")) {
-    return auth.slice(7) === getAdminPassword();
+    return auth.slice(7) === expected;
   }
 
-  return request.headers.get("X-Admin-Password") === getAdminPassword();
+  return request.headers.get("X-Admin-Password") === expected;
 }
 
 export function unauthorizedResponse() {

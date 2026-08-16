@@ -20,5 +20,12 @@
   ],
   "observability": {
     "enabled": true
-  }
+  },
+  "kv_namespaces": [
+    {
+      "binding": "RATE_LIMIT_KV",
+      "id": "55bfb54188784fac966da56f42c9fce6",
+      "preview_id": "afc93dfed6514875924b2511a39412cb"
+    }
+  ]
 }

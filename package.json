@@ -16,7 +16,9 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "verify:r2": "node scripts/verify-r2-game-headers.mjs",
     "deploy:db-rules": "firebase deploy --only database --project arcadex-fun",
-    "deploy:firestore-rules": "firebase deploy --only firestore:rules --project arcadex-fun"
+    "deploy:firestore-rules": "firebase deploy --only firestore:rules --project arcadex-fun",
+    "kv:create": "wrangler kv namespace create RATE_LIMIT_KV",
+    "kv:create:preview": "wrangler kv namespace create RATE_LIMIT_KV --preview"
   },
   "dependencies": {
     "@aptos-labs/ts-sdk": "^7.1.3",

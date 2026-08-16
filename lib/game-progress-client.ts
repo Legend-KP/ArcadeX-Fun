@@ -16,6 +16,7 @@ export async function getGameProgress(
   }
   const res = await fetch(`/api/games/${gameId}/progress?${params}`, {
     cache: "no-store",
+    credentials: "include",
   });
   const data = (await res.json()) as GameProgressResponse & { error?: string };
 
@@ -37,6 +38,7 @@ export async function saveGameProgress(
 ): Promise<GameProgressResponse & { success: boolean }> {
   const res = await fetch(`/api/games/${gameId}/progress`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       playerId,

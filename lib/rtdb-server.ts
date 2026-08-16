@@ -1201,39 +1201,55 @@ export async function spendSparkOnServer(
   };
   const connection = playerConnection(resolvedScope);
 
-  const raw = await ensureSparkStateOnServer(resolved, resolvedScope);
-  const state = normalizeSparkState(raw, now);
+  let noSparks = false;
+  let infiniteState: StoredSparkState | null = null;
 
-  if (typeof state.infiniteUntil === "number" && state.infiniteUntil > now) {
-    return {
-      state,
-      sparks: computeSparkSnapshot(state, now),
-      spent: false,
-    };
-  }
+  const { committed, snapshot } = await runRtdbTransaction<StoredSparkState>(
+    sparksPath(resolved),
+    (current) => {
+      const state = normalizeSparkState(
+        current ? coerceSparkState(current) : defaultSparkState(),
+        now
+      );
 
-  const readyIndex = state.slots.findIndex(
-    (slot) => slot === null || slot <= now
+      if (typeof state.infiniteUntil === "number" && state.infiniteUntil > now) {
+        infiniteState = state;
+        return undefined;
+      }
+
+      const readyIndex = state.slots.findIndex(
+        (slot) => slot === null || slot <= now
+      );
+      if (readyIndex < 0) {
+        noSparks = true;
+        return undefined;
+      }
+
+      const nextSlots = [...state.slots];
+      nextSlots[readyIndex] = now + state.regenMs;
+      return {
+        ...state,
+        slots: nextSlots,
+      };
+    },
+    RTDB_TRANSACTION_MAX_RETRIES,
+    connection
   );
 
-  if (readyIndex < 0) {
+  if (noSparks) {
     throw new NoSparksError();
   }
 
-  const nextSlots = [...state.slots];
-  nextSlots[readyIndex] = now + state.regenMs;
-
-  const nextState: StoredSparkState = {
-    ...state,
-    slots: nextSlots,
-  };
-
-  await writePath(sparksPath(resolved), nextState, connection);
+  const state = normalizeSparkState(
+    infiniteState ??
+      (snapshot ? coerceSparkState(snapshot) : defaultSparkState()),
+    now
+  );
 
   return {
-    state: nextState,
-    sparks: computeSparkSnapshot(nextState, now),
-    spent: true,
+    state,
+    sparks: computeSparkSnapshot(state, now),
+    spent: committed && !infiniteState,
   };
 }
 
@@ -1265,61 +1281,95 @@ export async function applyShopPurchaseOnServer(
   const connection = playerConnection(resolvedScope);
 
   const txKey = normalizeShopTxKey(ecosystem, txHash);
-
   const processedPath = processedShopTxPath(ecosystem, txKey);
-  const existing = await readPath<{
+
+  type ShopProcessedRecord = {
     playerId: string;
     productId: ShopProductId;
-  }>(processedPath, connection);
+    processedAt: number;
+  };
 
-  if (existing) {
-    if (existing.playerId !== resolved || existing.productId !== productId) {
-      throw new ShopPurchaseError(
-        "This transaction was already used.",
-        "TX_ALREADY_USED"
-      );
-    }
+  let existsSame = false;
+  let conflict = false;
 
-    return getSparkSnapshotOnServer(resolved, now, resolvedScope);
-  }
-
-  const raw = await ensureSparkStateOnServer(resolved, resolvedScope);
-  const state = normalizeSparkState(raw, now);
-
-  let nextState: StoredSparkState;
-
-  if (productId === "spark-refill") {
-    nextState = {
-      ...state,
-      slots: Array.from({ length: state.max }, () => null),
-    };
-  } else {
-    const base =
-      typeof state.infiniteUntil === "number" && state.infiniteUntil > now
-        ? state.infiniteUntil
-        : now;
-
-    nextState = {
-      ...state,
-      infiniteUntil: base + INFINITE_SPARKS_MS,
-    };
-  }
-
-  await writePath(sparksPath(resolved), nextState, connection);
-  await writePath(
+  const { committed } = await runRtdbTransaction<ShopProcessedRecord>(
     processedPath,
-    {
-      playerId: resolved,
-      productId,
-      processedAt: now,
+    (current) => {
+      if (current?.playerId) {
+        if (
+          current.playerId === resolved &&
+          current.productId === productId
+        ) {
+          existsSame = true;
+          return undefined;
+        }
+        conflict = true;
+        return undefined;
+      }
+
+      return {
+        playerId: resolved,
+        productId,
+        processedAt: now,
+      };
     },
+    RTDB_TRANSACTION_MAX_RETRIES,
     connection
   );
 
-  return {
-    state: nextState,
-    sparks: computeSparkSnapshot(nextState, now),
-  };
+  if (conflict) {
+    throw new ShopPurchaseError(
+      "This transaction was already used.",
+      "TX_ALREADY_USED"
+    );
+  }
+
+  if (existsSame || !committed) {
+    return getSparkSnapshotOnServer(resolved, now, resolvedScope);
+  }
+
+  try {
+    const { snapshot } = await runRtdbTransaction<StoredSparkState>(
+      sparksPath(resolved),
+      (current) => {
+        const state = normalizeSparkState(
+          current ? coerceSparkState(current) : defaultSparkState(),
+          now
+        );
+
+        if (productId === "spark-refill") {
+          return {
+            ...state,
+            slots: Array.from({ length: state.max }, () => null),
+          };
+        }
+
+        const base =
+          typeof state.infiniteUntil === "number" && state.infiniteUntil > now
+            ? state.infiniteUntil
+            : now;
+
+        return {
+          ...state,
+          infiniteUntil: base + INFINITE_SPARKS_MS,
+        };
+      },
+      RTDB_TRANSACTION_MAX_RETRIES,
+      connection
+    );
+
+    const state = normalizeSparkState(
+      snapshot ? coerceSparkState(snapshot) : defaultSparkState(),
+      now
+    );
+    return {
+      state,
+      sparks: computeSparkSnapshot(state, now),
+    };
+  } catch (err) {
+    await deletePath(processedPath, connection).catch(() => {});
+    throw err;
+  }
 }
 
 // ─── Contract payment activations (Infinite Spark / Refill) ───────────────────
@@ -1981,6 +2031,18 @@ function shuffleGrantPath(txHash: string): string {
 }
 
 function shuffleDailyBudgetPath(dayKey: string): string {
+  return `shuffleDailyBudget/${dayKey}/meta`;
+}
+
+function shuffleDailyBudgetReservationPath(
+  dayKey: string,
+  reservationKey: string
+): string {
+  const safe = reservationKey.replace(/[.#$[\]/]/g, "_");
+  return `shuffleDailyBudget/${dayKey}/res/${safe}`;
+}
+
+function shuffleDailyBudgetLegacyPath(dayKey: string): string {
   return `shuffleDailyBudget/${dayKey}`;
 }
 
@@ -1997,11 +2059,48 @@ type ShuffleUsdcReservation = {
 type ShuffleDailyBudgetRecord = {
   /** Confirmed on-chain USDC payouts for the day (micro-USDC). */
   spentMicro?: number;
-  /** Pending signed outcomes not yet synced (micro-USDC), keyed by wallet_nonce. */
+  /** Active unconfirmed reservations (micro-USDC). */
+  reservedMicro?: number;
+  /** Legacy fat maps — migrated to reservedMicro on write. */
   reservations?: Record<string, ShuffleUsdcReservation>;
-  /** Keys already moved into spentMicro (idempotent sync). */
   confirmed?: Record<string, number>;
 };
+
+type ShuffleReservationRecord = ShuffleUsdcReservation & {
+  confirmed?: boolean;
+};
+
+function slimBudgetCounters(
+  data: ShuffleDailyBudgetRecord | null | undefined,
+  nowMs: number
+): { spentMicro: number; reservedMicro: number } {
+  const spent =
+    typeof data?.spentMicro === "number" && Number.isFinite(data.spentMicro)
+      ? Math.max(0, data.spentMicro)
+      : 0;
+
+  if (
+    typeof data?.reservedMicro === "number" &&
+    Number.isFinite(data.reservedMicro)
+  ) {
+    return { spentMicro: spent, reservedMicro: Math.max(0, data.reservedMicro) };
+  }
+
+  const reservations = pruneExpiredReservations(data?.reservations, nowMs);
+  return { spentMicro: spent, reservedMicro: sumReservedMicro(reservations) };
+}
+
+async function readShuffleBudgetRecord(
+  dayKey: string
+): Promise<ShuffleDailyBudgetRecord | null> {
+  const meta = await readPath<ShuffleDailyBudgetRecord>(
+    shuffleDailyBudgetPath(dayKey)
+  );
+  if (meta) return meta;
+  return readPath<ShuffleDailyBudgetRecord>(
+    shuffleDailyBudgetLegacyPath(dayKey)
+  );
+}
 
 function pruneExpiredReservations(
   reservations: Record<string, ShuffleUsdcReservation> | undefined,
@@ -2048,13 +2147,9 @@ export async function getShuffleUsdcBudgetRemainingMicro(
   nowMs: number = Date.now()
 ): Promise<number> {
   const dayKey = shuffleUtcDayKey(nowMs);
-  const data = await readPath<ShuffleDailyBudgetRecord>(
-    shuffleDailyBudgetPath(dayKey)
-  );
-  const reservations = pruneExpiredReservations(data?.reservations, nowMs);
-  const spent = typeof data?.spentMicro === "number" ? data.spentMicro : 0;
-  const reserved = sumReservedMicro(reservations);
-  return Math.max(0, SHUFFLE_DAILY_USDC_BUDGET_MICRO - spent - reserved);
+  const data = await readShuffleBudgetRecord(dayKey);
+  const { spentMicro, reservedMicro } = slimBudgetCounters(data, nowMs);
+  return Math.max(0, SHUFFLE_DAILY_USDC_BUDGET_MICRO - spentMicro - reservedMicro);
 }
 
 /** @deprecated Use getShuffleUsdcBudgetRemainingMicro */
@@ -2075,70 +2170,75 @@ export async function reserveShuffleUsdcBudget(opts: {
 > {
   const nowMs = opts.nowMs ?? Date.now();
   const dayKey = shuffleUtcDayKey(nowMs);
-  const path = shuffleDailyBudgetPath(dayKey);
+  const resPath = shuffleDailyBudgetReservationPath(dayKey, opts.reservationKey);
+  const metaPath = shuffleDailyBudgetPath(dayKey);
+
+  let reused = false;
+  const claim = await runRtdbTransaction<ShuffleReservationRecord>(
+    resPath,
+    (current) => {
+      if (
+        current &&
+        !current.confirmed &&
+        current.amountMicro === opts.amountMicro &&
+        current.expiresAt > nowMs
+      ) {
+        reused = true;
+        return undefined;
+      }
+      if (current?.confirmed) {
+        reused = true;
+        return undefined;
+      }
+      return {
+        amountMicro: opts.amountMicro,
+        expiresAt: opts.expiresAtMs,
+      };
+    }
+  );
+
+  if (reused) {
+    return {
+      ok: true,
+      remainingMicro: await getShuffleUsdcBudgetRemainingMicro(nowMs),
+    };
+  }
+
+  if (!claim.committed) {
+    return {
+      ok: false,
+      remainingMicro: await getShuffleUsdcBudgetRemainingMicro(nowMs),
+    };
+  }
+
   let remainingMicro = 0;
-
   const { committed, snapshot } =
-    await runRtdbTransaction<ShuffleDailyBudgetRecord>(path, (current) => {
-      const reservations = pruneExpiredReservations(
-        current?.reservations,
-        nowMs
-      );
-      const confirmed = current?.confirmed ?? {};
-      const spent =
-        typeof current?.spentMicro === "number" ? current.spentMicro : 0;
-      const existing = reservations[opts.reservationKey];
-      if (existing && existing.amountMicro === opts.amountMicro) {
-        remainingMicro = Math.max(
-          0,
-          SHUFFLE_DAILY_USDC_BUDGET_MICRO -
-            spent -
-            sumReservedMicro(reservations)
-        );
-        return {
-          spentMicro: spent,
-          reservations: {
-            ...reservations,
-            [opts.reservationKey]: {
-              amountMicro: opts.amountMicro,
-              expiresAt: opts.expiresAtMs,
-            },
-          },
-          confirmed,
-        };
-      }
-
-      if (existing) {
-        delete reservations[opts.reservationKey];
-      }
-
-      const reserved = sumReservedMicro(reservations);
+    await runRtdbTransaction<ShuffleDailyBudgetRecord>(metaPath, (current) => {
+      const { spentMicro, reservedMicro } = slimBudgetCounters(current, nowMs);
       remainingMicro = Math.max(
         0,
-        SHUFFLE_DAILY_USDC_BUDGET_MICRO - spent - reserved
+        SHUFFLE_DAILY_USDC_BUDGET_MICRO - spentMicro - reservedMicro
       );
       if (opts.amountMicro > remainingMicro) {
         return undefined;
       }
-
-      reservations[opts.reservationKey] = {
-        amountMicro: opts.amountMicro,
-        expiresAt: opts.expiresAtMs,
-      };
       remainingMicro -= opts.amountMicro;
       return {
-        spentMicro: spent,
-        reservations,
-        confirmed,
+        spentMicro,
+        reservedMicro: reservedMicro + opts.amountMicro,
       };
     });
 
   if (!committed) {
+    await deletePath(resPath).catch(() => {});
     const spent =
       typeof snapshot?.spentMicro === "number" ? snapshot.spentMicro : 0;
-    const reserved = sumReservedMicro(
-      pruneExpiredReservations(snapshot?.reservations, nowMs)
-    );
+    const reserved =
+      typeof snapshot?.reservedMicro === "number"
+        ? snapshot.reservedMicro
+        : sumReservedMicro(
+            pruneExpiredReservations(snapshot?.reservations, nowMs)
+          );
     return {
       ok: false,
       remainingMicro: Math.max(
@@ -2162,32 +2262,42 @@ export async function confirmShuffleUsdcBudget(opts: {
 }): Promise<void> {
   const nowMs = opts.nowMs ?? Date.now();
   const dayKey = shuffleUtcDayKey(nowMs);
-  const path = shuffleDailyBudgetPath(dayKey);
+  const resPath = shuffleDailyBudgetReservationPath(dayKey, opts.reservationKey);
+  const metaPath = shuffleDailyBudgetPath(dayKey);
 
-  await runRtdbTransaction<ShuffleDailyBudgetRecord>(path, (current) => {
-    const reservations = pruneExpiredReservations(current?.reservations, nowMs);
-    const confirmed = { ...(current?.confirmed ?? {}) };
-    const spent =
-      typeof current?.spentMicro === "number" ? current.spentMicro : 0;
+  let alreadyConfirmed = false;
+  let hadReservation = false;
+  let addMicro = opts.amountMicro;
 
-    if (typeof confirmed[opts.reservationKey] === "number") {
-      delete reservations[opts.reservationKey];
+  await runRtdbTransaction<ShuffleReservationRecord>(resPath, (current) => {
+    if (!current) {
       return {
-        spentMicro: spent,
-        reservations,
-        confirmed,
+        amountMicro: opts.amountMicro,
+        expiresAt: nowMs,
+        confirmed: true,
       };
     }
-
-    const existing = reservations[opts.reservationKey];
-    delete reservations[opts.reservationKey];
-    const addMicro = existing?.amountMicro ?? opts.amountMicro;
-    confirmed[opts.reservationKey] = addMicro;
-
+    if (current.confirmed) {
+      alreadyConfirmed = true;
+      return undefined;
+    }
+    hadReservation = true;
+    addMicro = current.amountMicro ?? opts.amountMicro;
     return {
-      spentMicro: spent + addMicro,
-      reservations,
-      confirmed,
+      ...current,
+      confirmed: true,
+    };
+  });
+
+  if (alreadyConfirmed) return;
+
+  await runRtdbTransaction<ShuffleDailyBudgetRecord>(metaPath, (current) => {
+    const { spentMicro, reservedMicro } = slimBudgetCounters(current, nowMs);
+    return {
+      spentMicro: spentMicro + addMicro,
+      reservedMicro: hadReservation
+        ? Math.max(0, reservedMicro - addMicro)
+        : reservedMicro,
     };
   });
 }
