@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import { submitPaidScore } from "@/lib/leaderboard-client";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
 import { formatScoreSubmitPrice } from "@/lib/score-submit";
@@ -102,6 +103,7 @@ export default function ScoreSubmitVaraPaymentModal({
   onClose,
   onSuccess,
 }: ScoreSubmitVaraPaymentModalProps) {
+  const { ensureWalletReady } = usePlayerProfile();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<PaymentStep>("token");
   const [selectedToken, setSelectedToken] = useState<VaraShopPaymentToken | null>(
@@ -278,6 +280,14 @@ export default function ScoreSubmitVaraPaymentModal({
       setStep("paying");
 
       try {
+        const ready = await ensureWalletReady();
+        if (!ready) {
+          setStep("token");
+          setStatus("");
+          setError("Reconnect your wallet to this site, then pay.");
+          return;
+        }
+
         const { payVaraPaymentProgram } = await import(
           "@/lib/vara-payment-client"
         );
@@ -309,6 +319,7 @@ export default function ScoreSubmitVaraPaymentModal({
       programConfigured,
       tokenOptions,
       confirmSubmit,
+      ensureWalletReady,
     ]
   );
 

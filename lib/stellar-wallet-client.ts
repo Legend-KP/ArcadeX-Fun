@@ -28,6 +28,23 @@ export async function connectFreighterWallet(): Promise<string> {
   return address.address;
 }
 
+export async function reconnectFreighterWallet(opts?: {
+  allowPrompt?: boolean;
+}): Promise<string> {
+  const allowPrompt = opts?.allowPrompt !== false;
+  const connected = await isConnected();
+  if (connected.isConnected) {
+    const address = await getAddress();
+    if (address.address) return address.address;
+  }
+
+  if (!allowPrompt) {
+    throw new Error("Freighter is not connected to this site.");
+  }
+
+  return connectFreighterWallet();
+}
+
 export async function signFreighterMessage(
   nonce: string
 ): Promise<{ address: string; message: string; signedMessage: string }> {

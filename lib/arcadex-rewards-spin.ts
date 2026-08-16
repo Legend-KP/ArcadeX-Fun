@@ -9,7 +9,23 @@ import {
   isArcadeXRewardsConfigured,
 } from "@/lib/arcadex-rewards";
 import { DEFAULT_SHUFFLE_CAMPAIGN_ID } from "@/lib/daily-play-mode";
-import { createEvmWalletClient } from "@/lib/evm-wallet-client";
+import {
+  resolveEvmAccountForSession,
+  WalletSessionMismatchError,
+} from "@/lib/evm-session-wallet";
+
+async function resolveBaseShuffleWallet(expectedWallet?: string) {
+  try {
+    return await resolveEvmAccountForSession(base, expectedWallet);
+  } catch (err) {
+    if (err instanceof WalletSessionMismatchError) throw err;
+    throw new Error(
+      err instanceof Error
+        ? err.message
+        : "No wallet account available. Unlock your wallet, connect this site, pick your signed-in account, then try again."
+    );
+  }
+}
 
 export async function spinOnChain(opts: {
   campaignId?: number;
@@ -19,19 +35,20 @@ export async function spinOnChain(opts: {
   nonce: bigint;
   deadline: bigint;
   signature: Hex;
+  expectedWallet?: string;
 }): Promise<{ txHash: Hash }> {
   if (!isArcadeXRewardsConfigured()) {
     throw new Error("ArcadeXRewards is not configured yet.");
   }
 
-  const walletClient = createEvmWalletClient();
-  if (!walletClient) {
-    throw new Error("Connect your wallet to shuffle.");
-  }
+  const { account, walletClient } = await resolveBaseShuffleWallet(
+    opts.expectedWallet
+  );
 
-  const [account] = await walletClient.getAddresses();
-  if (!account) {
-    throw new Error("No wallet account available.");
+  try {
+    await walletClient.switchChain({ id: base.id });
+  } catch {
+    // Some wallets auto-prompt on writeContract.
   }
 
   const campaignId = opts.campaignId ?? DEFAULT_SHUFFLE_CAMPAIGN_ID;
@@ -72,20 +89,21 @@ export async function spinOnChain(opts: {
 }
 
 export async function claimShuffleRewardOnChain(
-  campaignId: number = DEFAULT_SHUFFLE_CAMPAIGN_ID
+  campaignId: number = DEFAULT_SHUFFLE_CAMPAIGN_ID,
+  expectedWallet?: string
 ): Promise<{ txHash: Hash }> {
   if (!isArcadeXRewardsConfigured()) {
     throw new Error("ArcadeXRewards is not configured yet.");
   }
 
-  const walletClient = createEvmWalletClient();
-  if (!walletClient) {
-    throw new Error("Connect your wallet to claim.");
-  }
+  const { account, walletClient } = await resolveBaseShuffleWallet(
+    expectedWallet
+  );
 
-  const [account] = await walletClient.getAddresses();
-  if (!account) {
-    throw new Error("No wallet account available.");
+  try {
+    await walletClient.switchChain({ id: base.id });
+  } catch {
+    // Some wallets auto-prompt on writeContract.
   }
 
   const hash = await walletClient.writeContract({

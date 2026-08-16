@@ -1,10 +1,12 @@
+"use client";
+
 import { formatUnits, type Address, type Hash } from "viem";
 import { base } from "@/lib/chains";
 import {
   getBasePublicClient,
   readBaseContract,
 } from "@/lib/base-public-client";
-import { createEvmWalletClient } from "@/lib/evm-wallet-client";
+import { resolveEvmAccountForSession } from "@/lib/evm-session-wallet";
 import {
   BASE_USDC,
   ERC20_ABI,
@@ -33,15 +35,7 @@ export async function purchaseSparkRefillOnChain(): Promise<{
     throw new Error("SparkRefill contract is not configured yet.");
   }
 
-  const walletClient = createEvmWalletClient();
-  if (!walletClient) {
-    throw new Error("Connect your wallet to purchase Spark Refill.");
-  }
-
-  const [account] = await walletClient.getAddresses();
-  if (!account) {
-    throw new Error("No wallet account available.");
-  }
+  const { account, walletClient } = await resolveEvmAccountForSession(base);
 
   const fee = await readBaseContract({
     address: SPARK_REFILL_CONTRACT_ADDRESS,

@@ -1,10 +1,12 @@
+"use client";
+
 import { formatUnits, type Address, type Hash } from "viem";
 import { base } from "@/lib/chains";
 import {
   getBasePublicClient,
   readBaseContract,
 } from "@/lib/base-public-client";
-import { createEvmWalletClient } from "@/lib/evm-wallet-client";
+import { resolveEvmAccountForSession } from "@/lib/evm-session-wallet";
 import {
   BASE_USDC,
   ERC20_ABI,
@@ -33,15 +35,7 @@ export async function purchaseInfiniteSparkOnChain(): Promise<{
     throw new Error("InfiniteSpark contract is not configured yet.");
   }
 
-  const walletClient = createEvmWalletClient();
-  if (!walletClient) {
-    throw new Error("Connect your wallet to purchase Infinite Spark.");
-  }
-
-  const [account] = await walletClient.getAddresses();
-  if (!account) {
-    throw new Error("No wallet account available.");
-  }
+  const { account, walletClient } = await resolveEvmAccountForSession(base);
 
   const fee = await readBaseContract({
     address: INFINITE_SPARK_CONTRACT_ADDRESS,

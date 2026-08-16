@@ -6,6 +6,7 @@ import {
 import {
   isVaraWalletAddress,
   normalizeVaraAddressPair,
+  toVaraActorId,
   toVaraSs58,
 } from "@/lib/vara-address";
 
@@ -215,4 +216,22 @@ export function resolvePlayerId(id: string): string | null {
 export function truncateAddress(address: string, chars = 4): string {
   if (address.length <= chars * 2 + 2) return address;
   return `${address.slice(0, chars + 2)}...${address.slice(-chars)}`;
+}
+
+/** True when two addresses are the same session wallet (Vara compares ActorId). */
+export function sessionAddressesEqual(
+  ecosystem: WalletEcosystem,
+  left: string,
+  right: string
+): boolean {
+  try {
+    if (ecosystem === "vara") {
+      return toVaraActorId(left) === toVaraActorId(right);
+    }
+    return (
+      normalizeAddress(ecosystem, left) === normalizeAddress(ecosystem, right)
+    );
+  } catch {
+    return left.trim().toLowerCase() === right.trim().toLowerCase();
+  }
 }

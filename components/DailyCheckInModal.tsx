@@ -22,6 +22,7 @@ interface DailyCheckInModalProps {
   walletAddress: string;
   chainId?: number;
   status: StreakStatus | null;
+  onEnsureWallet?: () => Promise<boolean>;
   onComplete: (result?: {
     day: number;
     milestone: boolean;
@@ -127,6 +128,7 @@ export default function DailyCheckInModal({
   walletAddress,
   chainId,
   status,
+  onEnsureWallet,
   onComplete,
   onChangeWallet,
 }: DailyCheckInModalProps) {
@@ -316,6 +318,13 @@ export default function DailyCheckInModal({
     setLoadingPhase(pendingTxHash ? "sync" : "wallet");
     setError("");
     try {
+      if (onEnsureWallet) {
+        const ready = await onEnsureWallet();
+        if (!ready) {
+          setError("Reconnect your wallet to this site, then check in.");
+          return;
+        }
+      }
       const result = await performDailyCheckIn(
         walletAddress,
         view?.campaignId ?? status?.campaignId,

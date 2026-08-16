@@ -6,6 +6,8 @@ import type { AptosSignMessageOutput } from "@/lib/aptos-auth";
 interface AptosWallet {
   connect(): Promise<{ address: string; publicKey?: string }>;
   disconnect(): Promise<void>;
+  account?(): Promise<{ address: string; publicKey?: string }>;
+  isConnected?(): Promise<boolean>;
   signMessage(payload: {
     message: string;
     nonce: string;
@@ -32,6 +34,37 @@ export async function connectPetraWallet(): Promise<{
     throw new Error("Could not connect Petra wallet.");
   }
   return result;
+}
+
+export async function reconnectPetraWallet(opts?: {
+  allowPrompt?: boolean;
+}): Promise<{ address: string; publicKey?: string }> {
+  const wallet = getAptosWallet();
+  const allowPrompt = opts?.allowPrompt !== false;
+
+  try {
+    if (typeof wallet.isConnected === "function") {
+      const connected = await wallet.isConnected();
+      if (connected && typeof wallet.account === "function") {
+        const account = await wallet.account();
+        if (account?.address) return account;
+      }
+      if (connected && !allowPrompt) {
+        throw new Error("Petra wallet is not connected to this site.");
+      }
+    } else if (typeof wallet.account === "function") {
+      const account = await wallet.account();
+      if (account?.address) return account;
+    }
+  } catch (err) {
+    if (!allowPrompt) throw err;
+  }
+
+  if (!allowPrompt) {
+    throw new Error("Petra wallet is not connected to this site.");
+  }
+
+  return connectPetraWallet();
 }
 
 export async function disconnectPetraWallet(): Promise<void> {

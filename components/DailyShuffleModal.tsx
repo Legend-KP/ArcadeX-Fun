@@ -36,6 +36,7 @@ interface DailyShuffleModalProps {
   walletAddress: string;
   chainId?: number;
   status: StreakStatus | null;
+  onEnsureWallet?: () => Promise<boolean>;
   onComplete: (result: {
     day: number;
     milestone: boolean;
@@ -198,6 +199,7 @@ export default function DailyShuffleModal({
   walletAddress,
   chainId,
   status,
+  onEnsureWallet,
   onComplete,
 }: DailyShuffleModalProps) {
   const [mounted, setMounted] = useState(false);
@@ -288,6 +290,14 @@ export default function DailyShuffleModal({
     setPhase("busy");
 
     try {
+      if (onEnsureWallet) {
+        const ready = await onEnsureWallet();
+        if (!ready) {
+          setError("Reconnect your wallet to this site, then shuffle.");
+          setPhase("intro");
+          return;
+        }
+      }
       const { prepare, sync } = await performDailyShuffle(
         walletAddress,
         shuffleCampaignId,
@@ -336,7 +346,18 @@ export default function DailyShuffleModal({
       setPhase("claiming");
       setError("");
       try {
-        await claimDailyShuffleReward(DEFAULT_SHUFFLE_CAMPAIGN_ID);
+        if (onEnsureWallet) {
+          const ready = await onEnsureWallet();
+          if (!ready) {
+            setError("Reconnect your wallet to this site, then claim.");
+            setPhase("reveal");
+            return;
+          }
+        }
+        await claimDailyShuffleReward(
+          DEFAULT_SHUFFLE_CAMPAIGN_ID,
+          walletAddress
+        );
         setNeedsClaim(false);
         setPhase("done");
         onComplete({

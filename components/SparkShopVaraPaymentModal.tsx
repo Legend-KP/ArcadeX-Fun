@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import { purchaseSparkItem } from "@/lib/spark-client";
 import {
   formatShopPrice,
@@ -62,6 +63,7 @@ export default function SparkShopVaraPaymentModal({
   onClose,
   onSuccess,
 }: SparkShopVaraPaymentModalProps) {
+  const { ensureWalletReady } = usePlayerProfile();
   const product = productId ? SHOP_PRODUCTS[productId] : null;
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<PaymentStep>("token");
@@ -192,6 +194,13 @@ export default function SparkShopVaraPaymentModal({
       setStep("paying");
 
       try {
+        const ready = await ensureWalletReady();
+        if (!ready) {
+          setStep("token");
+          setError("Reconnect your wallet to this site, then pay.");
+          return;
+        }
+
         const paymentKind = shopProductToPaymentKind(product.id);
         const useProgram =
           paymentKind !== null && isVaraPaymentProgramConfigured(paymentKind);
@@ -231,7 +240,7 @@ export default function SparkShopVaraPaymentModal({
         setBusy(false);
       }
     },
-    [product, selectedToken, walletAddress, tokenOptions, confirmPurchase]
+    [product, selectedToken, walletAddress, tokenOptions, confirmPurchase, ensureWalletReady]
   );
 
   const handleTokenSelect = useCallback(

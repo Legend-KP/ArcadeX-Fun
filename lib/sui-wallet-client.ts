@@ -104,7 +104,9 @@ export async function signSlushPersonalMessage(
   return signature;
 }
 
-export async function reconnectSlushWallet(): Promise<{
+export async function reconnectSlushWallet(opts?: {
+  allowPrompt?: boolean;
+}): Promise<{
   wallet: Wallet;
   account: WalletAccount;
 }> {
@@ -124,17 +126,22 @@ export async function reconnectSlushWallet(): Promise<{
     throw new Error("Slush wallet does not support connect.");
   }
 
+  const allowPrompt = opts?.allowPrompt !== false;
   let accounts = (
     await connectFeature.connect({ silent: true })
   ).accounts;
 
-  if (!accounts[0]) {
+  if (!accounts[0] && allowPrompt) {
     accounts = (await connectFeature.connect()).accounts;
   }
 
   const account = accounts[0];
   if (!account) {
-    throw new Error("Could not connect Slush wallet.");
+    throw new Error(
+      allowPrompt
+        ? "Could not connect Slush wallet."
+        : "Slush wallet is not connected to this site."
+    );
   }
 
   activeSuiWallet = wallet;

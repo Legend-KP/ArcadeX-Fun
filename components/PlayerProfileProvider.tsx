@@ -9,8 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useDisconnect, useAccount } from "wagmi";
-import { getAddress } from "viem";
+import { useDisconnect } from "wagmi";
 import { disconnect as disconnectStarknet } from "starknetkit";
 import { disconnectSlushWallet } from "@/lib/sui-wallet-client";
 import { disconnectPetraWallet } from "@/lib/aptos-wallet-client";
@@ -65,9 +64,7 @@ import {
 } from "@/lib/player-id";
 import { WalletEcosystem } from "@/lib/player-identity";
 import { PlayerProfile, type ChainKey } from "@/types";
-import { ensureEvmWagmiConnected } from "@/lib/ensure-evm-wallet";
-import { connectVaraWallet } from "@/lib/vara-wallet-client";
-import { reconnectSlushWallet } from "@/lib/sui-wallet-client";
+import { ensureSessionWalletReady } from "@/lib/ensure-session-wallet";
 import { getChainKeyForSession } from "@/lib/chain-registry";
 
 interface PlayerProfileContextValue {
@@ -112,7 +109,6 @@ export default function PlayerProfileProvider({
   children: React.ReactNode;
 }) {
   const { disconnectAsync } = useDisconnect();
-  const { address: wagmiAddress, isConnected: wagmiConnected } = useAccount();
   const [playerId, setPlayerId] = useState("");
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [walletAddress, setWalletAddress] = useState("");
@@ -515,30 +511,17 @@ export default function PlayerProfileProvider({
     };
   }, [loadProfileForSession]);
 
-  // Soft-restore EVM connector after session bootstrap (no wallet popup).
+  // Soft-restore the live wallet after session bootstrap (no popup).
   useEffect(() => {
-    if (!isReady || !isAuthenticated || ecosystem !== "evm" || !walletAddress) {
+    if (!isReady || !isAuthenticated || !ecosystem || !walletAddress) {
       return;
     }
-    if (wagmiConnected && wagmiAddress) {
-      try {
-        if (getAddress(wagmiAddress) === getAddress(walletAddress)) return;
-      } catch {
-        // fall through to silent reconnect attempt
-      }
-    }
-    void ensureEvmWagmiConnected({
+    void ensureSessionWalletReady({
+      ecosystem,
       expectedAddress: walletAddress,
       allowPrompt: false,
     });
-  }, [
-    isReady,
-    isAuthenticated,
-    ecosystem,
-    walletAddress,
-    wagmiConnected,
-    wagmiAddress,
-  ]);
+  }, [isReady, isAuthenticated, ecosystem, walletAddress]);
 
   const openConnect = useCallback(() => {
     setConnectInitialChainKey(null);
@@ -555,40 +538,15 @@ export default function PlayerProfileProvider({
       return false;
     }
 
-    if (ecosystem === "evm") {
-      const result = await ensureEvmWagmiConnected({
-        expectedAddress: walletAddress,
-        allowPrompt: true,
-      });
-      if (result.ok) return true;
-      if (result.reason === "mismatch" && result.error) {
-        setError(result.error.message);
-      }
-      openConnect();
-      return false;
-    }
-
-    if (ecosystem === "vara") {
-      try {
-        await connectVaraWallet();
-        return true;
-      } catch {
-        openConnect();
-        return false;
-      }
-    }
-
-    if (ecosystem === "sui") {
-      try {
-        await reconnectSlushWallet();
-        return true;
-      } catch {
-        openConnect();
-        return false;
-      }
-    }
-
-    return true;
+    const result = await ensureSessionWalletReady({
+      ecosystem,
+      expectedAddress: walletAddress,
+      allowPrompt: true,
+    });
+    if (result.ok) return true;
+    if (result.message) setError(result.message);
+    openConnect();
+    return false;
   }, [isAuthenticated, walletAddress, ecosystem, openConnect]);
 
   const handleSignedIn = useCallback(
@@ -799,6 +757,7 @@ export default function PlayerProfileProvider({
               (ecosystem === "evm" ? PRIMARY_EVM_CHAIN_ID : undefined)
         }
         status={streakStatus}
+        onEnsureWallet={ensureWalletReady}
         onComplete={handleDailyPlayComplete}
         onChangeWallet={() => {
           void handleChangeWalletFromDaily();
@@ -814,6 +773,7 @@ export default function PlayerProfileProvider({
               (ecosystem === "evm" ? PRIMARY_EVM_CHAIN_ID : undefined)
         }
         status={streakStatus}
+        onEnsureWallet={ensureWalletReady}
         onComplete={handleDailyPlayComplete}
       />
       <DailyStreakBrokenModal

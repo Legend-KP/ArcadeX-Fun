@@ -153,6 +153,7 @@ export async function performDailyShuffle(
         nonce: BigInt(prepare.nonce),
         deadline: BigInt(prepare.deadline),
         signature: prepare.signature,
+        expectedWallet: walletAddress,
       });
       txHash = submitted.txHash;
     }
@@ -186,9 +187,10 @@ export async function performDailyShuffle(
 }
 
 export async function claimDailyShuffleReward(
-  campaignId: number = DEFAULT_SHUFFLE_CAMPAIGN_ID
+  campaignId: number = DEFAULT_SHUFFLE_CAMPAIGN_ID,
+  expectedWallet?: string
 ) {
-  return claimShuffleRewardOnChain(campaignId);
+  return claimShuffleRewardOnChain(campaignId, expectedWallet);
 }
 
 export type { StreakStatus };
