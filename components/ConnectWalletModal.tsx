@@ -261,8 +261,18 @@ export default function ConnectWalletModal({
 
       if (option.ecosystem === "evm") {
         const targetChainId = option.chainId ?? PRIMARY_EVM_CHAIN_ID;
+        const wanted = option.connectorId?.toLowerCase() ?? "";
         const connector =
           connectors.find((c) => c.id === option.connectorId) ??
+          connectors.find((c) => {
+            const id = c.id.toLowerCase();
+            return (
+              (wanted.includes("metamask") &&
+                (id.includes("metamask") || id === "io.metamask")) ||
+              (wanted.includes("coinbase") && id.includes("coinbase")) ||
+              (wanted.includes("walletconnect") && id.includes("walletconnect"))
+            );
+          }) ??
           connectors.find((c) =>
             c.name.toLowerCase().includes(option.label.toLowerCase())
           );
@@ -301,15 +311,28 @@ export default function ConnectWalletModal({
           return;
         }
 
-        const result = await connectAsync({
-          connector,
-          chainId: targetChainId,
-        });
+        // Connect first, then switch network. Passing chainId into connect
+        // makes MetaMask Connect wait on add-chain (slow on MegaETH).
+        const result = await connectAsync({ connector });
         const connectedAddress = result.accounts[0];
         if (!connectedAddress) {
           throw new Error("Could not read wallet address.");
         }
-        const activeChainId = result.chainId ?? chainId ?? targetChainId;
+        let activeChainId = result.chainId ?? chainId ?? targetChainId;
+        if (activeChainId !== targetChainId) {
+          try {
+            await switchChainAsync({ chainId: targetChainId });
+            activeChainId = targetChainId;
+          } catch {
+            await completeEvmSignIn(
+              connectedAddress,
+              activeChainId,
+              targetChainId,
+              connector.id
+            );
+            return;
+          }
+        }
         await completeEvmSignIn(
           connectedAddress,
           activeChainId,

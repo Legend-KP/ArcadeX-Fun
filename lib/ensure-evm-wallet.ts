@@ -77,13 +77,26 @@ export async function ensureEvmWagmiConnected(opts?: {
   const expected = opts?.expectedAddress?.trim() || null;
   const allowPrompt = opts?.allowPrompt !== false;
 
+  let connection = getConnection(wagmiConfig);
+  if (connection.address && connection.isConnected) {
+    if (!expected || addressesMatch(connection.address, expected)) {
+      return { ok: true, address: getAddress(connection.address) };
+    }
+    return {
+      ok: false,
+      reason: "mismatch",
+      activeAddress: connection.address,
+      error: new WalletSessionMismatchError(connection.address, expected),
+    };
+  }
+
   try {
     await reconnect(wagmiConfig);
   } catch {
     // Storage empty / connectors unavailable — try explicit connect below.
   }
 
-  let connection = getConnection(wagmiConfig);
+  connection = getConnection(wagmiConfig);
   if (connection.address && connection.isConnected) {
     if (!expected || addressesMatch(connection.address, expected)) {
       return { ok: true, address: getAddress(connection.address) };
@@ -126,7 +139,9 @@ export async function ensureEvmWagmiConnected(opts?: {
 
       return { ok: true, address: getAddress(address) };
     } catch {
-      // Try next connector
+      // Only the preferred connector should prompt. Stop after first failure
+      // so we don't open Coinbase/WalletConnect after MetaMask times out.
+      break;
     }
   }
 

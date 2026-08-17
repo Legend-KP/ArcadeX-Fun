@@ -1,7 +1,7 @@
 import { createConfig, http } from "wagmi";
 import {
   coinbaseWallet,
-  metaMask,
+  injected,
   walletConnect,
 } from "wagmi/connectors";
 import { supportedEvmChains } from "@/lib/chains";
@@ -17,7 +17,10 @@ const transports = Object.fromEntries(
 export const wagmiConfig = createConfig({
   chains: [...supportedEvmChains],
   connectors: [
-    metaMask(),
+    // Use the in-page extension, not MetaMask Connect SDK.
+    // The SDK hunts for the extension over a separate channel, logs
+    // "MetaMask extension not found", and retries until the UI hangs.
+    injected({ target: "metaMask" }),
     coinbaseWallet({ appName: "ArcadeX" }),
     // Skip WalletConnect when project id is missing/placeholder — avoids
     // WebSocket 3000 "Project not found" and AppKit 403 spam.
