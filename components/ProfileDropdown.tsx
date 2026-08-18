@@ -30,7 +30,7 @@ export default function ProfileDropdown() {
 
   if (!isAuthenticated) {
     return (
-      <button type="button" className="connect-btn" onClick={openConnect}>
+      <button type="button" className="connect-btn" onClick={() => openConnect()}>
         Connect Wallet
       </button>
     );
