@@ -2,9 +2,10 @@
  * Light verify + state reads for ArcadeXRewards on Vara (Workers-safe).
  */
 import type { HexString } from "@/lib/shop-vara";
-import { isValidVaraExtrinsicHash, VARA_RPC_URL } from "@/lib/shop-vara";
+import { isValidVaraExtrinsicHash } from "@/lib/shop-vara";
 import { toVaraActorId } from "@/lib/vara-address";
 import { findVaraExtrinsic } from "@/lib/vara-extrinsic-lookup";
+import { varaJsonRpc } from "@/lib/vara-rpc-http";
 import {
   assertVaraArcadeXRewardsConfigured,
   VARA_REWARDS_CHECK_IN_METHOD,
@@ -26,7 +27,6 @@ import {
   type VaraRewardsProgress,
 } from "@/lib/vara-rewards-codec";
 
-const HTTP_RPC = VARA_RPC_URL.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
 const ZERO_ORIGIN =
   "0x0000000000000000000000000000000000000000000000000000000000000000";
 
@@ -51,18 +51,7 @@ function includesBytes(haystack: Uint8Array, needle: Uint8Array): boolean {
 }
 
 async function rpc<T>(method: string, params: unknown[]): Promise<T> {
-  const res = await fetch(HTTP_RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  if (!res.ok) throw new Error(`Vara RPC HTTP ${res.status}`);
-  const json = (await res.json()) as {
-    result?: T;
-    error?: { message?: string };
-  };
-  if (json.error) throw new Error(json.error.message || "Vara RPC error");
-  return json.result as T;
+  return varaJsonRpc<T>(method, params);
 }
 
 async function calculateReplyForHandle(

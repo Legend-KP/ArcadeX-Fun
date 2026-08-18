@@ -176,7 +176,10 @@ async function verifyStellarAuth(body: VerifyBody): Promise<{ address: string }>
   return { address: signer };
 }
 
-async function verifyVaraAuth(body: VerifyBody): Promise<{ address: string }> {
+async function verifyVaraAuth(
+  body: VerifyBody,
+  origin: string
+): Promise<{ address: string }> {
   const { signature, nonce, address, message } = body;
   if (!signature || !nonce || !address || !message) {
     throw new Error("signature, nonce, address, and message are required.");
@@ -184,7 +187,8 @@ async function verifyVaraAuth(body: VerifyBody): Promise<{ address: string }> {
   await consumeNonce(nonce);
 
   const { isVaraAuthMessageValid } = await import("@/lib/vara-auth");
-  if (!isVaraAuthMessageValid(message, nonce)) {
+  const domain = new URL(origin).host;
+  if (!isVaraAuthMessageValid(message, nonce, domain)) {
     throw new Error("Invalid sign-in message.");
   }
 
@@ -226,7 +230,7 @@ export async function POST(request: Request) {
                 ? await verifyMovementAuth(body)
                 : ecosystem === "stellar"
                   ? await verifyStellarAuth(body)
-                  : await verifyVaraAuth(body);
+                  : await verifyVaraAuth(body, origin);
 
     const playerId = buildPlayerId(ecosystem, verified.address);
     const token = await createSessionToken({

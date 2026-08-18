@@ -1,44 +1,25 @@
 "use client";
 
 import type { SubmittableExtrinsic } from "@polkadot/api/types";
-import {
-  web3Accounts,
-  web3Enable,
-  web3FromAddress,
-} from "@polkadot/extension-dapp";
+import { web3Accounts, web3FromAddress } from "@polkadot/extension-dapp";
 import {
   assertVaraTxHubConfigured,
   playPurpose,
   VARA_RPC_URL,
 } from "@/lib/vara-tx-hub";
+import { varaJsonRpc } from "@/lib/vara-rpc-http";
 import { encodeTxHubSignInPayload } from "@/lib/vara-tx-hub-codec";
 import {
   ensureVaraCryptoReady,
   toVaraActorId,
 } from "@/lib/vara-address";
-import { varaWalletLabel } from "@/lib/vara-wallet-client";
+import { WalletSessionMismatchError } from "@/lib/evm-session-wallet";
+import {
+  ensureVaraExtensions,
+  varaWalletLabel,
+} from "@/lib/vara-wallet-client";
 
-const VARA_APP_NAME = "ArcadeX";
-const HTTP_RPC = VARA_RPC_URL.replace(/^wss:/, "https:").replace(
-  /^ws:/,
-  "http:"
-);
 const SIGN_IN_TIMEOUT_MS = 120_000;
-
-async function rpc<T>(method: string, params: unknown[]): Promise<T> {
-  const res = await fetch(HTTP_RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  if (!res.ok) throw new Error(`Vara RPC HTTP ${res.status}`);
-  const json = (await res.json()) as {
-    result?: T;
-    error?: { message?: string };
-  };
-  if (json.error) throw new Error(json.error.message || "Vara RPC error");
-  return json.result as T;
-}
 
 /**
  * Injected wallets keep accounts under the SS58 they injected (often prefix 42).
@@ -48,8 +29,8 @@ export async function resolveVaraSigningAddress(
   preferredAddress: string
 ): Promise<string> {
   await ensureVaraCryptoReady();
-  const extensions = await web3Enable(VARA_APP_NAME);
-  if (!extensions.length) {
+  const ready = await ensureVaraExtensions();
+  if (!ready) {
     throw new Error(
       "No Substrate wallet found. Unlock your wallet and allow ArcadeX, then try again."
     );
@@ -70,8 +51,9 @@ export async function resolveVaraSigningAddress(
   });
 
   if (!match) {
-    throw new Error(
-      "Connected Vara account not found in your wallet. Select that account, then try again."
+    throw new WalletSessionMismatchError(
+      accounts[0]!.address,
+      preferredAddress
     );
   }
 
@@ -84,7 +66,7 @@ async function calculateSignInGas(params: {
   payload: string;
 }): Promise<bigint> {
   const origin = toVaraActorId(params.fromAddress);
-  const gasInfo = await rpc<{
+  const gasInfo = await varaJsonRpc<{
     min_limit?: string | number;
     minLimit?: string | number;
   }>("gear_calculateGasForHandle", [

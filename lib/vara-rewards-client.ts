@@ -6,6 +6,7 @@
 import type { SubmittableExtrinsic } from "@polkadot/api/types";
 import { web3FromAddress } from "@polkadot/extension-dapp";
 import { VARA_RPC_URL } from "@/lib/shop-vara";
+import { varaJsonRpc } from "@/lib/vara-rpc-http";
 import { toVaraActorId } from "@/lib/vara-address";
 import { resolveVaraSigningAddress } from "@/lib/vara-tx-hub-client";
 import { varaWalletLabel } from "@/lib/vara-wallet-client";
@@ -18,30 +19,13 @@ import {
   encodeRewardsSpinPayload,
 } from "@/lib/vara-rewards-codec";
 
-const HTTP_RPC = VARA_RPC_URL.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
-
-async function rpc<T>(method: string, params: unknown[]): Promise<T> {
-  const res = await fetch(HTTP_RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  if (!res.ok) throw new Error(`Vara RPC HTTP ${res.status}`);
-  const json = (await res.json()) as {
-    result?: T;
-    error?: { message?: string };
-  };
-  if (json.error) throw new Error(json.error.message || "Vara RPC error");
-  return json.result as T;
-}
-
 async function calculateGas(params: {
   programId: string;
   fromAddress: string;
   payload: string;
 }): Promise<bigint> {
   const origin = toVaraActorId(params.fromAddress);
-  const gasInfo = await rpc<{
+  const gasInfo = await varaJsonRpc<{
     min_limit?: string | number;
     minLimit?: string | number;
   }>("gear_calculateGasForHandle", [

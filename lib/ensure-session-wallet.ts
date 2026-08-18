@@ -2,7 +2,10 @@
 
 import { reconnectPetraWallet } from "@/lib/aptos-wallet-client";
 import { ensureEvmWagmiConnected } from "@/lib/ensure-evm-wallet";
-import { WalletSessionMismatchError } from "@/lib/evm-session-wallet";
+import {
+  isWalletSessionMismatchError,
+  WalletSessionMismatchError,
+} from "@/lib/evm-session-wallet";
 import { reconnectMovementWallet } from "@/lib/movement-wallet-client";
 import {
   sessionAddressesEqual,
@@ -104,6 +107,13 @@ export async function ensureSessionWalletReady(opts: {
       }
     }
   } catch (err) {
+    if (isWalletSessionMismatchError(err)) {
+      return {
+        ok: false,
+        reason: "mismatch",
+        message: err.message,
+      };
+    }
     return {
       ok: false,
       reason: "unavailable",

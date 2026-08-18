@@ -7,7 +7,7 @@ import {
   isWeb3Injected,
 } from "@polkadot/extension-dapp";
 import { stringToU8a, u8aToHex } from "@polkadot/util";
-import { buildPlainAuthMessage } from "@/lib/plain-auth";
+import { buildVaraAuthMessage } from "@/lib/vara-auth";
 import {
   ensureVaraCryptoReady,
   isLikelyEvmAddress,
@@ -15,6 +15,7 @@ import {
 } from "@/lib/vara-address";
 
 const VARA_APP_NAME = "ArcadeX";
+const WEB3_ENABLE_TIMEOUT_MS = 30_000;
 const INJECTED_READY_EVENTS = [
   "subwallet#initialized",
   "talisman#initialized",
@@ -34,6 +35,13 @@ const INJECTED_WALLET_LABELS: Record<string, string> = {
 let cryptoWarmed = false;
 /** Only cache a successful enable — empty results must be retryable (esp. mobile). */
 let extensionsEnabled = false;
+
+export type VaraWalletAccount = {
+  address: string;
+  name: string;
+  source: string;
+  sourceLabel: string;
+};
 
 /** Friendly name for status copy, e.g. "polkadot.js" or "your wallet". */
 export function varaWalletLabel(injectedName?: string | null): string {
@@ -56,6 +64,26 @@ function hasInjectedSubstrateWallet(): boolean {
 function isLikelyMobile(): boolean {
   if (typeof navigator === "undefined") return false;
   return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
 }
 
 /** Warm WASM only — never call web3Enable here (needs a user gesture on mobile). */
@@ -99,7 +127,12 @@ async function waitForSubstrateWalletInjection(
   });
 }
 
-async function ensureVaraExtensions(): Promise<boolean> {
+/**
+ * Enable injected Substrate extensions. Times out if the permission prompt
+ * hangs or the user never responds — same class of bug as an unguarded
+ * Coinbase/wagmi connect.
+ */
+export async function ensureVaraExtensions(): Promise<boolean> {
   await ensureVaraCryptoReady();
 
   if (extensionsEnabled) return true;
@@ -110,7 +143,11 @@ async function ensureVaraExtensions(): Promise<boolean> {
     return false;
   }
 
-  const extensions = await web3Enable(VARA_APP_NAME);
+  const extensions = await withTimeout(
+    web3Enable(VARA_APP_NAME),
+    WEB3_ENABLE_TIMEOUT_MS,
+    "Wallet didn't respond. Approve ArcadeX in your wallet, then try again."
+  );
   extensionsEnabled = extensions.length > 0;
   return extensionsEnabled;
 }
@@ -122,39 +159,42 @@ function missingWalletMessage(): string {
   return "No Substrate wallet found. Install SubWallet, polkadot.js, Talisman, or Nova and create a Vara (Substrate) account.";
 }
 
-export async function connectVaraWallet(): Promise<string> {
+function isSubstrateVaraAccount(account: {
+  address: string;
+  type?: string;
+}): boolean {
+  if (account.type === "ethereum") return false;
+  if (isLikelyEvmAddress(account.address)) return false;
+  return isVaraWalletAddress(account.address);
+}
+
+export async function listVaraWalletAccounts(): Promise<VaraWalletAccount[]> {
   const ready = await ensureVaraExtensions();
   if (!ready) {
     throw new Error(missingWalletMessage());
   }
 
   const accounts = await web3Accounts();
-  const substrateAccounts = accounts.filter((account) => {
-    if (account.type === "ethereum") return false;
-    if (isLikelyEvmAddress(account.address)) return false;
-    return isVaraWalletAddress(account.address);
-  });
+  const substrateAccounts = accounts.filter(isSubstrateVaraAccount);
 
-  const account = substrateAccounts[0] ?? accounts[0];
-  if (!account) {
+  if (substrateAccounts.length === 0) {
     throw new Error(
       "No Vara account found. In your wallet, select a Substrate/Vara account (not EVM)."
     );
   }
 
-  if (
-    account.type === "ethereum" ||
-    isLikelyEvmAddress(account.address) ||
-    !isVaraWalletAddress(account.address)
-  ) {
-    throw new Error(
-      "Wallet returned an EVM account. Switch to a Vara / Substrate account, then reconnect."
-    );
-  }
+  return substrateAccounts.map((account) => ({
+    address: account.address,
+    name: account.meta.name?.trim() || "",
+    source: account.meta.source,
+    sourceLabel: varaWalletLabel(account.meta.source),
+  }));
+}
 
-  // Keep the extension's SS58 as-is so the wallet can sign for this account.
-  // Server-side normalizeVaraAddress re-encodes to Vara prefix when possible.
-  return account.address;
+/** @deprecated Prefer listVaraWalletAccounts + an account picker. */
+export async function connectVaraWallet(): Promise<string> {
+  const accounts = await listVaraWalletAccounts();
+  return accounts[0]!.address;
 }
 
 export async function signVaraMessage(
@@ -171,7 +211,13 @@ export async function signVaraMessage(
     throw new Error("Selected account cannot sign messages.");
   }
 
-  const message = buildPlainAuthMessage(nonce);
+  const domain =
+    typeof window !== "undefined" ? window.location.host : "arcadex.fun";
+  const uri =
+    typeof window !== "undefined"
+      ? window.location.origin
+      : "https://arcadex.fun";
+  const message = buildVaraAuthMessage(nonce, domain, uri);
   const { signature } = await injector.signer.signRaw({
     address,
     data: u8aToHex(stringToU8a(message)),

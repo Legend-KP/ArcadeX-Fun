@@ -6,6 +6,7 @@
 import type { SubmittableExtrinsic } from "@polkadot/api/types";
 import { web3FromAddress } from "@polkadot/extension-dapp";
 import { VARA_RPC_URL } from "@/lib/shop-vara";
+import { varaJsonRpc } from "@/lib/vara-rpc-http";
 import { ensureVaraCryptoReady, toVaraActorId } from "@/lib/vara-address";
 import { resolveVaraSigningAddress } from "@/lib/vara-tx-hub-client";
 import { varaWalletLabel } from "@/lib/vara-wallet-client";
@@ -21,7 +22,6 @@ import {
   encodeVftApprovePayload,
 } from "@/lib/vara-payment-codec";
 
-const HTTP_RPC = VARA_RPC_URL.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
 const DEFAULT_GAS = BigInt(250_000_000_000);
 const TX_TIMEOUT_MS = 120_000;
 
@@ -54,25 +54,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 }
 
 async function rpc<T>(method: string, params: unknown[]): Promise<T> {
-  const res = await fetch(HTTP_RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  if (!res.ok) throw new Error(`Vara RPC HTTP ${res.status}`);
-  const json = (await res.json()) as {
-    result?: T;
-    error?: { message?: string; data?: string };
-  };
-  if (json.error) {
-    throw new Error(
-      json.error.message || json.error.data || "Vara RPC error"
-    );
-  }
-  if (json.result === undefined || json.result === null) {
+  const result = await varaJsonRpc<T>(method, params);
+  if (result === undefined || result === null) {
     throw new Error(`Vara RPC returned empty result for ${method}.`);
   }
-  return json.result;
+  return result;
 }
 
 async function calculateGas(params: {

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
+import { ensureSessionWalletReady } from "@/lib/ensure-session-wallet";
+import { isWalletMismatchMessage } from "@/lib/evm-session-wallet";
 import { purchaseSparkItem } from "@/lib/spark-client";
 import {
   formatShopPrice,
@@ -63,7 +65,7 @@ export default function SparkShopVaraPaymentModal({
   onClose,
   onSuccess,
 }: SparkShopVaraPaymentModalProps) {
-  const { ensureWalletReady } = usePlayerProfile();
+  const { openConnect } = usePlayerProfile();
   const product = productId ? SHOP_PRODUCTS[productId] : null;
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<PaymentStep>("token");
@@ -76,6 +78,7 @@ export default function SparkShopVaraPaymentModal({
   const [balancesLoading, setBalancesLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [walletMismatch, setWalletMismatch] = useState(false);
 
   const tokenOptions = useMemo(() => {
     if (!product) return [];
@@ -171,6 +174,7 @@ export default function SparkShopVaraPaymentModal({
       setSelectedToken(null);
       setBusy(false);
       setError("");
+      setWalletMismatch(false);
       return;
     }
 
@@ -191,13 +195,21 @@ export default function SparkShopVaraPaymentModal({
       setSelectedToken(payToken);
       setBusy(true);
       setError("");
+      setWalletMismatch(false);
       setStep("paying");
 
       try {
-        const ready = await ensureWalletReady();
-        if (!ready) {
+        const ready = await ensureSessionWalletReady({
+          ecosystem: "vara",
+          expectedAddress: walletAddress,
+          allowPrompt: true,
+        });
+        if (!ready.ok) {
           setStep("token");
-          setError("Reconnect your wallet to this site, then pay.");
+          setWalletMismatch(ready.reason === "mismatch");
+          setError(
+            ready.message ?? "Reconnect your wallet to this site, then pay."
+          );
           return;
         }
 
@@ -231,6 +243,9 @@ export default function SparkShopVaraPaymentModal({
         await confirmPurchase(txHash, payToken, product);
       } catch (err) {
         setStep("token");
+        setWalletMismatch(
+          err instanceof Error && isWalletMismatchMessage(err.message)
+        );
         setError(
           err instanceof Error
             ? err.message
@@ -240,7 +255,7 @@ export default function SparkShopVaraPaymentModal({
         setBusy(false);
       }
     },
-    [product, selectedToken, walletAddress, tokenOptions, confirmPurchase, ensureWalletReady]
+    [product, selectedToken, walletAddress, tokenOptions, confirmPurchase]
   );
 
   const handleTokenSelect = useCallback(
@@ -292,7 +307,25 @@ export default function SparkShopVaraPaymentModal({
           </p>
           <p className="spark-shop-payment__desc">{product.description}</p>
 
-          {step === "token" && (
+          {walletMismatch ? (
+            <div className="spark-shop-payment__section">
+              {error ? (
+                <p className="spark-shop-payment__error" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                className="spark-shop-payment__primary"
+                onClick={() => openConnect("vara")}
+                disabled={busy}
+              >
+                Reconnect wallet
+              </button>
+            </div>
+          ) : null}
+
+          {step === "token" && !walletMismatch && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
                 Tap a token to pay. Your wallet will open to approve
@@ -350,14 +383,14 @@ export default function SparkShopVaraPaymentModal({
             </div>
           )}
 
-          {error ? (
+          {error && !walletMismatch ? (
             <p className="spark-shop-payment__error" role="alert">
               {error}
             </p>
           ) : null}
         </div>
 
-        {showPayFooter && !busy && (
+        {showPayFooter && !busy && !walletMismatch && (
           <div className="spark-shop-payment__footer">
             <button
               type="button"

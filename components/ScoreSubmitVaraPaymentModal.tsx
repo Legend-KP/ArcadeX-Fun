@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
+import { ensureSessionWalletReady } from "@/lib/ensure-session-wallet";
+import { isWalletMismatchMessage } from "@/lib/evm-session-wallet";
 import { submitPaidScore } from "@/lib/leaderboard-client";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
 import { formatScoreSubmitPrice } from "@/lib/score-submit";
@@ -103,7 +105,7 @@ export default function ScoreSubmitVaraPaymentModal({
   onClose,
   onSuccess,
 }: ScoreSubmitVaraPaymentModalProps) {
-  const { ensureWalletReady } = usePlayerProfile();
+  const { openConnect } = usePlayerProfile();
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<PaymentStep>("token");
   const [selectedToken, setSelectedToken] = useState<VaraShopPaymentToken | null>(
@@ -115,6 +117,7 @@ export default function ScoreSubmitVaraPaymentModal({
   const [balancesLoading, setBalancesLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [walletMismatch, setWalletMismatch] = useState(false);
   const [status, setStatus] = useState("");
   const [txHash, setTxHash] = useState<string | undefined>();
 
@@ -219,6 +222,7 @@ export default function ScoreSubmitVaraPaymentModal({
       setSelectedToken(null);
       setBusy(false);
       setError("");
+      setWalletMismatch(false);
       setStatus("");
       setTxHash(undefined);
       return;
@@ -278,13 +282,21 @@ export default function ScoreSubmitVaraPaymentModal({
       setError("");
       setStatus("Starting payment…");
       setStep("paying");
+      setWalletMismatch(false);
 
       try {
-        const ready = await ensureWalletReady();
-        if (!ready) {
+        const ready = await ensureSessionWalletReady({
+          ecosystem: "vara",
+          expectedAddress: walletAddress,
+          allowPrompt: true,
+        });
+        if (!ready.ok) {
           setStep("token");
           setStatus("");
-          setError("Reconnect your wallet to this site, then pay.");
+          setWalletMismatch(ready.reason === "mismatch");
+          setError(
+            ready.message ?? "Reconnect your wallet to this site, then pay."
+          );
           return;
         }
 
@@ -302,6 +314,9 @@ export default function ScoreSubmitVaraPaymentModal({
       } catch (err) {
         setStep("token");
         setStatus("");
+        setWalletMismatch(
+          err instanceof Error && isWalletMismatchMessage(err.message)
+        );
         setError(
           err instanceof Error
             ? err.message || "Payment was cancelled or failed."
@@ -319,7 +334,6 @@ export default function ScoreSubmitVaraPaymentModal({
       programConfigured,
       tokenOptions,
       confirmSubmit,
-      ensureWalletReady,
     ]
   );
 
@@ -401,7 +415,25 @@ export default function ScoreSubmitVaraPaymentModal({
             )}
           </p>
 
-          {showTokenStep && (
+          {walletMismatch ? (
+            <div className="spark-shop-payment__section">
+              {error ? (
+                <p className="spark-shop-payment__error" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                className="spark-shop-payment__primary"
+                onClick={() => openConnect("vara")}
+                disabled={busy}
+              >
+                Reconnect wallet
+              </button>
+            </div>
+          ) : null}
+
+          {showTokenStep && !walletMismatch && (
             <div className="spark-shop-payment__section">
               <p className="spark-shop-payment__hint">
                 Select a token, then tap Pay & Submit. Your wallet will ask you to
@@ -457,7 +489,7 @@ export default function ScoreSubmitVaraPaymentModal({
             <p className="spark-shop-payment__hint">{status}</p>
           ) : null}
 
-          {error && (
+          {error && !walletMismatch && (
             <p className="spark-shop-payment__error" role="alert">
               {error}
             </p>
@@ -480,7 +512,7 @@ export default function ScoreSubmitVaraPaymentModal({
         </div>
 
         <div className="spark-shop-payment__footer">
-          {showTokenStep && !txHash ? (
+          {showTokenStep && !txHash && !walletMismatch ? (
             <button
               type="button"
               className={payBtnClass}

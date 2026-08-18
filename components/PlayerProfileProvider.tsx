@@ -78,7 +78,7 @@ interface PlayerProfileContextValue {
   isAuthenticated: boolean;
   streakStatus: StreakStatus | null;
   refreshStreakStatus: () => Promise<void>;
-  openConnect: () => void;
+  openConnect: (chainKey?: ChainKey | null) => void;
   /**
    * Restore live wallet for signing/payments when an ArcadeX session exists.
    * Opens the connect modal only if restore fails.
@@ -523,8 +523,8 @@ export default function PlayerProfileProvider({
     });
   }, [isReady, isAuthenticated, ecosystem, walletAddress]);
 
-  const openConnect = useCallback(() => {
-    setConnectInitialChainKey(null);
+  const openConnect = useCallback((chainKey?: ChainKey | null) => {
+    setConnectInitialChainKey(chainKey ?? null);
     setShowOnboarding(false);
     setShowDailyPlay(false);
     setStreakBroken(null);
@@ -545,9 +545,9 @@ export default function PlayerProfileProvider({
     });
     if (result.ok) return true;
     if (result.message) setError(result.message);
-    openConnect();
+    openConnect(getChainKeyForSession(ecosystem, chainId));
     return false;
-  }, [isAuthenticated, walletAddress, ecosystem, openConnect]);
+  }, [isAuthenticated, walletAddress, ecosystem, chainId, openConnect]);
 
   const handleSignedIn = useCallback(
     async (signedInSession?: {

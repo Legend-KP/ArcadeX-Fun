@@ -1,8 +1,8 @@
 /**
  * Browser helpers that talk to Vara over HTTP JSON-RPC (no @gear-js/api).
  */
-import { VARA_RPC_URL } from "@/lib/shop-vara";
 import { toVaraActorId } from "@/lib/vara-address";
+import { varaJsonRpc } from "@/lib/vara-rpc-http";
 import {
   decodeVftBalanceOfReply,
   decodeVftDecimalsReply,
@@ -12,24 +12,8 @@ import {
   type HexString,
 } from "@/lib/vara-vft-codec";
 
-const HTTP_RPC = VARA_RPC_URL.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
 const ZERO_ORIGIN =
   "0x0000000000000000000000000000000000000000000000000000000000000000";
-
-async function rpc<T>(method: string, params: unknown[]): Promise<T> {
-  const res = await fetch(HTTP_RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  if (!res.ok) throw new Error(`Vara RPC HTTP ${res.status}`);
-  const json = (await res.json()) as {
-    result?: T;
-    error?: { message?: string };
-  };
-  if (json.error) throw new Error(json.error.message || "Vara RPC error");
-  return json.result as T;
-}
 
 export async function calculateVftTransferGas(params: {
   programId: string;
@@ -40,7 +24,7 @@ export async function calculateVftTransferGas(params: {
   const payload = encodeVftTransferPayload(params.toActorId, params.amount);
   const origin = toVaraActorId(params.fromAddress);
   // gear_calculateGasForHandle(source, dest, payload, value, allow_other_panics)
-  const gasInfo = await rpc<{
+  const gasInfo = await varaJsonRpc<{
     min_limit?: string | number;
     minLimit?: string | number;
   }>("gear_calculateGasForHandle", [
@@ -60,13 +44,10 @@ async function calculateReplyForHandle(
   payload: string
 ): Promise<string> {
   // gear_calculateReplyForHandle(origin, dest, payload, gasLimit, value, at?)
-  const reply = await rpc<{ payload?: string }>("gear_calculateReplyForHandle", [
-    ZERO_ORIGIN,
-    programId,
-    payload,
-    250_000_000_000,
-    "0",
-  ]);
+  const reply = await varaJsonRpc<{ payload?: string }>(
+    "gear_calculateReplyForHandle",
+    [ZERO_ORIGIN, programId, payload, 250_000_000_000, "0"]
+  );
   if (!reply?.payload) {
     throw new Error("Empty Gear reply payload.");
   }

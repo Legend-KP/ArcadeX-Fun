@@ -7,12 +7,8 @@
  * throw "still confirming" so the client can retry the API.
  */
 import { blake2b } from "@noble/hashes/blake2b";
-import {
-  normalizeVaraExtrinsicHash,
-  VARA_RPC_URL,
-} from "@/lib/shop-vara";
-
-const HTTP_RPC = VARA_RPC_URL.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
+import { normalizeVaraExtrinsicHash } from "@/lib/shop-vara";
+import { varaJsonRpc } from "@/lib/vara-rpc-http";
 
 /** Keep under Workers Free external subrequest budget (50), leaving room for RTDB. */
 const MAX_BLOCKS_TO_SCAN = 24;
@@ -37,15 +33,7 @@ function extrinsicHash(extrinsicHex: string): string {
 }
 
 async function rpc<T>(method: string, params: unknown[] = []): Promise<T> {
-  const res = await fetch(HTTP_RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  if (!res.ok) throw new Error(`Vara RPC HTTP ${res.status}`);
-  const json = (await res.json()) as { result?: T; error?: { message?: string } };
-  if (json.error) throw new Error(json.error.message || "Vara RPC error");
-  return json.result as T;
+  return varaJsonRpc<T>(method, params);
 }
 
 /**
