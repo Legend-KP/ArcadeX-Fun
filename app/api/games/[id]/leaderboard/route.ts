@@ -10,7 +10,13 @@ import {
 import {
   corsJsonResponse,
   handleCorsPreflightRequest,
+  withCorsHeaders,
 } from "@/lib/cors";
+import {
+  matchPublicGetCache,
+  publicLeaderboardCacheKey,
+  schedulePublicGetCache,
+} from "@/lib/edge-cache";
 import {
   CONTEST_TOP_MAX_ENTRIES,
   gameHasLeaderboard,
@@ -125,6 +131,21 @@ export async function GET(
     const chainGame = applyContestForChain(game, contestChainKey);
 
     const hasPersonal = Boolean(playerId || wallet || name);
+    const cacheKey = !hasPersonal
+      ? publicLeaderboardCacheKey({
+          request,
+          gameId: id,
+          chainId,
+          ecosystem: session?.ecosystem,
+        })
+      : null;
+
+    if (cacheKey) {
+      const cached = await matchPublicGetCache(cacheKey);
+      if (cached) {
+        return withCorsHeaders(request, cached);
+      }
+    }
 
     const [entries, personalBest, submittedBest, contestEntries] =
       await Promise.all([
@@ -197,9 +218,13 @@ export async function GET(
       ? "private, no-store"
       : "public, s-maxage=15, stale-while-revalidate=60";
 
-    return corsJsonResponse(request, response, {
+    const json = corsJsonResponse(request, response, {
       headers: { "Cache-Control": cacheControl },
     });
+    if (cacheKey) {
+      schedulePublicGetCache(cacheKey, json);
+    }
+    return json;
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load leaderboard.";

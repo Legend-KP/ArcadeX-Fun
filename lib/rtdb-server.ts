@@ -48,6 +48,7 @@ import { INFINITE_SPARKS_MS, type ShopProductId } from "@/lib/shop";
 import { isWalletAddress, normalizeWalletAddress } from "@/lib/wallet-address";
 import { toVaraActorId, toVaraSs58 } from "@/lib/vara-address";
 import { SHUFFLE_DAILY_USDC_BUDGET_MICRO } from "@/lib/shuffle-outcomes";
+import { getShuffleBudgetStub } from "@/lib/shuffle-budget";
 
 /** Absolute max a client/API may request for leaderboard downloads. */
 export const LEADERBOARD_ABSOLUTE_MAX = 50;
@@ -2147,6 +2148,21 @@ export async function getShuffleUsdcBudgetRemainingMicro(
   nowMs: number = Date.now()
 ): Promise<number> {
   const dayKey = shuffleUtcDayKey(nowMs);
+  const stub = await getShuffleBudgetStub(dayKey);
+  if (stub) {
+    try {
+      const { remainingMicro } = await stub.remaining(
+        SHUFFLE_DAILY_USDC_BUDGET_MICRO,
+        nowMs
+      );
+      return remainingMicro;
+    } catch (err) {
+      console.warn(
+        "[ArcadeX] ShuffleBudgetDO remaining failed; using RTDB:",
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
   const data = await readShuffleBudgetRecord(dayKey);
   const { spentMicro, reservedMicro } = slimBudgetCounters(data, nowMs);
   return Math.max(0, SHUFFLE_DAILY_USDC_BUDGET_MICRO - spentMicro - reservedMicro);
@@ -2170,6 +2186,27 @@ export async function reserveShuffleUsdcBudget(opts: {
 > {
   const nowMs = opts.nowMs ?? Date.now();
   const dayKey = shuffleUtcDayKey(nowMs);
+  const stub = await getShuffleBudgetStub(dayKey);
+  if (stub) {
+    try {
+      const result = await stub.reserve({
+        amountMicro: opts.amountMicro,
+        reservationKey: opts.reservationKey,
+        expiresAtMs: opts.expiresAtMs,
+        nowMs,
+        budgetMicro: SHUFFLE_DAILY_USDC_BUDGET_MICRO,
+      });
+      return result.ok
+        ? { ok: true, remainingMicro: result.remainingMicro }
+        : { ok: false, remainingMicro: result.remainingMicro };
+    } catch (err) {
+      console.warn(
+        "[ArcadeX] ShuffleBudgetDO reserve failed; using RTDB:",
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
   const resPath = shuffleDailyBudgetReservationPath(dayKey, opts.reservationKey);
   const metaPath = shuffleDailyBudgetPath(dayKey);
 
@@ -2262,6 +2299,23 @@ export async function confirmShuffleUsdcBudget(opts: {
 }): Promise<void> {
   const nowMs = opts.nowMs ?? Date.now();
   const dayKey = shuffleUtcDayKey(nowMs);
+  const stub = await getShuffleBudgetStub(dayKey);
+  if (stub) {
+    try {
+      await stub.confirm({
+        amountMicro: opts.amountMicro,
+        reservationKey: opts.reservationKey,
+        nowMs,
+      });
+      return;
+    } catch (err) {
+      console.warn(
+        "[ArcadeX] ShuffleBudgetDO confirm failed; using RTDB:",
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
   const resPath = shuffleDailyBudgetReservationPath(dayKey, opts.reservationKey);
   const metaPath = shuffleDailyBudgetPath(dayKey);
 

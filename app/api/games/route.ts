@@ -21,6 +21,11 @@ import {
   rateLimitResponse,
 } from "@/lib/rate-limit";
 import { setFirebaseLogRoute } from "@/lib/firebase-log";
+import {
+  matchPublicGetCache,
+  publicCatalogCacheKey,
+  schedulePublicGetCache,
+} from "@/lib/edge-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +40,13 @@ export async function GET(request: Request) {
       metric.emit(429);
       return rateLimitResponse();
     }
+
+    const cached = await matchPublicGetCache(publicCatalogCacheKey(request));
+    if (cached) {
+      metric.cacheHit("edge");
+      return metric.finish(cached);
+    }
+    metric.cacheMiss("edge");
   }
 
   try {
@@ -84,9 +96,11 @@ export async function GET(request: Request) {
       headers.set("Vary", "Authorization");
     }
 
-    return metric.finish(
-      NextResponse.json(body, { headers })
-    );
+    const response = NextResponse.json(body, { headers });
+    if (!isAdmin) {
+      schedulePublicGetCache(publicCatalogCacheKey(request), response);
+    }
+    return metric.finish(response);
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load games.";

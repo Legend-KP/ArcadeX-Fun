@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "main": ".open-next/worker.js",
+  "main": "cloudflare/worker.ts",
   "name": "arcadex-fun",
   "compatibility_date": "2026-01-01",
   "compatibility_flags": [
@@ -21,11 +21,50 @@
   "observability": {
     "enabled": true
   },
+  // WAF + Bot Fight Mode on /api/* are dashboard-only (zone security).
+  // They are not Worker bindings; enable them in Cloudflare Security after deploy.
   "kv_namespaces": [
     {
       "binding": "RATE_LIMIT_KV",
       "id": "55bfb54188784fac966da56f42c9fce6",
       "preview_id": "afc93dfed6514875924b2511a39412cb"
+    },
+    {
+      "binding": "NEXT_INC_CACHE_KV",
+      "id": "55bfb54188784fac966da56f42c9fce6",
+      "preview_id": "afc93dfed6514875924b2511a39412cb"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "RATE_LIMIT_TIGHT",
+      "namespace_id": "202608181",
+      "simple": {
+        "limit": 40,
+        "period": 60
+      }
+    },
+    {
+      "name": "RATE_LIMIT_OPEN",
+      "namespace_id": "202608182",
+      "simple": {
+        "limit": 120,
+        "period": 60
+      }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SHUFFLE_BUDGET_DO",
+        "class_name": "ShuffleBudgetDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ShuffleBudgetDO"]
     }
   ]
 }

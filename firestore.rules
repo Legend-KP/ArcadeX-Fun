@@ -1,13 +1,9 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Public catalog: active games only. Server Admin SDK bypasses these rules —
-    // API routes must still enforce admin auth for mutations.
-    match /games/{gameId} {
-      allow read: if resource.data.active != false;
-      allow create, update, delete: if false;
-    }
-
+    // Deny all client access. The Worker reads/writes with a service account
+    // (Admin REST), which bypasses these rules. Players and admin UI use
+    // /api/games — never the Firestore browser SDK.
     match /{document=**} {
       allow read, write: if false;
     }

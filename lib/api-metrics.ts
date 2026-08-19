@@ -19,7 +19,8 @@ export type CacheLayer =
   | "playCounts"
   | "leaderboardTop"
   | "progressGet"
-  | "progressWrite";
+  | "progressWrite"
+  | "edge";
 
 interface MetricRecord {
   type: "arcadex_api_metric";

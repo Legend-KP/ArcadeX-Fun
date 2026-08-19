@@ -7,7 +7,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import ScoreSubmitModal from "@/components/ScoreSubmitModal";
 import ScoreSubmitVaraPaymentModal from "@/components/ScoreSubmitVaraPaymentModal";
 import { sendToUnity, UnityMessage } from "@/lib/bridge";
-import { getLeaderboard } from "@/lib/firebase";
+import { getLeaderboard } from "@/lib/leaderboard-client";
 import { getGameProgress, saveGameProgress } from "@/lib/game-progress-client";
 import { buildGameIframeUrl, getShellOrigin } from "@/lib/game-iframe-url";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";

@@ -90,6 +90,23 @@ export function handleCorsPreflightRequest(request: Request): NextResponse {
   });
 }
 
+/** Re-apply allowlisted CORS onto a Cache API hit that had CORS stripped. */
+export function withCorsHeaders(
+  request: Request,
+  response: Response
+): NextResponse {
+  const headers = new Headers(response.headers);
+  const cors = corsHeaders(request);
+  for (const [key, value] of Object.entries(cors)) {
+    headers.set(key, value);
+  }
+  return new NextResponse(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export function corsJsonResponse(
   request: Request,
   data: unknown,

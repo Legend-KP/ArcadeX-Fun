@@ -1,8 +1,10 @@
 /**
- * Distributed rate limiting via Cloudflare KV when available.
- * Falls back to per-isolate memory for local `next dev` only.
+ * Rate limiting: Cloudflare Rate Limit binding (atomic per colo) first,
+ * then Workers KV (global, get-then-put) for the exact per-route cap.
+ * Memory fallback is `next dev` / misconfig only.
  */
 
+import { getWorkerEnv, type RateLimitBinding } from "@/lib/worker-env";
 import { getWorkerKv } from "@/lib/worker-kv";
 
 type RateBucket = { count: number; resetAt: number };
@@ -12,6 +14,7 @@ const memoryBuckets = new Map<string, RateBucket>();
 type KvLike = NonNullable<Awaited<ReturnType<typeof getWorkerKv>>>;
 
 let warnedMissingKv = false;
+let warnedMissingLimiter = false;
 
 async function getRateLimitKv(): Promise<KvLike | null> {
   const kv = await getWorkerKv();
@@ -78,15 +81,47 @@ async function kvCheck(
   return true;
 }
 
+async function getAtomicLimiter(
+  limit: number
+): Promise<RateLimitBinding | null> {
+  const env = await getWorkerEnv();
+  if (!env) return null;
+
+  const limiter =
+    limit <= 40 ? env.RATE_LIMIT_TIGHT ?? null : env.RATE_LIMIT_OPEN ?? null;
+
+  if (!limiter && process.env.NODE_ENV === "production" && !warnedMissingLimiter) {
+    warnedMissingLimiter = true;
+    console.warn(
+      "[ArcadeX] Rate Limit bindings missing — per-route caps are KV-only (not atomic across isolates)."
+    );
+  }
+
+  return limiter;
+}
+
 /**
  * Returns true if the request is allowed.
- * Uses Cloudflare KV when bound (global); otherwise in-memory (dev / misconfig).
+ * Atomic colo limiter first; KV for the exact route cap; memory last.
  */
 export async function checkRateLimit(
   key: string,
   limit: number,
   windowMs: number
 ): Promise<boolean> {
+  const limiter = await getAtomicLimiter(limit);
+  if (limiter) {
+    try {
+      const { success } = await limiter.limit({ key });
+      if (!success) return false;
+    } catch (err) {
+      console.warn(
+        "[ArcadeX] Rate Limit binding error; continuing with KV:",
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
   const kv = await getRateLimitKv();
   if (kv) {
     try {
