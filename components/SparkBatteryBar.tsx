@@ -143,13 +143,18 @@ export default function SparkBatteryBar() {
           </p>
 
           {!showInfinite && (
-            <div className="spark-panel__bars">
+            <div
+              className="spark-panel__bars"
+              style={{
+                gridTemplateColumns: `repeat(${Math.max(sparks.max, 1)}, 1fr)`,
+              }}
+            >
               {sparks.slots.map((slot) => (
                 <div key={slot.index} className="spark-panel__bar-col">
                   <div
                     className={`spark-panel__bar${
                       slot.status === "ready" ? " is-ready" : ""
-                    }`}
+                    }${slot.status === "queued" ? " is-queued" : ""}`}
                   >
                     <div
                       className="spark-panel__bar-fill"
@@ -159,11 +164,13 @@ export default function SparkBatteryBar() {
                   <span
                     className={`spark-panel__bar-label${
                       slot.status === "ready" ? " is-ready" : ""
-                    }`}
+                    }${slot.status === "queued" ? " is-queued" : ""}`}
                   >
                     {slot.status === "ready"
                       ? "READY"
-                      : formatSparkCountdown(slot.timeRemainingMs)}
+                      : slot.status === "queued"
+                        ? "WAITING"
+                        : formatSparkCountdown(slot.timeRemainingMs)}
                   </span>
                 </div>
               ))}
@@ -178,8 +185,9 @@ export default function SparkBatteryBar() {
             <span className="spark-panel__info-icon" aria-hidden>
               ℹ
             </span>
-            1 Spark = 1 game entry. Each Spark refills in{" "}
-            {formatRegenHours(SPARK_REGEN_MS)}.
+            1 Spark = 1 game entry. Sparks refill one at a time — each takes{" "}
+            {formatRegenHours(SPARK_REGEN_MS)}, and the next starts only after
+            the previous one is ready.
           </p>
         </div>
 

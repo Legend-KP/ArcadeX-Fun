@@ -178,13 +178,19 @@ export interface GameProgress {
 export interface StoredSparkState {
   max: number;
   regenMs: number;
+  /**
+   * `null` = ready; number = ms timestamp when this slot becomes ready.
+   * Timers are sequential: only one slot regenerates at a time; later empty
+   * slots are chained at +regenMs after the previous slot's readyAt.
+   */
   slots: (number | null)[];
   infiniteUntil?: number;
 }
 
 export interface SparkSlotView {
   index: number;
-  status: "ready" | "regenerating";
+  /** `queued` = waiting for the previous Spark to finish regenerating. */
+  status: "ready" | "regenerating" | "queued";
   fillPercent: number;
   timeRemainingMs: number;
 }

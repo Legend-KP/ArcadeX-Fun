@@ -39,10 +39,13 @@ import {
   type WalletEcosystem,
 } from "@/lib/player-identity";
 import {
+  applySparkSpend,
   computeSparkSnapshot,
   defaultSparkState,
   coerceSparkState,
   normalizeSparkState,
+  rawSparkNeedsUpgrade,
+  shouldPersistSparkMigration,
 } from "@/lib/spark";
 import { INFINITE_SPARKS_MS, type ShopProductId } from "@/lib/shop";
 import { isWalletAddress, normalizeWalletAddress } from "@/lib/wallet-address";
@@ -1151,13 +1154,17 @@ export async function ensureSparkStateOnServer(
   });
 
   const existing = await readPath<unknown>(sparksPath(resolved), connection);
-  if (existing) {
-    return coerceSparkState(existing);
+  if (!existing) {
+    const initial = defaultSparkState();
+    await writePath(sparksPath(resolved), initial, connection);
+    return initial;
   }
 
-  const initial = defaultSparkState();
-  await writePath(sparksPath(resolved), initial, connection);
-  return initial;
+  const coerced = coerceSparkState(existing);
+  if (rawSparkNeedsUpgrade(existing)) {
+    await writePath(sparksPath(resolved), coerced, connection);
+  }
+  return coerced;
 }
 
 export async function getSparkSnapshotOnServer(
@@ -1165,8 +1172,23 @@ export async function getSparkSnapshotOnServer(
   now = Date.now(),
   scope?: PlayerChainScope
 ): Promise<{ state: StoredSparkState; sparks: SparkSnapshot }> {
-  const state = await ensureSparkStateOnServer(playerId, scope);
+  const resolved = resolvePlayerId(playerId);
+  if (!resolved) {
+    throw new Error("A valid player id is required.");
+  }
+
+  const resolvedScope: PlayerChainScope = {
+    chainId: scope?.chainId,
+    ecosystem: scope?.ecosystem ?? parsePlayerId(resolved)?.ecosystem,
+  };
+  const connection = playerConnection(resolvedScope);
+  const state = await ensureSparkStateOnServer(resolved, resolvedScope);
   const normalized = normalizeSparkState(state, now);
+
+  if (shouldPersistSparkMigration(state, normalized, now)) {
+    await writePath(sparksPath(resolved), normalized, connection);
+  }
+
   return {
     state: normalized,
     sparks: computeSparkSnapshot(normalized, now),
@@ -1218,20 +1240,13 @@ export async function spendSparkOnServer(
         return undefined;
       }
 
-      const readyIndex = state.slots.findIndex(
-        (slot) => slot === null || slot <= now
-      );
-      if (readyIndex < 0) {
+      const next = applySparkSpend(state, now);
+      if (!next) {
         noSparks = true;
         return undefined;
       }
 
-      const nextSlots = [...state.slots];
-      nextSlots[readyIndex] = now + state.regenMs;
-      return {
-        ...state,
-        slots: nextSlots,
-      };
+      return next;
     },
     RTDB_TRANSACTION_MAX_RETRIES,
     connection
