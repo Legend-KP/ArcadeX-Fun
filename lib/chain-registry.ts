@@ -7,9 +7,13 @@ export type WalletOption = {
   label: string;
   ecosystem: WalletEcosystem;
   connectorId?: string;
+  /** Used when the primary connector is missing (e.g. Ronin Wallet mobile). */
+  fallbackConnectorId?: string;
+  installUrl?: string;
   starknetId?: "braavos" | "argentX";
   chainId?: number;
   networkLabel?: string;
+  hint?: string;
   chainKey: ChainKey;
 };
 
@@ -61,6 +65,13 @@ export const CHAIN_REGISTRY: ChainSettingsEntry[] = [
     name: "Beam",
     ecosystem: "evm",
     chainId: 4337,
+    defaultShopPayments: false,
+  },
+  {
+    key: "ronin",
+    name: "Ronin",
+    ecosystem: "evm",
+    chainId: 2020,
     defaultShopPayments: false,
   },
   {
@@ -170,6 +181,56 @@ export const WALLET_OPTIONS: WalletOption[] = [
     chainId: 4337,
     networkLabel: "Beam",
     chainKey: "beam",
+  },
+  {
+    id: "ronin-wallet-ronin",
+    label: "Ronin Wallet",
+    ecosystem: "evm",
+    connectorId: "ronin",
+    fallbackConnectorId: "walletConnect",
+    installUrl: "https://wallet.roninchain.com",
+    chainId: 2020,
+    networkLabel: "Ronin",
+    hint: "Extension or mobile",
+    chainKey: "ronin",
+  },
+  {
+    id: "metamask-ronin",
+    label: "MetaMask",
+    ecosystem: "evm",
+    connectorId: "metaMask",
+    chainId: 2020,
+    networkLabel: "Ronin",
+    chainKey: "ronin",
+  },
+  {
+    id: "rabby-ronin",
+    label: "Rabby",
+    ecosystem: "evm",
+    connectorId: "rabby",
+    chainId: 2020,
+    networkLabel: "Ronin",
+    chainKey: "ronin",
+  },
+  {
+    id: "coinbase-ronin",
+    label: "Coinbase Wallet",
+    ecosystem: "evm",
+    connectorId: "coinbaseWalletSDK",
+    chainId: 2020,
+    networkLabel: "Ronin",
+    chainKey: "ronin",
+  },
+  {
+    id: "trust-ronin",
+    label: "Trust Wallet",
+    ecosystem: "evm",
+    connectorId: "trust",
+    fallbackConnectorId: "walletConnect",
+    chainId: 2020,
+    networkLabel: "Ronin",
+    hint: "Extension or mobile",
+    chainKey: "ronin",
   },
   {
     id: "coinbase-base",

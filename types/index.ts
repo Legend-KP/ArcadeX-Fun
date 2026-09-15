@@ -133,6 +133,7 @@ export type ChainKey =
   | "cronos"
   | "avalanche"
   | "beam"
+  | "ronin"
   | "sui"
   | "aptos"
   | "movement"

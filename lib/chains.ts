@@ -102,6 +102,26 @@ export const beam = defineChain({
   },
 });
 
+export const ronin = defineChain({
+  id: 2020,
+  name: "Ronin",
+  nativeCurrency: { name: "Ronin", symbol: "RON", decimals: 18 },
+  rpcUrls: {
+    default: {
+      http: [
+        "https://ronin.lgns.net/rpc",
+        "https://ronin.drpc.org",
+        "https://api.roninchain.com/rpc",
+      ],
+    },
+  },
+  blockExplorers: {
+    default: { name: "Ronin Explorer", url: "https://app.roninchain.com" },
+  },
+});
+
+export const RONIN_CHAIN_ID = ronin.id;
+
 export const primaryEvmChain = base;
 export const PRIMARY_EVM_CHAIN_ID = base.id;
 
@@ -119,6 +139,7 @@ export const supportedEvmChains = [
   cronos,
   avalanche,
   beam,
+  ronin,
 ] as const;
 
 export function getEvmChainById(chainId: number) {

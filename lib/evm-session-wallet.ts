@@ -6,23 +6,14 @@ import {
   getAddress,
   type Address,
   type Chain,
-  type EIP1193Provider,
   type WalletClient,
 } from "viem";
 import { base } from "@/lib/chains";
+import {
+  collectInjectedProviders,
+  type InjectedProvider,
+} from "@/lib/evm-injected-providers";
 import { getCachedWalletConnectorId } from "@/lib/player-id";
-
-type InjectedProvider = EIP1193Provider & {
-  isMetaMask?: boolean;
-  isCoinbaseWallet?: boolean;
-  isRabby?: boolean;
-};
-
-declare global {
-  interface Window {
-    ethereum?: InjectedProvider & { providers?: InjectedProvider[] };
-  }
-}
 
 export class WalletSessionMismatchError extends Error {
   readonly activeAddress: string;
@@ -71,7 +62,7 @@ function providerMatchesConnector(
   if (!connectorId) return false;
   const id = connectorId.toLowerCase();
   if (id.includes("metamask")) {
-    return Boolean(provider.isMetaMask) && !provider.isCoinbaseWallet;
+    return Boolean(provider.isMetaMask) && !provider.isCoinbaseWallet && !provider.isRonin;
   }
   if (id.includes("coinbase")) {
     return Boolean(provider.isCoinbaseWallet);
@@ -79,15 +70,18 @@ function providerMatchesConnector(
   if (id.includes("rabby")) {
     return Boolean(provider.isRabby);
   }
+  if (id.includes("ronin")) {
+    return Boolean(provider.isRonin);
+  }
+  if (id.includes("trust")) {
+    return Boolean(provider.isTrust || provider.isTrustWallet);
+  }
   return false;
 }
 
-/** All injected EIP-1193 providers (MetaMask, Coinbase, Rabby, etc.). */
+/** All injected EIP-1193 providers (Ronin, MetaMask, Coinbase, Rabby, Trust, etc.). */
 export function getInjectedProviders(): InjectedProvider[] {
-  if (typeof window === "undefined" || !window.ethereum) return [];
-  const multi = window.ethereum.providers;
-  if (multi?.length) return multi;
-  return [window.ethereum];
+  return collectInjectedProviders();
 }
 
 export function getPreferredInjectedProvider(): InjectedProvider | null {
@@ -103,7 +97,8 @@ export function getPreferredInjectedProvider(): InjectedProvider | null {
   }
 
   const metamask = providers.find(
-    (provider) => provider.isMetaMask && !provider.isCoinbaseWallet
+    (provider) =>
+      provider.isMetaMask && !provider.isCoinbaseWallet && !provider.isRonin
   );
   if (metamask) return metamask;
 
@@ -158,7 +153,7 @@ export async function resolveEvmAccountForSession(
   const providers = getInjectedProviders();
   if (!providers.length) {
     throw new Error(
-      "No browser wallet found. Install MetaMask (or another EVM wallet), unlock it, then try again."
+      "No browser wallet found. Install Ronin Wallet, MetaMask, or another EVM wallet, unlock it, then try again."
     );
   }
 

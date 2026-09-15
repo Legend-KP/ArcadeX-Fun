@@ -41,6 +41,15 @@ function connectorPreferenceScore(connector: {
   ) {
     return 2;
   }
+  if (cached.includes("ronin") && (id.includes("ronin") || name.includes("ronin"))) {
+    return 2;
+  }
+  if (cached.includes("rabby") && (id.includes("rabby") || name.includes("rabby"))) {
+    return 2;
+  }
+  if (cached.includes("trust") && (id.includes("trust") || name.includes("trust"))) {
+    return 2;
+  }
   return 0;
 }
 

@@ -9,6 +9,7 @@ import {
   useSignMessage,
   useChainId,
   useSwitchChain,
+  type Connector as WagmiConnector,
 } from "wagmi";
 import {
   PRIMARY_EVM_CHAIN_ID,
@@ -70,6 +71,92 @@ import type { ChainKey, WalletEcosystem } from "@/types";
 import type { Wallet } from "@mysten/wallet-standard";
 
 export type { WalletOption };
+
+function connectorMatchesWanted(
+  connector: { id: string; name: string },
+  wanted: string,
+  label: string
+): boolean {
+  const id = connector.id.toLowerCase();
+  const name = connector.name.toLowerCase();
+  const needle = wanted.toLowerCase();
+  const labelLower = label.toLowerCase();
+
+  if (!needle) return name.includes(labelLower);
+  if (id === needle || name === needle) return true;
+  if (
+    needle.includes("metamask") &&
+    (id.includes("metamask") || id === "io.metamask" || name.includes("metamask"))
+  ) {
+    return true;
+  }
+  if (needle.includes("coinbase") && (id.includes("coinbase") || name.includes("coinbase"))) {
+    return true;
+  }
+  if (
+    needle.includes("walletconnect") &&
+    (id.includes("walletconnect") || name.includes("walletconnect"))
+  ) {
+    return true;
+  }
+  if (needle.includes("ronin") && (id.includes("ronin") || name.includes("ronin"))) {
+    return true;
+  }
+  if (needle.includes("rabby") && (id.includes("rabby") || name.includes("rabby"))) {
+    return true;
+  }
+  if (needle.includes("trust") && (id.includes("trust") || name.includes("trust"))) {
+    return true;
+  }
+  return name.includes(labelLower);
+}
+
+function findEvmConnector(
+  connectors: readonly WagmiConnector[],
+  connectorId: string | undefined,
+  label: string
+): WagmiConnector | undefined {
+  if (!connectorId) return undefined;
+  return (
+    connectors.find((connector) => connector.id === connectorId) ??
+    connectors.find((connector) =>
+      connectorMatchesWanted(connector, connectorId, label)
+    )
+  );
+}
+
+function isUserRejectedError(err: unknown): boolean {
+  const name = err instanceof Error ? err.name : "";
+  const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    name === "UserRejectedRequestError" ||
+    message.includes("rejected") ||
+    message.includes("denied") ||
+    message.includes("cancel")
+  );
+}
+
+function isProviderMissingError(err: unknown): boolean {
+  const name = err instanceof Error ? err.name : "";
+  const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    name === "ProviderNotFoundError" ||
+    message.includes("provider not found") ||
+    message.includes("connector not found") ||
+    message.includes("no provider") ||
+    message.includes("not been found")
+  );
+}
+
+function friendlyEvmConnectError(err: unknown, option: WalletOption): string {
+  if (isUserRejectedError(err)) {
+    return "Connection cancelled.";
+  }
+  if (isProviderMissingError(err)) {
+    return `${option.label} was not found. Install the official app or extension, then try again.`;
+  }
+  return err instanceof Error ? err.message : "Could not connect wallet.";
+}
 
 type ConnectStep =
   | "select-network"
@@ -270,85 +357,113 @@ export default function ConnectWalletModal({
 
       if (option.ecosystem === "evm") {
         const targetChainId = option.chainId ?? PRIMARY_EVM_CHAIN_ID;
-        const wanted = option.connectorId?.toLowerCase() ?? "";
-        const connector =
-          connectors.find((c) => c.id === option.connectorId) ??
-          connectors.find((c) => {
-            const id = c.id.toLowerCase();
-            return (
-              (wanted.includes("metamask") &&
-                (id.includes("metamask") || id === "io.metamask")) ||
-              (wanted.includes("coinbase") && id.includes("coinbase")) ||
-              (wanted.includes("walletconnect") && id.includes("walletconnect"))
+        const connector = findEvmConnector(
+          connectors,
+          option.connectorId,
+          option.label
+        );
+        const fallbackConnector = findEvmConnector(
+          connectors,
+          option.fallbackConnectorId,
+          "WalletConnect"
+        );
+
+        async function signInWithConnector(selected: WagmiConnector) {
+          const sameConnector =
+            activeConnector &&
+            (activeConnector.id === selected.id ||
+              activeConnector.name.toLowerCase() ===
+                selected.name.toLowerCase());
+
+          if (sameConnector && connectedEvmAddress) {
+            let activeChainId = chainId ?? targetChainId;
+            if (activeChainId !== targetChainId) {
+              try {
+                await switchChainAsync({ chainId: targetChainId });
+                activeChainId = targetChainId;
+              } catch {
+                await completeEvmSignIn(
+                  connectedEvmAddress,
+                  activeChainId,
+                  targetChainId,
+                  selected.id
+                );
+                return;
+              }
+            }
+            await completeEvmSignIn(
+              connectedEvmAddress,
+              activeChainId,
+              targetChainId,
+              selected.id
             );
-          }) ??
-          connectors.find((c) =>
-            c.name.toLowerCase().includes(option.label.toLowerCase())
-          );
-        if (!connector) {
-          throw new Error(`${option.label} is not available.`);
-        }
+            return;
+          }
 
-        // Reuse an already-open MetaMask/etc. session when possible.
-        const sameConnector =
-          activeConnector &&
-          (activeConnector.id === connector.id ||
-            activeConnector.name.toLowerCase() === connector.name.toLowerCase());
-
-        if (sameConnector && connectedEvmAddress) {
-          let activeChainId = chainId ?? targetChainId;
+          // Connect first, then switch network. Passing chainId into connect
+          // makes MetaMask Connect wait on add-chain (slow on MegaETH).
+          const result = await connectAsync({ connector: selected });
+          const connectedAddress = result.accounts[0];
+          if (!connectedAddress) {
+            throw new Error("Could not read wallet address.");
+          }
+          let activeChainId = result.chainId ?? chainId ?? targetChainId;
           if (activeChainId !== targetChainId) {
             try {
               await switchChainAsync({ chainId: targetChainId });
               activeChainId = targetChainId;
             } catch {
               await completeEvmSignIn(
-                connectedEvmAddress,
+                connectedAddress,
                 activeChainId,
                 targetChainId,
-                connector.id
+                selected.id
               );
               return;
             }
           }
           await completeEvmSignIn(
-            connectedEvmAddress,
+            connectedAddress,
             activeChainId,
             targetChainId,
-            connector.id
+            selected.id
           );
+        }
+
+        if (connector) {
+          try {
+            await signInWithConnector(connector);
+            return;
+          } catch (err) {
+            const canFallback =
+              Boolean(fallbackConnector) &&
+              fallbackConnector?.id !== connector.id &&
+              !isUserRejectedError(err) &&
+              isProviderMissingError(err);
+            if (!canFallback || !fallbackConnector) {
+              if (
+                !isUserRejectedError(err) &&
+                option.installUrl &&
+                isProviderMissingError(err)
+              ) {
+                window.open(option.installUrl, "_blank", "noopener,noreferrer");
+              }
+              throw new Error(friendlyEvmConnectError(err, option));
+            }
+          }
+        }
+
+        if (fallbackConnector) {
+          await signInWithConnector(fallbackConnector);
           return;
         }
 
-        // Connect first, then switch network. Passing chainId into connect
-        // makes MetaMask Connect wait on add-chain (slow on MegaETH).
-        const result = await connectAsync({ connector });
-        const connectedAddress = result.accounts[0];
-        if (!connectedAddress) {
-          throw new Error("Could not read wallet address.");
+        if (option.installUrl) {
+          window.open(option.installUrl, "_blank", "noopener,noreferrer");
         }
-        let activeChainId = result.chainId ?? chainId ?? targetChainId;
-        if (activeChainId !== targetChainId) {
-          try {
-            await switchChainAsync({ chainId: targetChainId });
-            activeChainId = targetChainId;
-          } catch {
-            await completeEvmSignIn(
-              connectedAddress,
-              activeChainId,
-              targetChainId,
-              connector.id
-            );
-            return;
-          }
-        }
-        await completeEvmSignIn(
-          connectedAddress,
-          activeChainId,
-          targetChainId,
-          connector.id
+        throw new Error(
+          `${option.label} was not found. Install the official app or extension, then try again.`
         );
-        return;
       }
 
       let session: AuthSessionPayload;
@@ -589,6 +704,9 @@ export default function ConnectWalletModal({
                     onClick={() => handleSelect(option)}
                   >
                     <span className="wallet-option__label">{option.label}</span>
+                    {option.hint ? (
+                      <span className="wallet-option__chain">{option.hint}</span>
+                    ) : null}
                   </button>
                 ))
               )}
