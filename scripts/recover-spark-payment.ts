@@ -5,8 +5,11 @@
  * Usage:
  *   npx tsx scripts/recover-spark-payment.ts <wallet> <txHash> <infinite-24h|spark-refill>
  */
-import { config } from "dotenv";
-config({ path: ".env" });
+try {
+  process.loadEnvFile(".env");
+} catch {
+  // .env is optional when the variables are already in the environment.
+}
 
 async function main() {
   const [, , wallet, txHash, product] = process.argv;
