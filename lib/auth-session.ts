@@ -11,6 +11,8 @@ export interface SessionPayload {
   address: string;
   ecosystem: WalletEcosystem;
   chainId?: number;
+  /** Present after SIWF or sponsored FID mint. */
+  fid?: number;
 }
 
 function getAuthSecret(): Uint8Array {
@@ -59,6 +61,7 @@ export async function verifySessionToken(
       ecosystem,
       chainId:
         typeof payload.chainId === "number" ? payload.chainId : undefined,
+      fid: typeof payload.fid === "number" ? payload.fid : undefined,
     };
   } catch {
     return null;

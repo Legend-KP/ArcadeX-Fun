@@ -14,6 +14,11 @@ const PlayerProfileProvider = dynamic(
   { ssr: false }
 );
 
+const FarcasterAuthProvider = dynamic(
+  () => import("@/components/farcaster/FarcasterAuthProvider"),
+  { ssr: false }
+);
+
 export default function AppProviders({
   children,
 }: {
@@ -30,7 +35,9 @@ export default function AppProviders({
     <WalletProvider>
       <ChainSettingsProvider>
         <PlayerProfileProvider>
-          <SparkProvider>{children}</SparkProvider>
+          <FarcasterAuthProvider>
+            <SparkProvider>{children}</SparkProvider>
+          </FarcasterAuthProvider>
         </PlayerProfileProvider>
       </ChainSettingsProvider>
     </WalletProvider>

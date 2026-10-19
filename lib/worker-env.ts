@@ -44,12 +44,24 @@ export type ShuffleBudgetNamespace = {
   get(id: DurableObjectIdLike): ShuffleBudgetStub;
 };
 
+export type D1DatabaseBinding = {
+  prepare(query: string): {
+    bind(...values: unknown[]): {
+      first<T = unknown>(): Promise<T | null>;
+      run(): Promise<unknown>;
+      all<T = unknown>(): Promise<{ results: T[] }>;
+    };
+  };
+};
+
 export type WorkerEnv = {
   RATE_LIMIT_KV?: KvLike;
   NEXT_INC_CACHE_KV?: KvLike;
   RATE_LIMIT_TIGHT?: RateLimitBinding;
   RATE_LIMIT_OPEN?: RateLimitBinding;
   SHUFFLE_BUDGET_DO?: ShuffleBudgetNamespace;
+  /** Farcaster / social identity (profiles, usernames, email OTP). */
+  ARCADEX_SOCIAL_DB?: D1DatabaseBinding;
 };
 
 export type WorkerExecutionContext = {

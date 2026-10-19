@@ -46,6 +46,32 @@ export interface PlayerProfile {
   chainId?: number;
   createdAt: number;
   updatedAt: number;
+  /** Farcaster FID — stored in D1 `profiles`, not Firebase RTDB. */
+  fid?: number;
+  /** ArcadeX unique handle — D1 `usernames` registry. */
+  username?: string;
+  /** Custody / primary EVM wallet for FID. */
+  primaryWallet?: string;
+  emailVerifiedAt?: number;
+}
+
+/** Social identity row from Cloudflare D1 (Farcaster layer). */
+export interface SocialProfile {
+  playerId: string;
+  fid?: number;
+  primaryWallet?: string;
+  username?: string;
+  email?: string;
+  emailVerifiedAt?: number;
+  displayName?: string;
+  fname?: string;
+  pfpUrl?: string;
+  custodyAddress?: string;
+  recoveryAddress?: string;
+  ecosystem?: string;
+  chainId?: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface Game {

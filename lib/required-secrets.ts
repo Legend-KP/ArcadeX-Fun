@@ -25,6 +25,11 @@ export function getMissingRequiredSecrets(): string[] {
     missing.push("ADMIN_PASSWORD");
   }
 
+  // Farcaster social layer (warn in prod when Path A/B secrets are absent).
+  if (isProductionRuntime() && !process.env.NEYNAR_API_KEY?.trim()) {
+    missing.push("NEYNAR_API_KEY");
+  }
+
   // Fun prefers service-account OAuth for Firestore + RTDB.
   // Legacy FIREBASE_DATABASE_SECRET remains a fallback when no service account is set.
   const hasDbSecret = Boolean(process.env.FIREBASE_DATABASE_SECRET?.trim());

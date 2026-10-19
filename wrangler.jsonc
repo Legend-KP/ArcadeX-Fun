@@ -30,6 +30,14 @@
       "preview_id": "afc93dfed6514875924b2511a39412cb"
     }
   ],
+  "d1_databases": [
+    {
+      "binding": "ARCADEX_SOCIAL_DB",
+      "database_name": "arcadex-social",
+      "database_id": "4f7a90c5-14c8-4a4a-8a5f-f6e0cf463f0d",
+      "migrations_dir": "migrations/social"
+    }
+  ],
   "ratelimits": [
     {
       "name": "RATE_LIMIT_TIGHT",
