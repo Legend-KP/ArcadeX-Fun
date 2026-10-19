@@ -65,12 +65,14 @@ const nextConfig: NextConfig = {
       config.plugins = config.plugins || [];
       config.plugins.push(new FixTemplateOctalPlugin());
 
+      // Stub heavy SDKs only when they are not imported by "use client" wallet
+      // modules. Stubbing freighter / mysten / starknetkit breaks SSR analysis
+      // of those client entrypoints ("Attempted import error: X is not exported").
       config.resolve.alias = {
         ...config.resolve.alias,
         "@stellar/stellar-sdk$": path.join(stubsDir, "empty.ts"),
         "@aptos-labs/ts-sdk$": path.join(stubsDir, "empty.ts"),
         siwe$: path.join(stubsDir, "empty.ts"),
-        starknetkit$: path.join(stubsDir, "empty.ts"),
         "get-starknet-core$": path.join(stubsDir, "empty.ts"),
         "@coinbase/wallet-sdk$": path.join(stubsDir, "empty.ts"),
         "@walletconnect/ethereum-provider$": path.join(stubsDir, "empty.ts"),
@@ -78,9 +80,6 @@ const nextConfig: NextConfig = {
         "@walletconnect/universal-provider$": path.join(stubsDir, "empty.ts"),
         "@metamask/connect-evm$": path.join(stubsDir, "empty.ts"),
         "@metamask/sdk$": path.join(stubsDir, "empty.ts"),
-        "@stellar/freighter-api$": path.join(stubsDir, "empty.ts"),
-        "@mysten/slush-wallet$": path.join(stubsDir, "empty.ts"),
-        "@mysten/wallet-standard$": path.join(stubsDir, "empty.ts"),
         "@wagmi/connectors$": path.join(stubsDir, "wagmi-connectors.ts"),
         "wagmi/connectors$": path.join(stubsDir, "wagmi-connectors.ts"),
       };
