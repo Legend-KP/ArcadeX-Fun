@@ -1,4 +1,4 @@
-import { createAppClient, viemConnector } from "@farcaster/auth-kit";
+import { createAppClient, viemConnector } from "@farcaster/auth-client";
 import { getAddress } from "viem";
 import { custodyOf } from "@/lib/farcaster/id-registry";
 
@@ -27,7 +27,8 @@ function getOptimismRpcUrl(): string {
 }
 
 /**
- * Verify Sign-In with Farcaster (EIP-4361) via Auth Kit.
+ * Verify Sign-In with Farcaster (EIP-4361) via auth-client (no React).
+ * Do not import @farcaster/auth-kit here — it pulls createContext into API routes.
  */
 export async function verifySiwfMessage(
   input: SiwfVerifyInput

@@ -5,6 +5,7 @@ import {
 import { getEvmChainById, primaryEvmChain } from "@/lib/chains";
 import { WalletEcosystem } from "@/lib/player-identity";
 
+/** Connectable ecosystems. `vara` remains on WalletEcosystem for legacy RTDB ids only. */
 export const WALLET_ECOSYSTEMS: readonly WalletEcosystem[] = [
   "evm",
   "starknet",
@@ -12,7 +13,6 @@ export const WALLET_ECOSYSTEMS: readonly WalletEcosystem[] = [
   "aptos",
   "movement",
   "stellar",
-  "vara",
 ] as const;
 
 export function isWalletEcosystem(value: string): value is WalletEcosystem {

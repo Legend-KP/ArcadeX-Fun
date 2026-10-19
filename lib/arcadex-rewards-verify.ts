@@ -18,13 +18,10 @@ import { readBaseContractWithFailover } from "@/lib/base-public-client";
 import { readAvalancheContractWithFailover } from "@/lib/avalanche-public-client";
 import { getPaymentTransactionReceipt } from "@/lib/payment-tx-verify";
 import { isVaraRewardsChainId } from "@/lib/vara-rewards";
-import {
-  readVaraSpinNonce,
-  readVaraStreakProgress,
-  verifyVaraCheckInTx,
-  verifyVaraSpinTx,
-} from "@/lib/vara-rewards-server";
-import { normalizeVaraAddress } from "@/lib/player-identity";
+
+function assertVaraRemoved(): never {
+  throw new Error("Vara support has been removed.");
+}
 
 export interface VerifiedCheckIn {
   player: Address;
@@ -73,28 +70,7 @@ export async function verifyCheckInTx(
   assertConfigured(chainId);
 
   if (isVaraRewardsChainId(chainId)) {
-    const verified = await verifyVaraCheckInTx({
-      txHash,
-      expectedFrom: walletAddress,
-      campaignId: expectedCampaignId,
-    });
-    const player = normalizeVaraAddress(walletAddress) as Address;
-    return {
-      player,
-      campaignId: BigInt(expectedCampaignId),
-      day: verified.day,
-      timestamp: BigInt(verified.timestamp),
-      milestone: verified.milestone
-        ? {
-            player,
-            campaignId: BigInt(expectedCampaignId),
-            day: verified.day,
-            rewardMode: verified.rewardMode,
-            rewardMeta: verified.rewardMeta as Hex,
-            timestamp: BigInt(verified.timestamp),
-          }
-        : null,
-    };
+    assertVaraRemoved();
   }
 
   const rewardsAddress = getArcadeXRewardsAddress(chainId);
@@ -236,7 +212,7 @@ export async function readStreakProgress(
   assertConfigured(chainId);
 
   if (isVaraRewardsChainId(chainId)) {
-    return readVaraStreakProgress(walletAddress, campaignId);
+    assertVaraRemoved();
   }
 
   const player = getAddress(walletAddress);
@@ -360,30 +336,7 @@ export async function verifySpinTx(
   assertConfigured(chainId);
 
   if (isVaraRewardsChainId(chainId)) {
-    if (!expectedSpin) {
-      throw new Error("Vara spin verify requires prepared spin parameters.");
-    }
-    await verifyVaraSpinTx({
-      txHash,
-      expectedFrom: walletAddress,
-      campaignId: expectedCampaignId,
-      rewardMode: expectedSpin.rewardMode,
-      rewardAmount: BigInt(expectedSpin.rewardAmount),
-      nonce: expectedSpin.nonce,
-      deadline: expectedSpin.deadline,
-      signature: expectedSpin.signature,
-    });
-    const player = normalizeVaraAddress(walletAddress) as Address;
-    return {
-      player,
-      campaignId: BigInt(expectedCampaignId),
-      rewardMode: expectedSpin.rewardMode,
-      rewardTarget:
-        expectedSpin.rewardTarget ??
-        ("0x0000000000000000000000000000000000000000" as Address),
-      rewardAmount: BigInt(expectedSpin.rewardAmount),
-      timestamp: BigInt(Math.floor(Date.now() / 1000)),
-    };
+    assertVaraRemoved();
   }
 
   const rewardsAddress = getArcadeXRewardsAddress(chainId);
@@ -463,7 +416,7 @@ export async function readSpinNonce(
 ): Promise<bigint> {
   assertConfigured(chainId);
   if (isVaraRewardsChainId(chainId)) {
-    return readVaraSpinNonce(walletAddress, campaignId);
+    assertVaraRemoved();
   }
   const player = getAddress(walletAddress);
   return readRewardsContractWithFailover<bigint>(chainId, {

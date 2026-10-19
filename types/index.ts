@@ -113,7 +113,7 @@ export interface Game {
 }
 
 /** Chains that support dedicated contest + leaderboard databases. */
-export type ContestChainKey = "base" | "avalanche" | "vara";
+export type ContestChainKey = "base" | "avalanche";
 
 export type ChainContestState = {
   contestTask?: string;
@@ -164,7 +164,6 @@ export type ChainKey =
   | "aptos"
   | "movement"
   | "stellar"
-  | "vara"
   | "starknet";
 
 export interface ChainFeatures {

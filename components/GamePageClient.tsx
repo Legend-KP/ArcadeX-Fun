@@ -15,9 +15,6 @@ import { formatSparkCountdown } from "@/lib/spark";
 import { shouldRequireBaseTxHubSignIn } from "@/lib/arcadex-tx-hub";
 import { signInOnArcadeXTxHub } from "@/lib/arcadex-tx-hub-client";
 import { verifyBasePlaySignIn } from "@/lib/arcadex-tx-hub-api";
-import { isVaraTxHubConfigured } from "@/lib/vara-tx-hub";
-import { signInOnVaraTxHub } from "@/lib/vara-tx-hub-client";
-import { verifyVaraPlaySignIn } from "@/lib/vara-tx-hub-api";
 import { shouldRequireAvalanchePlayGate } from "@/lib/avalanche-play-gate";
 import { signAvalanchePlayIntent } from "@/lib/avalanche-play-gate-client";
 
@@ -139,20 +136,9 @@ export default function GamePageClient() {
       let playGate: { message: string; signature: string } | undefined;
 
       if (ecosystem === "vara") {
-        if (!isVaraTxHubConfigured()) {
-          throw new Error(
-            "Vara TxHub is missing from this build. Set NEXT_PUBLIC_VARA_ARCADEX_TX_HUB_PROGRAM on Cloudflare and redeploy (NEXT_PUBLIC_ vars are baked at build time)."
-          );
-        }
-        setSparkError("Approve free play sign-in in your wallet…");
-        const txHash = await signInOnVaraTxHub({
-          fromAddress: walletAddress,
-          gameId: game.id,
-          onStatus: (message) => setSparkError(message),
-        });
-        setSparkError("Confirming sign-in…");
-        await verifyVaraPlaySignIn({ txHash, gameId: game.id });
-        setSparkError("");
+        throw new Error(
+          "Vara support has been removed. Connect an EVM or other supported wallet."
+        );
       } else if (shouldRequireBaseTxHubSignIn({ ecosystem, chainId })) {
         setSparkError("Approve free play sign-in in your wallet…");
         const txHash = await signInOnArcadeXTxHub({

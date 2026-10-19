@@ -6,7 +6,7 @@ import {
   getConnection,
   getConnectors,
   reconnect,
-} from "@wagmi/core";
+} from "wagmi/actions";
 import { getAddress, type Address } from "viem";
 import { wagmiConfig } from "@/lib/wagmi-config";
 import { getCachedWalletConnectorId } from "@/lib/player-id";

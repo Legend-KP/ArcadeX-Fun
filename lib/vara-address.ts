@@ -1,27 +1,40 @@
 /**
- * Vara address helpers: accept SS58 or 0x ActorId, normalize both forms.
- * Canonical playerId form: Vara SS58 (prefix 137) when encoding works; otherwise
- * the wallet-provided SS58 (injected wallets often use generic prefix 42).
- *
- * Uses lite SS58 (no @polkadot/util-crypto WASM) so address paths stay out of
- * the Worker crypto blob.
+ * Legacy Vara address helpers (SS58 / ActorId) for existing RTDB playerIds.
+ * No @polkadot packages — lite SS58 only. Vara connect/play is disabled.
  */
-import type { HexString } from "@/lib/shop-vara";
-import { compactFromU8aLim, hexToU8a, u8aToHex } from "@polkadot/util";
 import {
   decodeSs58Address,
   encodeSs58Address,
 } from "@/lib/vara-ss58-lite";
 
+export type HexString = `0x${string}`;
+
 /** Vara Network SS58 prefix */
 export const VARA_SS58_PREFIX = 137;
 
 const ACTOR_ID_RE = /^0x[0-9a-fA-F]{64}$/;
-/** Substrate SS58 lengths vary slightly by prefix / format. */
 const SS58_RE = /^[1-9A-HJ-NP-Za-km-z]{46,50}$/;
 const EVM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
-/** No-op — lite SS58 needs no WASM warm-up. Kept for existing client callers. */
+function hexToU8a(value: string): Uint8Array {
+  const hex = value.startsWith("0x") ? value.slice(2) : value;
+  if (hex.length % 2 !== 0) throw new Error("Invalid hex");
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+function u8aToHex(bytes: Uint8Array): HexString {
+  let hex = "0x";
+  for (const b of bytes) {
+    hex += b.toString(16).padStart(2, "0");
+  }
+  return hex as HexString;
+}
+
+/** No-op — kept for existing callers. */
 export function ensureVaraCryptoReady(): Promise<boolean> {
   return Promise.resolve(true);
 }
@@ -54,7 +67,6 @@ export function isVaraWalletAddress(value: string | null | undefined): boolean {
   return isVaraActorIdHex(value) || isVaraSs58Address(value);
 }
 
-/** Canonical ActorId hex (lowercase 0x + 64 hex chars). */
 export function toVaraActorId(address: string): HexString {
   const trimmed = address.trim();
   if (isVaraActorIdHex(trimmed)) {
@@ -70,7 +82,6 @@ export function toVaraActorId(address: string): HexString {
   }
 }
 
-/** SS58 (prefix 137) for UI / on-chain display when encoding is available. */
 export function toVaraSs58(address: string): string {
   const trimmed = address.trim();
   if (isVaraActorIdHex(trimmed)) {
@@ -104,18 +115,6 @@ export function normalizeVaraAddressPair(address: string): {
   return { actorId, ss58 };
 }
 
-/**
- * Canonical form for RTDB / playerId: Vara SS58 when possible.
- * Accepts SS58 (any prefix) or ActorId hex. Rejects EVM 0x…40.
- */
 export function normalizeVaraCanonicalAddress(address: string): string {
   return toVaraSs58(address);
-}
-
-export function getVftPayloadDataOffset(payloadHex: HexString): number {
-  const payload = hexToU8a(payloadHex);
-  const [serviceOffset, serviceSize] = compactFromU8aLim(payload);
-  const fnStart = serviceOffset + serviceSize;
-  const [fnOffset, fnSize] = compactFromU8aLim(payload.subarray(fnStart));
-  return fnStart + fnOffset + fnSize;
 }

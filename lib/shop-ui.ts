@@ -5,12 +5,12 @@ import {
 } from "@/lib/chain-registry";
 import type { WalletEcosystem } from "@/types";
 
-export type ShopPaymentEcosystem = "evm" | "sui" | "vara";
+export type ShopPaymentEcosystem = "evm" | "sui";
 
 export function isShopPaymentEcosystem(
   ecosystem: WalletEcosystem | null
 ): ecosystem is ShopPaymentEcosystem {
-  return ecosystem === "evm" || ecosystem === "sui" || ecosystem === "vara";
+  return ecosystem === "evm" || ecosystem === "sui";
 }
 
 export interface ShopPanelCopy {
@@ -71,15 +71,6 @@ export function getShopPanelCopy(
         priceSuffix: "on Sui",
         disabledHint: "Shop purchases on Sui are currently unavailable.",
         unsupportedHint: "Shop purchases are available with a Sui wallet.",
-        getBuyButtonLabel: buyButtonLabel,
-      };
-    case "vara":
-      return {
-        networkLabel: "Vara",
-        paymentHint: "Pay with WUSDC or WUSDT on Vara.",
-        priceSuffix: "on Vara",
-        disabledHint: "Shop purchases on Vara are currently unavailable.",
-        unsupportedHint: "Shop purchases are available with a Vara wallet.",
         getBuyButtonLabel: buyButtonLabel,
       };
   }

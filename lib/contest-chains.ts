@@ -13,16 +13,11 @@ import {
   type Game,
 } from "@/types";
 
-export const CONTEST_CHAIN_KEYS: ContestChainKey[] = [
-  "base",
-  "avalanche",
-  "vara",
-];
+export const CONTEST_CHAIN_KEYS: ContestChainKey[] = ["base", "avalanche"];
 
 export const CONTEST_CHAIN_LABELS: Record<ContestChainKey, string> = {
   base: "Base",
   avalanche: "Avalanche",
-  vara: "Vara",
 };
 
 const CONTEST_FIELD_SUFFIXES = [
@@ -38,7 +33,7 @@ type ContestFieldSuffix = (typeof CONTEST_FIELD_SUFFIXES)[number];
 export function isContestChainKey(
   value: string | null | undefined
 ): value is ContestChainKey {
-  return value === "base" || value === "avalanche" || value === "vara";
+  return value === "base" || value === "avalanche";
 }
 
 export function contestFieldPath(
@@ -156,7 +151,6 @@ export function resolveContestChainKey(opts: {
     return mapped;
   }
 
-  if (opts.ecosystem === "vara") return "vara";
   if (opts.ecosystem === "evm") return "base";
   return "base";
 }

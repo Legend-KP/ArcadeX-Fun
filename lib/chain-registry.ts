@@ -99,12 +99,6 @@ export const CHAIN_REGISTRY: ChainSettingsEntry[] = [
     defaultShopPayments: false,
   },
   {
-    key: "vara",
-    name: "Vara",
-    ecosystem: "vara",
-    defaultShopPayments: true,
-  },
-  {
     key: "starknet",
     name: "Starknet",
     ecosystem: "starknet",
@@ -287,12 +281,6 @@ export const WALLET_OPTIONS: WalletOption[] = [
     chainKey: "stellar",
   },
   {
-    id: "polkadot",
-    label: "Vara Network",
-    ecosystem: "vara",
-    chainKey: "vara",
-  },
-  {
     id: "braavos",
     label: "Braavos",
     ecosystem: "starknet",
@@ -393,11 +381,7 @@ export function getChainKeyForSession(
 export function chainSupportsShopPaymentsConfig(
   entry: ChainSettingsEntry
 ): boolean {
-  return (
-    entry.ecosystem === "evm" ||
-    entry.ecosystem === "sui" ||
-    entry.ecosystem === "vara"
-  );
+  return entry.ecosystem === "evm" || entry.ecosystem === "sui";
 }
 
 export function isShopPaymentsEnabled(
@@ -418,10 +402,6 @@ export function isShopPaymentsEnabled(
     }
     // Avalanche shop is on by default for this rollout; Firestore Off still wins.
     return settings[key]?.shopPayments !== false;
-  }
-
-  if (ecosystem === "vara") {
-    return settings.vara?.shopPayments !== false;
   }
 
   return false;

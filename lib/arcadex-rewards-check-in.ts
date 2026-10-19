@@ -39,15 +39,7 @@ export async function checkInOnChain(
   }
 
   if (isVaraRewardsChainId(chainId)) {
-    if (!opts?.expectedWallet) {
-      throw new Error("Vara check-in requires expectedWallet.");
-    }
-    const { checkInOnVara } = await import("@/lib/vara-rewards-client");
-    const { txHash } = await checkInOnVara({
-      walletAddress: opts.expectedWallet,
-      campaignId: campaignId ?? getStreakCampaignIdForChain(chainId),
-    });
-    return { txHash: txHash as Hash };
+    throw new Error("Vara support has been removed.");
   }
 
   const chain = isAvalancheRewardsChainId(chainId) ? avalanche : base;

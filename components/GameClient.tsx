@@ -5,15 +5,12 @@ import { useRouter } from "next/navigation";
 import ExitGameModal from "@/components/ExitGameModal";
 import LoadingScreen from "@/components/LoadingScreen";
 import ScoreSubmitModal from "@/components/ScoreSubmitModal";
-import ScoreSubmitVaraPaymentModal from "@/components/ScoreSubmitVaraPaymentModal";
 import { sendToUnity, UnityMessage } from "@/lib/bridge";
 import { getLeaderboard } from "@/lib/leaderboard-client";
 import { getGameProgress, saveGameProgress } from "@/lib/game-progress-client";
 import { buildGameIframeUrl, getShellOrigin } from "@/lib/game-iframe-url";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import { getGameTheme } from "@/lib/game-themes";
-import { parsePlayerId } from "@/lib/player-identity";
-import { isVaraWalletAddress } from "@/lib/vara-address";
 import { Game, gameHasContestLive, gameHasLeaderboard } from "@/types";
 import {
   applyContestForChain,
@@ -77,10 +74,6 @@ export default function GameClient({
   const resolvedName = playerName || profile?.name || "";
   const resolvedWallet = walletAddress || profile?.walletAddress || "";
   const resolvedPlayerId = playerId || profile?.id || "";
-  const isVaraSession =
-    ecosystem === "vara" ||
-    parsePlayerId(resolvedPlayerId)?.ecosystem === "vara" ||
-    isVaraWalletAddress(resolvedWallet);
 
   const iframeSrc = useMemo(() => {
     if (!isReady) return null;
@@ -444,38 +437,7 @@ export default function GameClient({
         onPlayMore={() => router.push("/")}
       />
 
-      {pendingScore && isVaraSession && (
-        <ScoreSubmitVaraPaymentModal
-          open={scoreSubmitOpen}
-          gameId={game.id}
-          score={pendingScore.score}
-          playerName={pendingScore.name}
-          walletAddress={
-            pendingScore.walletAddress || resolvedWallet || ""
-          }
-          playSessionId={playSessionId}
-          contestLive={contestLive}
-          onClose={() => {
-            setScoreSubmitOpen(false);
-            setPendingScore(null);
-            sendToUnity(iframeRef, "OnScoreSubmitted", {
-              success: false,
-              error: "Score submission cancelled.",
-            });
-          }}
-          onSuccess={(submittedBest) => {
-            setScoreSubmitOpen(false);
-            setPendingScore(null);
-            sendToUnity(iframeRef, "OnScoreSubmitted", {
-              success: true,
-              highScore: submittedBest,
-            });
-            onScoreSubmitted?.();
-          }}
-        />
-      )}
-
-      {pendingScore && !isVaraSession && (
+      {pendingScore && (
         <ScoreSubmitModal
           open={scoreSubmitOpen}
           gameId={game.id}

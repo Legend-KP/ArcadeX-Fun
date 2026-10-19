@@ -30,13 +30,9 @@ import {
   normalizeStreakWalletAddress,
 } from "@/lib/streak-wallet";
 import { createWalletSessionToken } from "@/lib/wallet-session";
-import {
-  isVaraArcadeXRewardsConfigured,
-  isVaraRewardsChainId,
-  VARA_SHUFFLE_CAMPAIGN_ID,
-} from "@/lib/vara-rewards";
-import { verifyVaraShuffleSpinSignature } from "@/lib/vara-shuffle-sign";
 import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
+
+const REMOVED_VARA_CHAIN_ID = 137;
 
 export const dynamic = "force-dynamic";
 
@@ -62,10 +58,19 @@ export async function POST(request: Request) {
         ? body.chainId
         : PRIMARY_EVM_CHAIN_ID;
 
-    const configured = isVaraRewardsChainId(chainId)
-      ? isVaraArcadeXRewardsConfigured()
-      : isArcadeXRewardsConfiguredForChain(chainId) ||
-        isArcadeXRewardsConfigured();
+    if (chainId === REMOVED_VARA_CHAIN_ID) {
+      return NextResponse.json(
+        {
+          error: "Vara support has been removed.",
+          code: "UNSUPPORTED_CHAIN",
+        },
+        { status: 400 }
+      );
+    }
+
+    const configured =
+      isArcadeXRewardsConfiguredForChain(chainId) ||
+      isArcadeXRewardsConfigured();
 
     if (!configured) {
       return NextResponse.json(
@@ -76,9 +81,7 @@ export async function POST(request: Request) {
 
     const rawWallet = body.walletAddress?.trim() ?? "";
     const txHash = body.txHash?.trim() ?? "";
-    const defaultCampaign = isVaraRewardsChainId(chainId)
-      ? VARA_SHUFFLE_CAMPAIGN_ID
-      : DEFAULT_SHUFFLE_CAMPAIGN_ID;
+    const defaultCampaign = DEFAULT_SHUFFLE_CAMPAIGN_ID;
     const campaignId =
       typeof body.campaignId === "number" && Number.isFinite(body.campaignId)
         ? body.campaignId
@@ -116,40 +119,13 @@ export async function POST(request: Request) {
       );
     }
 
-    if (isVaraRewardsChainId(chainId)) {
-      const ok = await verifyVaraShuffleSpinSignature({
-        player: wallet,
-        campaignId,
-        rewardMode: pending.rewardMode,
-        rewardAmount: BigInt(pending.rewardAmount),
-        nonce,
-        deadline: pending.deadline,
-        signature: pending.signature,
-      });
-      if (!ok) {
-        return NextResponse.json(
-          { error: "Invalid spin signature.", code: "INVALID_SIG" },
-          { status: 400 }
-        );
-      }
-    }
-
     let verified;
     try {
       verified = await verifySpinTx(
         wallet,
         txHash as Hash,
         campaignId,
-        chainId,
-        isVaraRewardsChainId(chainId)
-          ? {
-              rewardMode: pending.rewardMode,
-              rewardAmount: pending.rewardAmount,
-              nonce,
-              deadline: pending.deadline,
-              signature: pending.signature,
-            }
-          : undefined
+        chainId
       );
     } catch (err) {
       const message =
@@ -190,7 +166,7 @@ export async function POST(request: Request) {
       try {
         const result = await grantShuffleInfiniteSparkOnServer(wallet, txHash, {
           chainId,
-          ecosystem: isVaraRewardsChainId(chainId) ? "vara" : "evm",
+          ecosystem: "evm",
         });
         infiniteSparkGranted = result.granted || Boolean(result.state.infiniteUntil);
         reward = {
@@ -210,7 +186,6 @@ export async function POST(request: Request) {
     }
 
     if (
-      !isVaraRewardsChainId(chainId) &&
       pending.outcomeType === "usdc" &&
       Number(verified.rewardMode) === REWARD_USDC
     ) {
@@ -225,7 +200,6 @@ export async function POST(request: Request) {
     }
 
     const needsClaim =
-      !isVaraRewardsChainId(chainId) &&
       pending.outcomeType === "usdc" &&
       Number(verified.rewardMode) === REWARD_USDC;
 

@@ -3,7 +3,6 @@ import { getAddress, type Address, type Hex } from "viem";
 import {
   isArcadeXRewardsConfigured,
   isArcadeXRewardsConfiguredForChain,
-  REWARD_OFFCHAIN,
 } from "@/lib/arcadex-rewards";
 import {
   readSpinNonce,
@@ -31,19 +30,13 @@ import {
   usdcToMicro,
 } from "@/lib/shuffle-outcomes";
 import { signShuffleSpin } from "@/lib/shuffle-sign";
-import { signVaraShuffleSpin } from "@/lib/vara-shuffle-sign";
 import {
   isStreakWalletAddress,
   normalizeStreakWalletAddress,
 } from "@/lib/streak-wallet";
-import {
-  isVaraArcadeXRewardsConfigured,
-  isVaraRewardsChainId,
-  VARA_CHAIN_ID,
-  VARA_REWARD_OFFCHAIN,
-  VARA_SHUFFLE_CAMPAIGN_ID,
-} from "@/lib/vara-rewards";
 import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
+
+const REMOVED_VARA_CHAIN_ID = 137;
 
 export const dynamic = "force-dynamic";
 
@@ -67,10 +60,19 @@ export async function POST(request: Request) {
         ? body.chainId
         : PRIMARY_EVM_CHAIN_ID;
 
-    const configured = isVaraRewardsChainId(chainId)
-      ? isVaraArcadeXRewardsConfigured()
-      : isArcadeXRewardsConfiguredForChain(chainId) ||
-        isArcadeXRewardsConfigured();
+    if (chainId === REMOVED_VARA_CHAIN_ID) {
+      return NextResponse.json(
+        {
+          error: "Vara support has been removed.",
+          code: "UNSUPPORTED_CHAIN",
+        },
+        { status: 400 }
+      );
+    }
+
+    const configured =
+      isArcadeXRewardsConfiguredForChain(chainId) ||
+      isArcadeXRewardsConfigured();
 
     if (!configured) {
       return NextResponse.json(
@@ -80,13 +82,10 @@ export async function POST(request: Request) {
     }
 
     const rawWallet = body.walletAddress?.trim() ?? "";
-    const defaultCampaign = isVaraRewardsChainId(chainId)
-      ? VARA_SHUFFLE_CAMPAIGN_ID
-      : DEFAULT_SHUFFLE_CAMPAIGN_ID;
     const campaignId =
       typeof body.campaignId === "number" && Number.isFinite(body.campaignId)
         ? body.campaignId
-        : defaultCampaign;
+        : DEFAULT_SHUFFLE_CAMPAIGN_ID;
 
     if (!rawWallet || !isStreakWalletAddress(chainId, rawWallet)) {
       return NextResponse.json(
@@ -140,10 +139,7 @@ export async function POST(request: Request) {
       return NextResponse.json(formatPrepareResponse(existing));
     }
 
-    // Vara lite: off-chain only (no USDC claim path).
-    const remainingMicro = isVaraRewardsChainId(chainId)
-      ? 0
-      : await getShuffleUsdcBudgetRemainingMicro();
+    const remainingMicro = await getShuffleUsdcBudgetRemainingMicro();
     let outcome = pickShuffleOutcome({
       remainingUsdc: microToUsdc(remainingMicro),
     });
@@ -152,52 +148,29 @@ export async function POST(request: Request) {
     const deadline = BigInt(nowSec + SIGNATURE_TTL_SEC);
 
     if (outcome.type === "usdc" && outcome.amount != null) {
-      if (isVaraRewardsChainId(chainId)) {
-        outcome = pickShuffleOutcome({ remainingUsdc: 0 });
-      } else {
-        const amountMicro = usdcToMicro(outcome.amount);
-        const reserved = await reserveShuffleUsdcBudget({
-          amountMicro,
-          reservationKey,
-          expiresAtMs: Number(deadline) * 1000,
-        });
+      const amountMicro = usdcToMicro(outcome.amount);
+      const reserved = await reserveShuffleUsdcBudget({
+        amountMicro,
+        reservationKey,
+        expiresAtMs: Number(deadline) * 1000,
+      });
 
-        if (!reserved.ok) {
-          outcome = pickShuffleOutcome({ remainingUsdc: 0 });
-        }
+      if (!reserved.ok) {
+        outcome = pickShuffleOutcome({ remainingUsdc: 0 });
       }
     }
 
     const onChain = outcomeToOnChainReward(outcome);
-    if (isVaraRewardsChainId(chainId) && onChain.rewardMode !== VARA_REWARD_OFFCHAIN) {
-      // Force spark/none into OFFCHAIN encoding.
-      onChain.rewardMode = REWARD_OFFCHAIN;
-      onChain.rewardTarget =
-        "0x0000000000000000000000000000000000000000" as Address;
-    }
-
-    let signature: Hex;
-    if (isVaraRewardsChainId(chainId)) {
-      signature = await signVaraShuffleSpin({
-        player: wallet,
-        campaignId,
-        rewardMode: onChain.rewardMode,
-        rewardAmount: onChain.rewardAmount,
-        nonce: nonceBig,
-        deadline,
-      });
-    } else {
-      const player = getAddress(wallet) as Address;
-      signature = await signShuffleSpin({
-        player,
-        campaignId,
-        rewardMode: onChain.rewardMode,
-        rewardTarget: onChain.rewardTarget,
-        rewardAmount: onChain.rewardAmount,
-        nonce: nonceBig,
-        deadline,
-      });
-    }
+    const player = getAddress(wallet) as Address;
+    const signature = await signShuffleSpin({
+      player,
+      campaignId,
+      rewardMode: onChain.rewardMode,
+      rewardTarget: onChain.rewardTarget,
+      rewardAmount: onChain.rewardAmount,
+      nonce: nonceBig,
+      deadline,
+    });
 
     const record: ShufflePendingRecord = {
       wallet,
@@ -218,7 +191,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ...formatPrepareResponse(record),
-      chainId: isVaraRewardsChainId(chainId) ? VARA_CHAIN_ID : chainId,
+      chainId,
     });
   } catch (err) {
     const message =

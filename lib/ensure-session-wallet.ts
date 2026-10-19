@@ -14,8 +14,6 @@ import {
 import { reconnectStarknetWallet } from "@/lib/starknet-wallet-client";
 import { reconnectFreighterWallet } from "@/lib/stellar-wallet-client";
 import { reconnectSlushWallet } from "@/lib/sui-wallet-client";
-import { resolveVaraSigningAddress } from "@/lib/vara-tx-hub-client";
-
 export type EnsureSessionWalletResult =
   | { ok: true; address: string }
   | {
@@ -63,13 +61,12 @@ export async function ensureSessionWalletReady(opts: {
           message: result.error?.message,
         };
       }
-      case "vara": {
-        if (!allowPrompt) {
-          return { ok: false, reason: "unavailable" };
-        }
-        const address = await resolveVaraSigningAddress(expected);
-        return { ok: true, address };
-      }
+      case "vara":
+        return {
+          ok: false,
+          reason: "unavailable",
+          message: "Vara support has been removed. Connect an EVM or other supported wallet.",
+        };
       case "sui": {
         const { account } = await reconnectSlushWallet({ allowPrompt });
         if (!sessionAddressesEqual("sui", account.address, expected)) {

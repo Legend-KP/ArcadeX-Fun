@@ -11,7 +11,7 @@ import {
   useWriteContract,
 } from "wagmi";
 import { formatUnits, getAddress, maxUint256, type Hash } from "viem";
-import { getConnection } from "@wagmi/core";
+import { getConnection } from "wagmi/actions";
 import { avalanche, PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
 import { wagmiConfig } from "@/lib/wagmi-config";
 import { formatChainError } from "@/lib/base-public-client";

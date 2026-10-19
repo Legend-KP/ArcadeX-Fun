@@ -38,7 +38,6 @@ import {
 } from "@/lib/contest-chains";
 import { readSessionFromCookies } from "@/lib/auth-session";
 import { PRIMARY_EVM_CHAIN_ID } from "@/lib/chains";
-import { VARA_CHAIN_ID } from "@/lib/vara-rewards";
 
 export const dynamic = "force-dynamic";
 
@@ -115,11 +114,7 @@ export async function GET(
       typeof chainIdFromQuery === "number" && Number.isFinite(chainIdFromQuery)
         ? chainIdFromQuery
         : session?.chainId ??
-          (session?.ecosystem === "vara"
-            ? VARA_CHAIN_ID
-            : session?.ecosystem === "evm"
-              ? PRIMARY_EVM_CHAIN_ID
-              : undefined);
+          (session?.ecosystem === "evm" ? PRIMARY_EVM_CHAIN_ID : undefined);
     const scope = {
       chainId,
       ecosystem: session?.ecosystem,

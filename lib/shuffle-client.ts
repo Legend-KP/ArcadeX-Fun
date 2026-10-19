@@ -126,37 +126,25 @@ export async function performDailyShuffle(
 }> {
   const { isVaraRewardsChainId } = await import("@/lib/vara-rewards");
   try {
+    if (isVaraRewardsChainId(chainId)) {
+      throw new Error("Vara support has been removed.");
+    }
     const prepare = await prepareDailyShuffle(
       walletAddress,
       campaignId,
       chainId
     );
-    let txHash: string;
-    if (isVaraRewardsChainId(chainId)) {
-      const { spinOnVara } = await import("@/lib/vara-rewards-client");
-      const submitted = await spinOnVara({
-        walletAddress,
-        campaignId: prepare.campaignId,
-        rewardMode: prepare.rewardMode,
-        rewardAmount: BigInt(prepare.rewardAmount),
-        nonce: prepare.nonce,
-        deadline: prepare.deadline,
-        signature: prepare.signature,
-      });
-      txHash = submitted.txHash;
-    } else {
-      const submitted = await spinOnChain({
-        campaignId: prepare.campaignId,
-        rewardMode: prepare.rewardMode,
-        rewardTarget: prepare.rewardTarget,
-        rewardAmount: BigInt(prepare.rewardAmount),
-        nonce: BigInt(prepare.nonce),
-        deadline: BigInt(prepare.deadline),
-        signature: prepare.signature,
-        expectedWallet: walletAddress,
-      });
-      txHash = submitted.txHash;
-    }
+    const submitted = await spinOnChain({
+      campaignId: prepare.campaignId,
+      rewardMode: prepare.rewardMode,
+      rewardTarget: prepare.rewardTarget,
+      rewardAmount: BigInt(prepare.rewardAmount),
+      nonce: BigInt(prepare.nonce),
+      deadline: BigInt(prepare.deadline),
+      signature: prepare.signature,
+      expectedWallet: walletAddress,
+    });
+    const txHash = submitted.txHash;
     const sync = await syncShuffleSpin({
       walletAddress,
       txHash,

@@ -230,9 +230,7 @@ export async function POST(
     }
 
     const shopEcosystem =
-      ecosystem === "evm" || ecosystem === "sui" || ecosystem === "vara"
-        ? ecosystem
-        : "evm";
+      ecosystem === "evm" || ecosystem === "sui" ? ecosystem : "evm";
 
     const contestChainKey = resolveContestChainKey({
       chainId,

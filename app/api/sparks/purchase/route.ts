@@ -15,13 +15,6 @@ import { verifyShopPaymentTx } from "@/lib/shop-server";
 import { findAvalancheShopPaymentToken } from "@/lib/shop-avalanche";
 import { verifyAvalancheShopPaymentTx } from "@/lib/shop-avalanche-server";
 import { isValidSuiTxDigest } from "@/lib/shop-sui";
-import { findVaraShopPaymentToken, isValidVaraExtrinsicHash } from "@/lib/shop-vara";
-import { verifyVaraShopPaymentTx } from "@/lib/shop-vara-server";
-import {
-  isVaraPaymentProgramConfigured,
-  type VaraPaymentKind,
-} from "@/lib/vara-payment";
-import { verifyVaraPaymentProgramTx } from "@/lib/vara-payment-server";
 import { fetchChainSettingsFromServer } from "@/lib/chain-settings-server";
 import { isShopPaymentsEnabled } from "@/lib/chain-registry";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
@@ -169,54 +162,13 @@ export async function POST(request: Request) {
     }
 
     if (session.ecosystem === "vara") {
-      if (!isValidVaraExtrinsicHash(txId)) {
-        return NextResponse.json(
-          { error: "A valid transaction hash is required.", code: "INVALID_TX" },
-          { status: 400 }
-        );
-      }
-
-      const token = findVaraShopPaymentToken(body.tokenAddress ?? "");
-      if (!token) {
-        return NextResponse.json(
-          { error: "Unsupported payment token.", code: "INVALID_TOKEN" },
-          { status: 400 }
-        );
-      }
-
-      const paymentKind: VaraPaymentKind | null =
-        productId === "spark-refill"
-          ? "spark-refill"
-          : productId === "infinite-24h"
-            ? "infinite-spark"
-            : null;
-
-      if (paymentKind && isVaraPaymentProgramConfigured(paymentKind)) {
-        await verifyVaraPaymentProgramTx({
-          kind: paymentKind,
-          token: token.id,
-          txHash: txId,
-          expectedFrom: session.address,
-        });
-      } else {
-        await verifyVaraShopPaymentTx({
-          txHash: txId as Hash,
-          productId: productId as ShopProductId,
-          tokenProgramId: token.programId,
-          expectedFrom: session.address,
-        });
-      }
-
-      const result = await applyShopPurchaseOnServer(
-        playerId,
-        productId as ShopProductId,
-        txId,
-        "vara",
-        Date.now(),
-        { chainId: session.chainId, ecosystem: "vara" }
+      return NextResponse.json(
+        {
+          error: "Vara support has been removed. Use an EVM or Sui wallet.",
+          code: "UNSUPPORTED_ECOSYSTEM",
+        },
+        { status: 400 }
       );
-
-      return NextResponse.json(result);
     }
 
     if (!isValidSuiTxDigest(txId)) {

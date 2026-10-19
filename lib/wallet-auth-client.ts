@@ -236,23 +236,3 @@ export async function signInWithStellar(params: {
   );
 }
 
-export async function signInWithVara(params: {
-  address: string;
-  signMessage: (
-    nonce: string
-  ) => Promise<{ address: string; message: string; signature: string }>;
-}): Promise<AuthSessionPayload> {
-  const nonce = await takeAuthNonce();
-  const result = await params.signMessage(nonce);
-
-  return postAuthVerify(
-    {
-      ecosystem: "vara" satisfies WalletEcosystem,
-      nonce,
-      address: result.address,
-      message: result.message,
-      signature: result.signature,
-    },
-    { address: result.address, ecosystem: "vara" }
-  );
-}

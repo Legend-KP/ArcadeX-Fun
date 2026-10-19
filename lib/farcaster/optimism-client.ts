@@ -1,5 +1,14 @@
-import { createPublicClient, http } from "viem";
-import { optimism } from "viem/chains";
+import { createPublicClient, defineChain, http } from "viem";
+
+/** Avoid `viem/chains` barrel (pulls every chain into the Worker bundle). */
+const optimism = defineChain({
+  id: 10,
+  name: "Optimism",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://mainnet.optimism.io"] },
+  },
+});
 
 const DEFAULT_OP_RPC_URLS = [
   "https://mainnet.optimism.io",

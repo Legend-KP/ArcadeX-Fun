@@ -39,8 +39,6 @@ class FixTemplateOctalPlugin {
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(process.cwd()),
-  // Do NOT externalize @polkadot/@gear — that copies multi‑MB type metadata
-  // into the Worker and exceeds Cloudflare's free 3 MiB limit.
   serverExternalPackages: ["jose"],
   experimental: {
     optimizePackageImports: ["viem", "wagmi", "@tanstack/react-query"],
@@ -67,23 +65,8 @@ const nextConfig: NextConfig = {
       config.plugins = config.plugins || [];
       config.plugins.push(new FixTemplateOctalPlugin());
 
-      const wasmCryptoInitAsm = path.join(
-        process.cwd(),
-        "node_modules/@polkadot/wasm-crypto-init/asm.js"
-      );
-
       config.resolve.alias = {
         ...config.resolve.alias,
-        "@gear-js/api$": path.join(stubsDir, "gear-api.ts"),
-        "@polkadot/api$": path.join(stubsDir, "polkadot-api.ts"),
-        "@polkadot/types$": path.join(stubsDir, "polkadot-types.ts"),
-        "sails-js$": path.join(stubsDir, "sails-js.ts"),
-        "@polkadot/wasm-crypto-init$": wasmCryptoInitAsm,
-        "@polkadot/wasm-crypto-init/wasm$": wasmCryptoInitAsm,
-        "@polkadot/wasm-crypto-wasm$": path.join(
-          stubsDir,
-          "wasm-crypto-wasm.ts"
-        ),
         "@stellar/stellar-sdk$": path.join(stubsDir, "empty.ts"),
         "@aptos-labs/ts-sdk$": path.join(stubsDir, "empty.ts"),
         siwe$: path.join(stubsDir, "empty.ts"),
@@ -96,7 +79,6 @@ const nextConfig: NextConfig = {
         "@metamask/connect-evm$": path.join(stubsDir, "empty.ts"),
         "@metamask/sdk$": path.join(stubsDir, "empty.ts"),
         "@stellar/freighter-api$": path.join(stubsDir, "empty.ts"),
-        "@polkadot/extension-dapp$": path.join(stubsDir, "empty.ts"),
         "@mysten/slush-wallet$": path.join(stubsDir, "empty.ts"),
         "@mysten/wallet-standard$": path.join(stubsDir, "empty.ts"),
         "@wagmi/connectors$": path.join(stubsDir, "wagmi-connectors.ts"),

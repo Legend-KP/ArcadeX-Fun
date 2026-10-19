@@ -35,7 +35,6 @@ import {
   signInWithStarknet,
   signInWithStellar,
   signInWithSui,
-  signInWithVara,
   type AuthSessionPayload,
 } from "@/lib/wallet-auth-client";
 import {
@@ -58,15 +57,8 @@ import {
   connectFreighterWallet,
   signFreighterMessage,
 } from "@/lib/stellar-wallet-client";
-import {
-  listVaraWalletAccounts,
-  signVaraMessage,
-  warmVaraWallet,
-  type VaraWalletAccount,
-} from "@/lib/vara-wallet-client";
 import { getEcosystemLabel } from "@/lib/wallet-ecosystems";
 import { setCachedWalletConnectorId } from "@/lib/player-id";
-import { truncateAddress } from "@/lib/player-identity";
 import type { ChainKey, WalletEcosystem } from "@/types";
 import type { Wallet } from "@mysten/wallet-standard";
 
@@ -161,7 +153,6 @@ function friendlyEvmConnectError(err: unknown, option: WalletOption): string {
 type ConnectStep =
   | "select-network"
   | "select-wallet"
-  | "select-vara-account"
   | "switch-network";
 
 interface ConnectWalletModalProps {
@@ -197,7 +188,6 @@ export default function ConnectWalletModal({
   const [pendingEvmAddress, setPendingEvmAddress] = useState("");
   const [pendingConnectorId, setPendingConnectorId] = useState("");
   const [pendingChainId, setPendingChainId] = useState<number>(PRIMARY_EVM_CHAIN_ID);
-  const [varaAccounts, setVaraAccounts] = useState<VaraWalletAccount[]>([]);
   const starknetConnectorRef = useRef<Connector | null>(null);
   const suiWalletRef = useRef<Wallet | null>(null);
   const openedOnWalletSelectRef = useRef(false);
@@ -216,7 +206,6 @@ export default function ConnectWalletModal({
       setPendingEvmAddress("");
       setPendingConnectorId("");
       setPendingChainId(PRIMARY_EVM_CHAIN_ID);
-      setVaraAccounts([]);
       return;
     }
 
@@ -225,7 +214,6 @@ export default function ConnectWalletModal({
     setPendingEvmAddress("");
     setPendingConnectorId("");
     setPendingChainId(PRIMARY_EVM_CHAIN_ID);
-    setVaraAccounts([]);
 
     if (!initialChainKey) {
       setStep("select-network");
@@ -234,13 +222,9 @@ export default function ConnectWalletModal({
     }
 
     openedOnWalletSelectRef.current = true;
-    const chain = CHAIN_REGISTRY.find((entry) => entry.key === initialChainKey);
     setSelectedChainKey(initialChainKey);
     setStep("select-wallet");
     prefetchAuthNonce();
-    if (chain?.ecosystem === "vara") {
-      warmVaraWallet();
-    }
   }, [open, initialChainKey]);
 
   useEffect(() => {
@@ -496,23 +480,6 @@ export default function ConnectWalletModal({
         session = await signInWithStellar({
           signMessage: signFreighterMessage,
         });
-      } else if (option.ecosystem === "vara") {
-        const accounts = await listVaraWalletAccounts();
-        if (accounts.length > 1) {
-          setVaraAccounts(accounts);
-          setStep("select-vara-account");
-          return;
-        }
-        const address = accounts[0]?.address;
-        if (!address) {
-          throw new Error(
-            "No Vara account found. In your wallet, select a Substrate/Vara account (not EVM)."
-          );
-        }
-        session = await signInWithVara({
-          address,
-          signMessage: (nonce) => signVaraMessage(address, nonce),
-        });
       } else {
         const { connector, connectorData } = await connectStarknet({
           modalMode: "neverAsk",
@@ -535,24 +502,6 @@ export default function ConnectWalletModal({
         session = await handleStarknetSignIn(connector, walletAddress);
       }
 
-      onSignedIn(session);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not connect wallet.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handlePickVaraAccount(account: VaraWalletAccount) {
-    setBusy(true);
-    setError("");
-    prefetchAuthNonce();
-
-    try {
-      const session = await signInWithVara({
-        address: account.address,
-        signMessage: (nonce) => signVaraMessage(account.address, nonce),
-      });
       onSignedIn(session);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not connect wallet.");
@@ -600,19 +549,14 @@ export default function ConnectWalletModal({
     setPendingEvmAddress("");
     setPendingConnectorId("");
     setPendingChainId(PRIMARY_EVM_CHAIN_ID);
-    setVaraAccounts([]);
     setError("");
   }
 
   function selectNetwork(chainKey: ChainKey) {
-    const chain = CHAIN_REGISTRY.find((entry) => entry.key === chainKey);
     setSelectedChainKey(chainKey);
     setError("");
     setStep("select-wallet");
     prefetchAuthNonce();
-    if (chain?.ecosystem === "vara") {
-      warmVaraWallet();
-    }
   }
 
   const modal = (
@@ -719,50 +663,6 @@ export default function ConnectWalletModal({
               onClick={goBackToNetworks}
             >
               Choose a different network
-            </button>
-
-            {busy && (
-              <p className="connect-modal-status">Connecting and signing in…</p>
-            )}
-          </>
-        ) : viewStep === "select-vara-account" ? (
-          <>
-            <h2 id="connect-modal-title" className="player-modal-title">
-              Choose a Vara account
-            </h2>
-            <p className="player-modal-hint">
-              Your wallet has more than one account. Pick the one you want to
-              use with ArcadeX.
-            </p>
-
-            <div className="wallet-list">
-              {varaAccounts.map((account) => (
-                <button
-                  key={`${account.source}:${account.address}`}
-                  type="button"
-                  className="wallet-option"
-                  disabled={busy}
-                  onClick={() => void handlePickVaraAccount(account)}
-                >
-                  <span className="wallet-option__label">
-                    {account.name
-                      ? `${account.name} · ${truncateAddress(account.address)}`
-                      : truncateAddress(account.address)}
-                  </span>
-                  <span className="wallet-option__chain">
-                    {account.sourceLabel}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              className="network-switch-back"
-              disabled={busy}
-              onClick={goBackToWallets}
-            >
-              Choose a different wallet
             </button>
 
             {busy && (

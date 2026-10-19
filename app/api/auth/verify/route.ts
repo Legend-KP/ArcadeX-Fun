@@ -176,34 +176,6 @@ async function verifyStellarAuth(body: VerifyBody): Promise<{ address: string }>
   return { address: signer };
 }
 
-async function verifyVaraAuth(
-  body: VerifyBody,
-  origin: string
-): Promise<{ address: string }> {
-  const { signature, nonce, address, message } = body;
-  if (!signature || !nonce || !address || !message) {
-    throw new Error("signature, nonce, address, and message are required.");
-  }
-  await consumeNonce(nonce);
-
-  const { isVaraAuthMessageValid } = await import("@/lib/vara-auth");
-  const domain = new URL(origin).host;
-  if (!isVaraAuthMessageValid(message, nonce, domain)) {
-    throw new Error("Invalid sign-in message.");
-  }
-
-  const { verifyVaraSignature } = await import("@/lib/vara-verify");
-  const rawAddress = address.trim();
-  const signer = normalizeAddress("vara", rawAddress);
-  const valid =
-    (await verifyVaraSignature(message, signature, signer)) ||
-    (await verifyVaraSignature(message, signature, rawAddress));
-  if (!valid) {
-    throw new Error("Invalid Vara signature.");
-  }
-  return { address: signer };
-}
-
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as VerifyBody;
@@ -230,7 +202,9 @@ export async function POST(request: Request) {
                 ? await verifyMovementAuth(body)
                 : ecosystem === "stellar"
                   ? await verifyStellarAuth(body)
-                  : await verifyVaraAuth(body, origin);
+                  : (() => {
+                      throw new Error("Unsupported wallet ecosystem.");
+                    })();
 
     const playerId = buildPlayerId(ecosystem, verified.address);
     const token = await createSessionToken({

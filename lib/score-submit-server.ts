@@ -6,10 +6,7 @@ import {
   scoreSubmitPriceToAmount,
 } from "@/lib/score-submit";
 import { SHOP_TOKEN_DECIMALS } from "@/lib/shop";
-import { verifyVaraShopPaymentTx } from "@/lib/shop-vara-server";
-import { findVaraShopPaymentToken } from "@/lib/shop-vara";
 import { isValidSuiTxDigest } from "@/lib/shop-sui";
-import { isValidVaraExtrinsicHash } from "@/lib/shop-vara";
 import { verifyScoreSubmitContractPaymentTx } from "@/lib/score-submit-contract-verify";
 import { isScoreSubmitContractConfigured } from "@/lib/score-submit-contract";
 import { isPaymentStillConfirmingError } from "@/lib/payment-tx-verify";
@@ -58,9 +55,7 @@ export async function verifyScoreSubmitPayment(params: {
         );
         return;
       } catch (err) {
-        // Receipt not indexed yet — client should retry, don't fall through.
         if (isPaymentStillConfirmingError(err)) throw err;
-        // Fall through to legacy USDC transfer verification.
       }
     }
 
@@ -89,39 +84,7 @@ export async function verifyScoreSubmitPayment(params: {
     return;
   }
 
-  if (params.ecosystem === "vara") {
-    if (!isValidVaraExtrinsicHash(params.txHash)) {
-      throw new Error("Invalid transaction hash.");
-    }
-
-    const token = findVaraShopPaymentToken(params.tokenAddress ?? "");
-    if (!token) throw new Error("Unsupported payment token.");
-
-    const { isVaraPaymentProgramConfigured } = await import("@/lib/vara-payment");
-    if (isVaraPaymentProgramConfigured("score-submit")) {
-      const { verifyVaraPaymentProgramTx } = await import(
-        "@/lib/vara-payment-server"
-      );
-      await verifyVaraPaymentProgramTx({
-        kind: "score-submit",
-        token: token.id,
-        txHash: params.txHash,
-        expectedFrom: params.expectedFrom,
-      });
-      return;
-    }
-
-    await verifyVaraShopPaymentTx({
-      txHash: params.txHash as Hash,
-      productId: "spark-refill",
-      tokenProgramId: token.programId,
-      expectedFrom: params.expectedFrom,
-      overrideAmount: requiredAmount,
-    });
-    return;
-  }
-
-  throw new Error("Score submit payments require EVM, Sui, or Vara wallet.");
+  throw new Error("Score submit payments require EVM or Sui wallet.");
 }
 
 export { SCORE_SUBMIT_PRICE_USD, SHOP_TOKEN_DECIMALS };
