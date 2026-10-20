@@ -189,3 +189,182 @@
   padding: 10px 12px;
   margin-top: 12px;
 }
+
+/* Signed-in social home — onboarding stays on .sx above. */
+.sx-app {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 55%, #f5f8ff 100%);
+  color: var(--text, #1a1a2e);
+  font-family: var(--font-body, "Nunito", sans-serif);
+}
+
+.sx-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px 12px;
+  background: rgba(248, 251, 255, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.sx-app .logo-wrap--header {
+  --logo-w: 160px;
+}
+
+.sx-pfp {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.sx-pfp img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sx-app-main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 8px 24px 64px;
+}
+
+.sx-sections {
+  display: flex;
+  gap: 24px;
+  padding: 8px 4px 0;
+  margin-bottom: 18px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.sx-sections button {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted, #6b7280);
+  padding: 10px 2px 12px;
+  margin-bottom: -1px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.sx-sections button.is-on {
+  color: var(--text, #1a1a2e);
+  border-bottom-color: var(--text, #1a1a2e);
+  background: transparent;
+}
+
+.sx-empty {
+  text-align: center;
+  color: var(--muted, #6b7280);
+  padding: 72px 16px;
+}
+
+.sx-empty h1 {
+  margin: 0 0 8px;
+  font-family: var(--font-head, "Fredoka One", cursive);
+  font-size: 28px;
+  font-weight: 400;
+  color: var(--text, #1a1a2e);
+}
+
+.sx-empty p,
+.sx-app .sx-muted {
+  margin: 0;
+  color: var(--muted, #6b7280);
+  line-height: 1.45;
+}
+
+.sx-self {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 12px 0 8px;
+}
+
+.sx-self h1 {
+  margin: 0;
+  font-family: var(--font-head, "Fredoka One", cursive);
+  font-size: 32px;
+  font-weight: 400;
+}
+
+.sx-self p {
+  margin: 4px 0 0;
+  color: var(--muted, #6b7280);
+  font-weight: 700;
+}
+
+.sx-self-photo,
+.sx-self-photo img {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+}
+
+.sx-self-photo {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex: none;
+  background: linear-gradient(145deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.sx-self-photo img {
+  object-fit: cover;
+}
+
+.sx-block {
+  margin-top: 28px;
+}
+
+.sx-block h2 {
+  margin: 0 0 12px;
+  font-family: var(--font-head, "Fredoka One", cursive);
+  font-size: 22px;
+  font-weight: 400;
+}
+
+.sx-signout {
+  margin-top: 28px;
+  border: 1px solid #ddd4ea;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: #fff;
+  color: #3b2468;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .sx-top,
+  .sx-app-main {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .sx-app .logo-wrap--header {
+    --logo-w: 128px;
+  }
+}

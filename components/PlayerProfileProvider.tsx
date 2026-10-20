@@ -16,6 +16,7 @@ function isFarcasterRoute(pathname: string | null | undefined): boolean {
   return (
     pathname === "/social" ||
     pathname.startsWith("/social/") ||
+    pathname === "/profile" ||
     pathname.startsWith("/fid/") ||
     pathname.startsWith("/u/")
   );
@@ -508,7 +509,9 @@ export default function PlayerProfileProvider({
           setIsAuthenticated(false);
           setShowOnboarding(false);
           setShowDailyPlay(false);
-          if (!isFarcasterRoute(pathname)) {
+          // Home is the social feed. Connect stays in the header so the
+          // wallet dialog does not cover it. /social and /profile never gate.
+          if (!isFarcasterRoute(pathname) && pathname !== "/") {
             setShowConnect(true);
           }
           return;

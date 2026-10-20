@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import Logo from "@/components/Logo";
 import ProfileDropdown from "@/components/ProfileDropdown";
 import SparkBatteryBar from "@/components/SparkBatteryBar";
@@ -33,9 +32,6 @@ export default function WebHeader({ search, onSearchChange }: WebHeaderProps) {
         </div>
 
         <div className="web-header__actions">
-          <Link href="/social" className="connect-btn">
-            Social
-          </Link>
           <SparkBatteryBar />
           <ProfileDropdown />
         </div>

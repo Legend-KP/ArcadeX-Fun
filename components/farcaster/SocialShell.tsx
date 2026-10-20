@@ -1,36 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import CreateFidPanel from "@/components/farcaster/CreateFidPanel";
 import EmailVerifyForm from "@/components/farcaster/EmailVerifyForm";
 import SignInWithFarcasterButton from "@/components/farcaster/SignInWithFarcasterButton";
 import SocialChrome from "@/components/farcaster/SocialChrome";
 import SocialProfileCard from "@/components/farcaster/SocialProfileCard";
-import SocialSearch from "@/components/farcaster/SocialSearch";
 import UsernameForm from "@/components/farcaster/UsernameForm";
-import type { SocialProfile } from "@/types";
+import {
+  isSocialProfileReady,
+  type SocialMe,
+} from "@/components/farcaster/social-me";
 
-type MeResponse = {
-  signedIn?: boolean;
-  fid?: number;
-  address?: string;
-  profile?: SocialProfile | null;
-  usernameSkipped?: boolean;
-  custody?: string | null;
-  recovery?: string | null;
-  custodyChanged?: boolean;
-  neynar?: {
-    username?: string;
-    display_name?: string;
-    pfp_url?: string;
-  } | null;
-  error?: string;
-};
-
-const STEPS = ["Account", "Email", "Username", "Search"] as const;
+const STEPS = ["Account", "Email", "Username"] as const;
 
 export default function SocialShell() {
-  const [me, setMe] = useState<MeResponse | null>(null);
+  const router = useRouter();
+  const [me, setMe] = useState<SocialMe | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -42,7 +29,7 @@ export default function SocialShell() {
         setMe(null);
         return;
       }
-      const data = (await res.json()) as MeResponse;
+      const data = (await res.json()) as SocialMe;
       if (!res.ok) throw new Error(data.error || "Could not load your profile.");
       setMe(data);
     } catch (err) {
@@ -66,18 +53,29 @@ export default function SocialShell() {
   const hasUsername = Boolean(profile?.username);
   const usernameDone = hasUsername || Boolean(me?.usernameSkipped);
   const step = !me?.fid ? 0 : !emailVerified ? 1 : !usernameDone ? 2 : 3;
+  const profileReady = isSocialProfileReady(me);
 
   const displayName =
     profile?.displayName || me?.neynar?.display_name || profile?.fname;
   const fname = profile?.fname || me?.neynar?.username;
   const pfpUrl = profile?.pfpUrl || me?.neynar?.pfp_url;
 
+  useEffect(() => {
+    if (!loading && profileReady) router.replace("/");
+  }, [loading, profileReady, router]);
+
+  if (!loading && profileReady) {
+    return (
+      <SocialChrome>
+        <p className="sx-muted">Opening home…</p>
+      </SocialChrome>
+    );
+  }
+
   return (
     <SocialChrome>
-      <h1>ArcadeX Social</h1>
       <p className="sx-muted">
-        Sign in with Farcaster, confirm your email, then search players. Posting
-        comes later.
+        Sign in with Farcaster, confirm your email, then choose a username.
       </p>
       <ol className="sx-steps">
         {STEPS.map((label, index) => (
@@ -126,7 +124,6 @@ export default function SocialShell() {
       {!loading && step === 2 && (
         <UsernameForm onDone={() => void refresh()} />
       )}
-      {!loading && step === 3 && <SocialSearch />}
 
       {!loading && me?.fid && (
         <div className="sx-row">

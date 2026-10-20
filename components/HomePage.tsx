@@ -1,21 +1,45 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Game } from "@/types";
 import GameCard from "@/components/GameCard";
 import LoadingScreen from "@/components/LoadingScreen";
+import NotificationsPanel from "@/components/social/NotificationsPanel";
+import ScoreCastFeed from "@/components/social/ScoreCastFeed";
+import SocialSidebar, {
+  type SocialSection,
+} from "@/components/social/SocialSidebar";
+import { useSocialMe } from "@/components/social/useSocialMe";
 import WebHeader from "@/components/WebHeader";
 
-type NavTab = "home" | "browse";
 type FilterTab = "all" | "continue" | "new";
+type HomeSection = Exclude<SocialSection, "profile">;
+
+function sectionFromQuery(value: string | null): HomeSection {
+  if (value === "games" || value === "notifications") return value;
+  return "home";
+}
 
 export default function HomePage() {
+  return (
+    <Suspense fallback={<LoadingScreen />}>
+      <HomePageInner />
+    </Suspense>
+  );
+}
+
+function HomePageInner() {
+  const params = useSearchParams();
+  const { me, ready } = useSocialMe();
   const [games, setGames] = useState<Game[]>([]);
   const [playCounts, setPlayCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [navTab, setNavTab] = useState<NavTab>("browse");
+  const [search, setSearch] = useState(params.get("q") ?? "");
+  const [section, setSection] = useState<HomeSection>(
+    sectionFromQuery(params.get("section"))
+  );
   const [filter, setFilter] = useState<FilterTab>("all");
 
   useEffect(() => {
@@ -99,61 +123,72 @@ export default function HomePage() {
       <div className="home-shell">
         <WebHeader search={search} onSearchChange={setSearch} />
 
-        <nav className="web-nav" aria-label="Main">
-          <button
-            type="button"
-            className={`web-nav__tab${navTab === "home" ? " is-active" : ""}`}
-            onClick={() => setNavTab("home")}
-          >
-            Home
-          </button>
-          
-        </nav>
+        <div className="soc-body">
+          <SocialSidebar
+            active={section}
+            me={me}
+            ready={ready}
+            onSelect={setSection}
+          />
+          <div className="soc-main">
+            {section === "home" && <ScoreCastFeed games={games} />}
 
-        <div className="filter-bar">
-          <span className="filter-bar__label">For you</span>
-          <div className="filter-bar__pills">
-            <button
-              type="button"
-              className={`filter-pill${filter === "all" ? " is-active" : ""}`}
-              onClick={() => setFilter("all")}
-            >
-              All
-            </button>
-            <button
-              type="button"
-              className={`filter-pill${filter === "continue" ? " is-active" : ""}`}
-              onClick={() => setFilter("continue")}
-            >
-              Continue playing
-            </button>
-            <button
-              type="button"
-              className={`filter-pill${filter === "new" ? " is-active" : ""}`}
-              onClick={() => setFilter("new")}
-            >
-              New
-            </button>
+            {section === "notifications" && (
+              <NotificationsPanel games={games} me={me} ready={ready} />
+            )}
+
+            {section === "games" && (
+              <>
+                <div className="filter-bar">
+                  <span className="filter-bar__label">For you</span>
+                  <div className="filter-bar__pills">
+                    <button
+                      type="button"
+                      className={`filter-pill${filter === "all" ? " is-active" : ""}`}
+                      onClick={() => setFilter("all")}
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      className={`filter-pill${filter === "continue" ? " is-active" : ""}`}
+                      onClick={() => setFilter("continue")}
+                    >
+                      Continue playing
+                    </button>
+                    <button
+                      type="button"
+                      className={`filter-pill${filter === "new" ? " is-active" : ""}`}
+                      onClick={() => setFilter("new")}
+                    >
+                      New
+                    </button>
+                  </div>
+                </div>
+
+                {error ? (
+                  <p className="no-games">{error}</p>
+                ) : filteredGames.length === 0 ? (
+                  <p className="no-games">
+                    {search.trim()
+                      ? "No games match your search."
+                      : "No games yet. Check back soon!"}
+                  </p>
+                ) : (
+                  <div className="games-grid">
+                    {filteredGames.map((game) => (
+                      <GameCard
+                        key={game.id}
+                        game={game}
+                        playCount={playCounts[game.id] ?? 0}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
-
-        {error ? (
-          <p className="no-games">{error}</p>
-        ) : filteredGames.length === 0 ? (
-          <p className="no-games">
-            {search.trim() ? "No games match your search." : "No games yet. Check back soon!"}
-          </p>
-        ) : (
-          <div className="games-grid">
-            {filteredGames.map((game) => (
-              <GameCard
-                key={game.id}
-                game={game}
-                playCount={playCounts[game.id] ?? 0}
-              />
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );

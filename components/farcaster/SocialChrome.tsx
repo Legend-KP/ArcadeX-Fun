@@ -12,10 +12,6 @@ export default function SocialChrome({ children }: { children: ReactNode }) {
         <Link href="/" aria-label="ArcadeX home">
           <Logo variant="header" />
         </Link>
-        <nav>
-          <Link href="/">Games</Link>
-          <Link href="/social">Social</Link>
-        </nav>
       </header>
       <main className="sx-main">{children}</main>
     </div>
