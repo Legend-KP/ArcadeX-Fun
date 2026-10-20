@@ -27,6 +27,14 @@ export function ensureSocialBoardSchema(): Promise<void> {
         )
         .bind()
         .run();
+      try {
+        await db
+          .prepare(`ALTER TABLE posts ADD COLUMN author_handle TEXT`)
+          .bind()
+          .run();
+      } catch {
+        // Column already exists.
+      }
       await db
         .prepare(
           `CREATE TABLE IF NOT EXISTS fid_streaks (
@@ -53,6 +61,7 @@ export type TextPost = {
   id: string;
   fid: number;
   authorName: string;
+  authorHandle: string | null;
   pfpUrl: string | null;
   body: string;
   createdAt: number;
@@ -69,6 +78,7 @@ type PostRow = {
   id: string;
   fid: number;
   author_name: string;
+  author_handle: string | null;
   pfp_url: string | null;
   body: string;
   created_at: number;
@@ -89,6 +99,7 @@ function toPost(row: PostRow): TextPost {
     id: row.id,
     fid: row.fid,
     authorName: row.author_name,
+    authorHandle: row.author_handle,
     pfpUrl: row.pfp_url,
     body: row.body,
     createdAt: row.created_at,
@@ -106,7 +117,7 @@ export async function listTextPosts(limit = 40): Promise<TextPost[]> {
   const db = await requireSocialDb();
   const result = await db
     .prepare(
-      `SELECT id, fid, author_name, pfp_url, body, created_at
+      `SELECT id, fid, author_name, author_handle, pfp_url, body, created_at
        FROM posts
        ORDER BY created_at DESC
        LIMIT ?`
@@ -120,6 +131,7 @@ export async function createTextPost(input: {
   fid: number;
   playerId: string;
   authorName: string;
+  authorHandle?: string | null;
   pfpUrl?: string | null;
   body: string;
 }): Promise<TextPost> {
@@ -129,20 +141,22 @@ export async function createTextPost(input: {
     id: crypto.randomUUID(),
     fid: input.fid,
     authorName: input.authorName,
+    authorHandle: input.authorHandle ?? null,
     pfpUrl: input.pfpUrl ?? null,
     body: input.body,
     createdAt: Date.now(),
   };
   await db
     .prepare(
-      `INSERT INTO posts (id, fid, player_id, author_name, pfp_url, body, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO posts (id, fid, player_id, author_name, author_handle, pfp_url, body, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       post.id,
       post.fid,
       input.playerId,
       post.authorName,
+      post.authorHandle,
       post.pfpUrl,
       post.body,
       post.createdAt

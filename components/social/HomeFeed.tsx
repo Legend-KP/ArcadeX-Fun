@@ -33,12 +33,23 @@ type Props = {
 
 function timeAgo(timestamp: number): string {
   const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  if (days < 7) return `${days}d`;
+  return new Date(timestamp).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function postedAt(timestamp: number): string {
+  return new Date(timestamp).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
 function Avatar({ name, src }: { name: string; src?: string | null }) {
@@ -187,40 +198,55 @@ export default function HomeFeed({ games, search, posted }: Props) {
         <div className="board-posts">
           {items.map((item) =>
             item.kind === "text" ? (
-              <article key={item.post.id} className="board-post">
-                <header>
-                  <Avatar name={item.post.authorName} src={item.post.pfpUrl} />
-                  <div>
+              <article key={item.post.id} className="board-post board-cast">
+                <Avatar name={item.post.authorName} src={item.post.pfpUrl} />
+                <div className="board-cast__main">
+                  <header>
                     <strong>{item.post.authorName}</strong>
-                    <span>{timeAgo(item.post.createdAt)}</span>
-                  </div>
-                </header>
-                <p>{item.post.body}</p>
+                    {item.post.authorHandle && (
+                      <span className="board-cast__handle">
+                        @{item.post.authorHandle.replace(/^@/, "")}
+                      </span>
+                    )}
+                    <time
+                      dateTime={new Date(item.post.createdAt).toISOString()}
+                      title={postedAt(item.post.createdAt)}
+                    >
+                      {timeAgo(item.post.createdAt)}
+                    </time>
+                  </header>
+                  <p className="board-cast__body">{item.post.body}</p>
+                </div>
               </article>
             ) : (
-              <article key={item.cast.id} className="board-post">
-                <header>
-                  <Avatar name={item.cast.playerName} />
-                  <div>
-                    <strong>
-                      {item.cast.playerName}{" "}
-                      <span className="board-post__score">
-                        scored {item.cast.score.toLocaleString()} in {item.cast.gameName}
-                      </span>
-                    </strong>
-                    {item.cast.createdAt > 0 && <span>{timeAgo(item.cast.createdAt)}</span>}
-                  </div>
-                </header>
-                {item.cast.thumbnail ? (
-                  <Link href={`/game/${item.cast.gameId}`} className="board-post__media">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={item.cast.thumbnail} alt={item.cast.gameName} />
-                  </Link>
-                ) : (
-                  <Link href={`/game/${item.cast.gameId}`} className="board-post__game">
-                    {item.cast.gameName}
-                  </Link>
-                )}
+              <article key={item.cast.id} className="board-post board-cast">
+                <Avatar name={item.cast.playerName} />
+                <div className="board-cast__main">
+                  <header>
+                    <strong>{item.cast.playerName}</strong>
+                    {item.cast.createdAt > 0 && (
+                      <time
+                        dateTime={new Date(item.cast.createdAt).toISOString()}
+                        title={postedAt(item.cast.createdAt)}
+                      >
+                        {timeAgo(item.cast.createdAt)}
+                      </time>
+                    )}
+                  </header>
+                  <p className="board-cast__body">
+                    scored {item.cast.score.toLocaleString()} in {item.cast.gameName}
+                  </p>
+                  {item.cast.thumbnail ? (
+                    <Link href={`/game/${item.cast.gameId}`} className="board-post__media">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={item.cast.thumbnail} alt={item.cast.gameName} />
+                    </Link>
+                  ) : (
+                    <Link href={`/game/${item.cast.gameId}`} className="board-post__game">
+                      {item.cast.gameName}
+                    </Link>
+                  )}
+                </div>
               </article>
             )
           )}

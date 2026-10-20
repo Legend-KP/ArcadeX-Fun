@@ -65,10 +65,12 @@ export async function POST(request: Request) {
       profile?.username ||
       profile?.fname ||
       "Player";
+    const authorHandle = profile?.username || profile?.fname || null;
     const post = await createTextPost({
       fid: session.fid,
       playerId: session.playerId,
       authorName,
+      authorHandle,
       pfpUrl: profile?.pfpUrl ?? null,
       body,
     });
