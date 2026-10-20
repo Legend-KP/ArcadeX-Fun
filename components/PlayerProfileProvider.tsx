@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePathname } from "next/navigation";
 import { useDisconnect } from "wagmi";
 import { disconnect as disconnectStarknet } from "starknetkit";
 import { disconnectSlushWallet } from "@/lib/sui-wallet-client";
@@ -109,6 +110,8 @@ export default function PlayerProfileProvider({
   children: React.ReactNode;
 }) {
   const { disconnectAsync } = useDisconnect();
+  const pathname = usePathname();
+  const isSocialRoute = pathname?.startsWith("/social") ?? false;
   const [playerId, setPlayerId] = useState("");
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [walletAddress, setWalletAddress] = useState("");
@@ -482,10 +485,13 @@ export default function PlayerProfileProvider({
 
         if (!session) {
           // Step 1: choose network → connect wallet (no profile / streak yet).
+          // /social uses Sign in with Farcaster and must not open this gate.
           setIsAuthenticated(false);
           setShowOnboarding(false);
           setShowDailyPlay(false);
-          setShowConnect(true);
+          if (!pathname?.startsWith("/social")) {
+            setShowConnect(true);
+          }
           return;
         }
 
@@ -709,19 +715,22 @@ export default function PlayerProfileProvider({
   );
 
   // Strict order: wait for session bootstrap, then connect → onboarding → daily.
-  const connectOpen = showConnect && isReady;
+  // Social identity is Farcaster-only; never cover /social with the wallet gate.
+  const connectOpen = showConnect && isReady && !isSocialRoute;
   const onboardingOpen =
     showOnboarding &&
     !showConnect &&
     isReady &&
     isAuthenticated &&
-    Boolean(walletAddress);
+    Boolean(walletAddress) &&
+    !isSocialRoute;
   const dailyOpen =
     showDailyPlay &&
     !showConnect &&
     !showOnboarding &&
     isReady &&
-    isAuthenticated;
+    isAuthenticated &&
+    !isSocialRoute;
 
   return (
     <PlayerProfileContext.Provider value={value}>
