@@ -7,12 +7,14 @@ import GameCard from "@/components/GameCard";
 import LoadingScreen from "@/components/LoadingScreen";
 import HomeAside, { LeaderboardsPanel } from "@/components/social/HomeAside";
 import HomeFeed from "@/components/social/HomeFeed";
+import PostComposer from "@/components/social/PostComposer";
 import NotificationsPanel from "@/components/social/NotificationsPanel";
 import SocialSidebar, {
   type SocialSection,
 } from "@/components/social/SocialSidebar";
 import { socialIdentity } from "@/components/farcaster/social-me";
 import { useSocialMe } from "@/components/social/useSocialMe";
+import type { TextPost } from "@/lib/social-board";
 import WebHeader from "@/components/WebHeader";
 
 type FilterTab = "all" | "continue" | "new";
@@ -50,6 +52,7 @@ function HomePageInner() {
     sectionFromQuery(params.get("section"))
   );
   const [filter, setFilter] = useState<FilterTab>("all");
+  const [latestPost, setLatestPost] = useState<TextPost | null>(null);
 
   useEffect(() => {
     if (!socialLoading && !ready) router.replace("/social");
@@ -137,10 +140,9 @@ function HomePageInner() {
     <div className="home">
       <div className="home-shell home-shell--board">
         <WebHeader
-          search={search}
-          onSearchChange={setSearch}
           profileName={identity.displayName}
           profileImage={identity.pfpUrl}
+          post={<PostComposer me={me} onPosted={setLatestPost} />}
         />
 
         <div className="board">
@@ -150,10 +152,12 @@ function HomePageInner() {
             ready={ready}
             onSelect={setSection}
             onExplore={() => setSection("games")}
+            search={search}
+            onSearchChange={setSearch}
           />
           <div className="board__main">
             {section === "home" && (
-              <HomeFeed games={games} me={me} search={search} />
+              <HomeFeed games={games} search={search} posted={latestPost} />
             )}
 
             {section === "notifications" && (

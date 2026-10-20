@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import GameCard from "@/components/GameCard";
 import WebHeader from "@/components/WebHeader";
 import SocialSidebar from "@/components/social/SocialSidebar";
+import PostComposer from "@/components/social/PostComposer";
 import ScoreCastFeed from "@/components/social/ScoreCastFeed";
 import { useSocialMe } from "@/components/social/useSocialMe";
 import { socialIdentity } from "@/components/farcaster/social-me";
@@ -82,21 +83,22 @@ export default function SocialProfilePage() {
     <div className="home">
       <div className="home-shell">
         <WebHeader
-          search={search}
-          onSearchChange={(value) => {
-            setSearch(value);
-            if (value.trim()) {
-              router.push(`/?section=games&q=${encodeURIComponent(value)}`);
-            }
-          }}
           profileName={identity.displayName}
           profileImage={identity.pfpUrl}
+          post={<PostComposer me={me} onPosted={() => undefined} />}
         />
         <div className="soc-body">
           <SocialSidebar
             active="profile"
             me={me}
             ready
+            search={search}
+            onSearchChange={(value) => {
+              setSearch(value);
+              if (value.trim()) {
+                router.push(`/?section=games&q=${encodeURIComponent(value)}`);
+              }
+            }}
             onSelect={(section) => {
               router.push(section === "home" ? "/" : `/?section=${section}`);
             }}

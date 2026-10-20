@@ -23,6 +23,8 @@ type Props = {
   ready: boolean;
   onSelect: (section: Exclude<SocialSection, "profile">) => void;
   onExplore?: () => void;
+  search?: string;
+  onSearchChange?: (value: string) => void;
 };
 
 function IconHome() {
@@ -97,6 +99,8 @@ export default function SocialSidebar({
   ready,
   onSelect,
   onExplore,
+  search = "",
+  onSearchChange,
 }: Props) {
   const challenges = useSyncExternalStore(
     subscribeSocialChallenges,
@@ -118,6 +122,18 @@ export default function SocialSidebar({
 
   return (
     <div className="board-nav">
+      {onSearchChange && (
+        <label className="board-nav__search">
+          <span aria-hidden>⌕</span>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search games, posts, players..."
+            aria-label="Search games, posts, and players"
+          />
+        </label>
+      )}
       <nav aria-label="Social">
         {ITEMS.map((item) => {
           const Icon = item.icon;

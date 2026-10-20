@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { socialIdentity, type SocialMe } from "@/components/farcaster/social-me";
+import { useEffect, useMemo, useState } from "react";
 import { loadScoreCasts, type ScoreCast } from "@/lib/score-casts";
 import type { TextPost } from "@/lib/social-board";
 import type { Game } from "@/types";
@@ -28,8 +27,8 @@ type FeedItem =
 
 type Props = {
   games: Game[];
-  me: SocialMe;
   search: string;
+  posted: TextPost | null;
 };
 
 function timeAgo(timestamp: number): string {
@@ -52,14 +51,11 @@ function Avatar({ name, src }: { name: string; src?: string | null }) {
   return <span className="board-avatar">{name.charAt(0).toUpperCase()}</span>;
 }
 
-export default function HomeFeed({ games, me, search }: Props) {
-  const identity = socialIdentity(me);
+export default function HomeFeed({ games, search, posted }: Props) {
   const [tab, setTab] = useState<FeedTab>("all");
-  const [draft, setDraft] = useState("");
   const [posts, setPosts] = useState<TextPost[] | null>(null);
   const [casts, setCasts] = useState<ScoreCast[] | null>(null);
   const [postError, setPostError] = useState("");
-  const [publishing, setPublishing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +84,15 @@ export default function HomeFeed({ games, me, search }: Props) {
       cancelled = true;
     };
   }, [games]);
+
+  useEffect(() => {
+    if (!posted) return;
+    setPosts((current) => {
+      if (current?.some((item) => item.id === posted.id)) return current;
+      return [posted, ...(current ?? [])];
+    });
+    setTab("all");
+  }, [posted]);
 
   const query = search.trim().toLowerCase();
 
@@ -126,32 +131,6 @@ export default function HomeFeed({ games, me, search }: Props) {
       .slice(0, 4);
   }, [games, query]);
 
-  async function publish(event: FormEvent) {
-    event.preventDefault();
-    const body = draft.trim();
-    if (!body || publishing) return;
-    setPublishing(true);
-    setPostError("");
-    try {
-      const res = await fetch("/api/social/posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body }),
-      });
-      const data = (await res.json()) as { post?: TextPost; error?: string };
-      if (!res.ok || !data.post) {
-        throw new Error(data.error || "Could not publish.");
-      }
-      setPosts((current) => [data.post as TextPost, ...(current ?? [])]);
-      setDraft("");
-      setTab("all");
-    } catch (err) {
-      setPostError(err instanceof Error ? err.message : "Could not publish.");
-    } finally {
-      setPublishing(false);
-    }
-  }
-
   return (
     <div className="board-feed">
       <section className="board-hero" aria-label="The Social Arcade">
@@ -166,19 +145,6 @@ export default function HomeFeed({ games, me, search }: Props) {
         </div>
       </section>
 
-      <form className="board-composer" onSubmit={(event) => void publish(event)}>
-        <Avatar name={identity.displayName} src={identity.pfpUrl} />
-        <input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          maxLength={280}
-          placeholder="What's on your mind? Share a game, a score or just say hi..."
-          aria-label="Write a text post"
-        />
-        <button type="submit" disabled={publishing || draft.trim().length === 0}>
-          {publishing ? "Posting" : "Post"}
-        </button>
-      </form>
       {postError && <p className="board-error">{postError}</p>}
 
       <div className="board-tabs" role="tablist" aria-label="Feed">

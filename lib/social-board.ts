@@ -1,5 +1,52 @@
 import { requireSocialDb } from "@/lib/farcaster/social-db";
 
+let schemaReady: Promise<void> | null = null;
+
+/** Create post and streak tables when the D1 migration has not been applied yet. */
+export function ensureSocialBoardSchema(): Promise<void> {
+  if (!schemaReady) {
+    schemaReady = (async () => {
+      const db = await requireSocialDb();
+      await db
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS posts (
+            id TEXT PRIMARY KEY NOT NULL,
+            fid INTEGER NOT NULL,
+            player_id TEXT NOT NULL,
+            author_name TEXT NOT NULL,
+            pfp_url TEXT,
+            body TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+          )`
+        )
+        .bind()
+        .run();
+      await db
+        .prepare(
+          `CREATE INDEX IF NOT EXISTS idx_posts_created ON posts (created_at DESC)`
+        )
+        .bind()
+        .run();
+      await db
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS fid_streaks (
+            fid INTEGER PRIMARY KEY NOT NULL,
+            player_id TEXT NOT NULL,
+            current_streak INTEGER NOT NULL,
+            last_check_in INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          )`
+        )
+        .bind()
+        .run();
+    })().catch((err) => {
+      schemaReady = null;
+      throw err;
+    });
+  }
+  return schemaReady;
+}
+
 const DAY_MS = 86_400_000;
 
 export type TextPost = {
@@ -55,6 +102,7 @@ export function cleanPostBody(raw: string): string | null {
 }
 
 export async function listTextPosts(limit = 40): Promise<TextPost[]> {
+  await ensureSocialBoardSchema();
   const db = await requireSocialDb();
   const result = await db
     .prepare(
@@ -75,6 +123,7 @@ export async function createTextPost(input: {
   pfpUrl?: string | null;
   body: string;
 }): Promise<TextPost> {
+  await ensureSocialBoardSchema();
   const db = await requireSocialDb();
   const post: TextPost = {
     id: crypto.randomUUID(),
@@ -103,6 +152,7 @@ export async function createTextPost(input: {
 }
 
 export async function readFidStreak(fid: number): Promise<FidStreak> {
+  await ensureSocialBoardSchema();
   const db = await requireSocialDb();
   const row = await db
     .prepare(
@@ -133,6 +183,7 @@ export async function checkInFidStreak(
   fid: number,
   playerId: string
 ): Promise<FidStreak> {
+  await ensureSocialBoardSchema();
   const db = await requireSocialDb();
   const now = Date.now();
   const today = utcDay(now);

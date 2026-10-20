@@ -5,12 +5,12 @@ import ProfileDropdown from "@/components/ProfileDropdown";
 import SparkBatteryBar from "@/components/SparkBatteryBar";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import { truncateAddress } from "@/lib/player-identity";
+import type { ReactNode } from "react";
 
 interface WebHeaderProps {
-  search: string;
-  onSearchChange: (value: string) => void;
   profileName?: string;
   profileImage?: string | null;
+  post?: ReactNode;
 }
 
 function WalletIcon() {
@@ -24,10 +24,9 @@ function WalletIcon() {
 }
 
 export default function WebHeader({
-  search,
-  onSearchChange,
   profileName,
   profileImage,
+  post,
 }: WebHeaderProps) {
   const { isAuthenticated, walletAddress, openConnect } = usePlayerProfile();
   const walletLabel =
@@ -42,19 +41,7 @@ export default function WebHeader({
           <Logo variant="header" />
         </div>
 
-        <div className="web-header__search">
-          <span className="web-header__search-icon" aria-hidden>
-            ⌕
-          </span>
-          <input
-            type="search"
-            className="web-header__search-input"
-            placeholder="Search games, posts, players..."
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            aria-label="Search games, posts, and players"
-          />
-        </div>
+        {post}
 
         <div className="web-header__actions">
           <SparkBatteryBar />
