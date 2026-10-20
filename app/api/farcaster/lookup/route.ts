@@ -13,6 +13,7 @@ import {
   getClientIp,
   rateLimitResponse,
 } from "@/lib/rate-limit";
+import { toPublicSocialProfile } from "@/lib/farcaster/public-profile";
 import { getAddress } from "viem";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
 
       return NextResponse.json({
         fid,
-        profile,
+        profile: toPublicSocialProfile(profile),
         neynar,
         custody,
         recovery,
@@ -58,7 +59,10 @@ export async function GET(request: Request) {
       const profile = await fetchSocialProfileByUsername(username).catch(
         () => null
       );
-      return NextResponse.json({ username, profile });
+      return NextResponse.json({
+        username,
+        profile: toPublicSocialProfile(profile),
+      });
     }
 
     if (addressRaw) {
@@ -85,7 +89,7 @@ export async function GET(request: Request) {
       return NextResponse.json({
         address,
         fid: fid > 0 ? fid : null,
-        profile,
+        profile: toPublicSocialProfile(profile),
         neynar,
       });
     }

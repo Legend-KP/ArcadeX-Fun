@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createHash, randomInt, randomUUID } from "crypto";
 import { readSessionFromCookies } from "@/lib/auth-session";
 import { requireSocialDb, upsertSocialProfile } from "@/lib/farcaster/social-db";
+import { assertTurnstile } from "@/lib/farcaster/turnstile";
 import {
   checkRateLimit,
   getClientIp,
@@ -37,7 +38,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = (await request.json()) as { email?: string };
+    const body = (await request.json()) as {
+      email?: string;
+      turnstileToken?: string;
+    };
+    await assertTurnstile(body.turnstileToken, ip);
     const email = body.email?.trim().toLowerCase() ?? "";
     if (!EMAIL_RE.test(email)) {
       return NextResponse.json(

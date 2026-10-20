@@ -10,6 +10,16 @@ import {
   useState,
 } from "react";
 import { usePathname } from "next/navigation";
+
+function isFarcasterRoute(pathname: string | null | undefined): boolean {
+  if (!pathname) return false;
+  return (
+    pathname === "/social" ||
+    pathname.startsWith("/social/") ||
+    pathname.startsWith("/fid/") ||
+    pathname.startsWith("/u/")
+  );
+}
 import { useDisconnect } from "wagmi";
 import { disconnect as disconnectStarknet } from "starknetkit";
 import { disconnectSlushWallet } from "@/lib/sui-wallet-client";
@@ -111,7 +121,7 @@ export default function PlayerProfileProvider({
 }) {
   const { disconnectAsync } = useDisconnect();
   const pathname = usePathname();
-  const isSocialRoute = pathname?.startsWith("/social") ?? false;
+  const isSocialRoute = isFarcasterRoute(pathname);
   const [playerId, setPlayerId] = useState("");
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [walletAddress, setWalletAddress] = useState("");
@@ -489,7 +499,7 @@ export default function PlayerProfileProvider({
           setIsAuthenticated(false);
           setShowOnboarding(false);
           setShowDailyPlay(false);
-          if (!pathname?.startsWith("/social")) {
+          if (!isFarcasterRoute(pathname)) {
             setShowConnect(true);
           }
           return;

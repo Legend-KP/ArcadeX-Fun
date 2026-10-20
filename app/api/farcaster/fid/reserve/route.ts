@@ -7,6 +7,7 @@ import {
   getClientIp,
   rateLimitResponse,
 } from "@/lib/rate-limit";
+import { assertTurnstile } from "@/lib/farcaster/turnstile";
 import { getAddress } from "viem";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +29,11 @@ export async function POST(request: Request) {
       return rateLimitResponse();
     }
 
-    const body = (await request.json()) as { custodyAddress?: string };
+    const body = (await request.json()) as {
+      custodyAddress?: string;
+      turnstileToken?: string;
+    };
+    await assertTurnstile(body.turnstileToken, ip);
     if (!body.custodyAddress) {
       return NextResponse.json(
         { error: "custodyAddress is required." },

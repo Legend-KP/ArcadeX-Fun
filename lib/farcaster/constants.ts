@@ -9,6 +9,26 @@
 export const ID_REGISTRY_ADDRESS =
   "0x00000000Fc6c5F01Fc30151999387Bb99A9f489b" as const;
 
+/** IdGateway on Optimism. EIP-712 domain for sponsored `registerFor`. */
+export const ID_GATEWAY_ADDRESS =
+  "0x00000000Fc25870C6eD6b6c7E41Fb078b7656f69" as const;
+
+export const ID_GATEWAY_EIP712_DOMAIN = {
+  name: "Farcaster IdGateway",
+  version: "1",
+  chainId: 10,
+  verifyingContract: ID_GATEWAY_ADDRESS,
+} as const;
+
+export const ID_GATEWAY_REGISTER_TYPES = {
+  Register: [
+    { name: "to", type: "address" },
+    { name: "recovery", type: "address" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+} as const;
+
 /** Protocol recovery proxy — default when user does not supply a recovery address. */
 export const FARCASTER_RECOVERY_PROXY =
   "0x00000000FcB080a4D6c39a9354dA9EB9bC104cd7" as const;
@@ -34,6 +54,23 @@ export const ID_REGISTRY_ABI = [
     stateMutability: "view",
     inputs: [{ name: "fid", type: "uint256" }],
     outputs: [{ name: "recovery", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "nonces",
+    stateMutability: "view",
+    inputs: [{ name: "owner", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+export const ID_GATEWAY_ABI = [
+  {
+    type: "function",
+    name: "nonces",
+    stateMutability: "view",
+    inputs: [{ name: "owner", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
   },
 ] as const;
 

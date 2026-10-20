@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { truncateAddress } from "@/lib/player-identity";
 import { getConnectedChainLabel } from "@/lib/wallet-ecosystems";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
@@ -64,6 +65,9 @@ export default function ProfileDropdown() {
             <p className="profile-menu__wallet">{shortWallet}</p>
             <p className="profile-menu__chain">{chainLabel}</p>
           </div>
+          <Link href="/social" className="profile-menu__link" role="menuitem">
+            Social
+          </Link>
           <button
             type="button"
             className="profile-menu__logout"

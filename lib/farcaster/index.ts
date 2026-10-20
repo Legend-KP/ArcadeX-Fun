@@ -12,7 +12,13 @@ export {
   FARCASTER_RECOVERY_PROXY,
   SPONSORED_MINT_DAILY_LIMIT,
 } from "@/lib/farcaster/constants";
-export { idOf, custodyOf, recoveryOf, defaultRecoveryAddress } from "@/lib/farcaster/id-registry";
+export {
+  idOf,
+  custodyOf,
+  recoveryOf,
+  registrationNonce,
+  defaultRecoveryAddress,
+} from "@/lib/farcaster/id-registry";
 export {
   fetchNeynarUserByFid,
   fetchNeynarUserByCustodyAddress,
@@ -24,5 +30,7 @@ export {
   fetchSocialProfileByFid,
   fetchSocialProfileByUsername,
   upsertSocialProfile,
+  isUsernameSkipped,
+  setUsernameSkipped,
 } from "@/lib/farcaster/social-db";
 export { verifySiwfMessage } from "@/lib/farcaster/siwf";

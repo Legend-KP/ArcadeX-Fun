@@ -244,6 +244,21 @@ a { color: inherit; text-decoration: none; }
   background: #fef2f2;
 }
 
+.profile-menu__link {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  color: #1c1430;
+  text-decoration: none;
+}
+
+.profile-menu__link:hover {
+  background: #f6f4fb;
+}
+
 /* ── Web nav & filters ────────────────────────────────── */
 .web-nav {
   display: flex;

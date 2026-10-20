@@ -16,6 +16,8 @@ import {
   getClientIp,
   rateLimitResponse,
 } from "@/lib/rate-limit";
+import { assertTurnstile } from "@/lib/farcaster/turnstile";
+import { recoveryOf } from "@/lib/farcaster/id-registry";
 import { getAddress } from "viem";
 
 export const dynamic = "force-dynamic";
@@ -46,7 +48,9 @@ export async function POST(request: Request) {
       recoveryAddress?: string;
       displayName?: string;
       pfpUrl?: string;
+      turnstileToken?: string;
     };
+    await assertTurnstile(body.turnstileToken, ip);
 
     if (
       typeof body.fid !== "number" ||
@@ -94,8 +98,18 @@ export async function POST(request: Request) {
       },
     });
 
+    const onchainRecovery = await recoveryOf(body.fid).catch(() => null);
+    const requestedRecovery = body.recoveryAddress?.trim();
     const recovery =
-      body.recoveryAddress?.trim() || FARCASTER_RECOVERY_PROXY;
+      onchainRecovery ?? requestedRecovery ?? FARCASTER_RECOVERY_PROXY;
+
+    console.info(
+      JSON.stringify({
+        event: "farcaster.sponsored_register",
+        fid: body.fid,
+        custody,
+      })
+    );
 
     const playerId = buildPlayerId("evm", custody);
     const profile = await upsertSocialProfile({

@@ -3,6 +3,7 @@ import { readSessionFromCookies } from "@/lib/auth-session";
 import {
   fetchSocialProfileByUsername,
   requireSocialDb,
+  setUsernameSkipped,
   upsertSocialProfile,
 } from "@/lib/farcaster/social-db";
 import {
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
         .prepare("DELETE FROM usernames WHERE player_id = ?")
         .bind(session.playerId)
         .run();
+      await setUsernameSkipped(session.playerId, true);
       const profile = await upsertSocialProfile({
         playerId: session.playerId,
         username: null,
@@ -73,6 +75,7 @@ export async function POST(request: Request) {
 
     const db = await requireSocialDb();
     const now = Date.now();
+    await setUsernameSkipped(session.playerId, false);
     await db
       .prepare("DELETE FROM usernames WHERE player_id = ?")
       .bind(session.playerId)

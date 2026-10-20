@@ -1,6 +1,8 @@
 import { getAddress, type Address, type Hex } from "viem";
 import {
   FARCASTER_RECOVERY_PROXY,
+  ID_GATEWAY_ABI,
+  ID_GATEWAY_ADDRESS,
   ID_REGISTRY_ABI,
   ID_REGISTRY_ADDRESS,
 } from "@/lib/farcaster/constants";
@@ -80,4 +82,30 @@ export async function recoveryOf(fid: number): Promise<Address | null> {
 
 export function defaultRecoveryAddress(): Hex {
   return FARCASTER_RECOVERY_PROXY;
+}
+
+/** IdGateway nonce used in the EIP-712 Register signature. */
+export async function registrationNonce(owner: Address | string): Promise<bigint> {
+  const address = getAddress(owner);
+  let lastError: unknown;
+
+  for (const rpcUrl of listOptimismRpcUrls()) {
+    try {
+      const client = getOptimismPublicClient(rpcUrl);
+      return (await client.readContract({
+        address: ID_GATEWAY_ADDRESS,
+        abi: ID_GATEWAY_ABI,
+        functionName: "nonces",
+        args: [address],
+        blockTag: "latest",
+      })) as bigint;
+    } catch (error) {
+      lastError = error;
+      if (!isTransientRpcError(error)) throw error;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Could not read Farcaster IdGateway nonce.");
 }

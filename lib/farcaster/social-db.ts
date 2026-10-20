@@ -78,6 +78,37 @@ export async function fetchSocialProfileByFid(
   return row ? rowToProfile(row) : null;
 }
 
+export async function isUsernameSkipped(playerId: string): Promise<boolean> {
+  const db = await requireSocialDb();
+  const row = await db
+    .prepare("SELECT player_id FROM username_choices WHERE player_id = ?")
+    .bind(playerId)
+    .first<{ player_id: string }>();
+  return Boolean(row);
+}
+
+export async function setUsernameSkipped(
+  playerId: string,
+  skipped: boolean
+): Promise<void> {
+  const db = await requireSocialDb();
+  if (!skipped) {
+    await db
+      .prepare("DELETE FROM username_choices WHERE player_id = ?")
+      .bind(playerId)
+      .run();
+    return;
+  }
+  await db
+    .prepare(
+      `INSERT INTO username_choices (player_id, skipped_at)
+       VALUES (?, ?)
+       ON CONFLICT(player_id) DO UPDATE SET skipped_at = excluded.skipped_at`
+    )
+    .bind(playerId, Date.now())
+    .run();
+}
+
 export async function fetchSocialProfileByUsername(
   username: string
 ): Promise<SocialProfile | null> {
