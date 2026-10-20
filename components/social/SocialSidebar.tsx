@@ -10,18 +10,24 @@ import {
 } from "@/lib/social-challenges";
 import { socialIdentity, type SocialMe } from "@/components/farcaster/social-me";
 
-export type SocialSection = "home" | "games" | "notifications" | "profile";
+export type SocialSection =
+  | "home"
+  | "games"
+  | "leaderboards"
+  | "notifications"
+  | "profile";
 
 type Props = {
   active: SocialSection;
   me: SocialMe | null;
   ready: boolean;
   onSelect: (section: Exclude<SocialSection, "profile">) => void;
+  onExplore?: () => void;
 };
 
 function IconHome() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden width="22" height="22">
+    <svg viewBox="0 0 24 24" aria-hidden width="20" height="20">
       <path
         d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5.2v-5.2H10.2V21H5a1 1 0 0 1-1-1v-9.5Z"
         fill="none"
@@ -35,18 +41,24 @@ function IconHome() {
 
 function IconGames() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden width="22" height="22">
-      <rect x="3" y="3" width="7.5" height="7.5" rx="2" fill="currentColor" />
-      <rect x="13.5" y="3" width="7.5" height="7.5" rx="2" fill="currentColor" />
-      <rect x="3" y="13.5" width="7.5" height="7.5" rx="2" fill="currentColor" />
-      <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2" fill="currentColor" />
+    <svg viewBox="0 0 24 24" aria-hidden width="20" height="20">
+      <rect x="3" y="6" width="18" height="12" rx="4" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 12h3M9.5 10.5v3M16 11h.01M18 13h.01" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconBoards() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden width="20" height="20">
+      <path d="M6 20V10M12 20V4M18 20v-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
 
 function IconBell() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden width="22" height="22">
+    <svg viewBox="0 0 24 24" aria-hidden width="20" height="20">
       <path
         d="M6 16.5h12l-1.2-1.8V10a4.8 4.8 0 1 0-9.6 0v4.7L6 16.5Z"
         fill="none"
@@ -54,17 +66,38 @@ function IconBell() {
         strokeWidth="1.8"
         strokeLinejoin="round"
       />
-      <path
-        d="M10 16.5a2 2 0 0 0 4 0"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      />
+      <path d="M10 16.5a2 2 0 0 0 4 0" fill="none" stroke="currentColor" strokeWidth="1.8" />
     </svg>
   );
 }
 
-export default function SocialSidebar({ active, me, ready, onSelect }: Props) {
+function IconProfile() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden width="20" height="20">
+      <circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M5.5 19.5a6.5 6.5 0 0 1 13 0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+const ITEMS: {
+  id: Exclude<SocialSection, "profile">;
+  label: string;
+  icon: () => ReturnType<typeof IconHome>;
+}[] = [
+  { id: "home", label: "Home", icon: IconHome },
+  { id: "games", label: "Games", icon: IconGames },
+  { id: "leaderboards", label: "Leaderboards", icon: IconBoards },
+  { id: "notifications", label: "Notifications", icon: IconBell },
+];
+
+export default function SocialSidebar({
+  active,
+  me,
+  ready,
+  onSelect,
+  onExplore,
+}: Props) {
   const challenges = useSyncExternalStore(
     subscribeSocialChallenges,
     readChallenges,
@@ -84,49 +117,50 @@ export default function SocialSidebar({ active, me, ready, onSelect }: Props) {
   const profileHref = ready ? "/profile" : "/social";
 
   return (
-    <nav className="soc-rail" aria-label="Social">
-      <button
-        type="button"
-        className={`soc-rail__btn${active === "home" ? " is-on" : ""}`}
-        aria-current={active === "home" ? "page" : undefined}
-        aria-label="Home"
-        onClick={() => onSelect("home")}
-      >
-        <IconHome />
-      </button>
-      <button
-        type="button"
-        className={`soc-rail__btn${active === "games" ? " is-on" : ""}`}
-        aria-current={active === "games" ? "page" : undefined}
-        aria-label="Games"
-        onClick={() => onSelect("games")}
-      >
-        <IconGames />
-      </button>
-      <button
-        type="button"
-        className={`soc-rail__btn${active === "notifications" ? " is-on" : ""}`}
-        aria-current={active === "notifications" ? "page" : undefined}
-        aria-label={badge > 0 ? `Notifications, ${badge} challenges` : "Notifications"}
-        onClick={() => onSelect("notifications")}
-      >
-        <IconBell />
-        {badge > 0 && <span className="soc-rail__badge">{badge}</span>}
-      </button>
-      <span className="soc-rail__spacer" />
-      <Link
-        href={profileHref}
-        className={`soc-rail__profile${active === "profile" ? " is-on" : ""}`}
-        aria-label={ready ? `${name} profile` : "Sign in with Farcaster"}
-        aria-current={active === "profile" ? "page" : undefined}
-      >
-        {identity?.pfpUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={identity.pfpUrl} alt="" />
+    <div className="board-nav">
+      <nav aria-label="Social">
+        {ITEMS.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className={active === item.id ? "is-on" : undefined}
+              aria-current={active === item.id ? "page" : undefined}
+              onClick={() => onSelect(item.id)}
+            >
+              <Icon />
+              <span>{item.label}</span>
+              {item.id === "notifications" && badge > 0 && (
+                <em>{badge}</em>
+              )}
+            </button>
+          );
+        })}
+        <Link
+          href={profileHref}
+          className={active === "profile" ? "is-on" : undefined}
+          aria-current={active === "profile" ? "page" : undefined}
+        >
+          <IconProfile />
+          <span>Profile</span>
+        </Link>
+      </nav>
+
+      <div className="board-promo">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/social/social-promo-card.jpg" alt="" />
+        {onExplore ? (
+          <button type="button" onClick={onExplore}>
+            Explore Games <span aria-hidden>→</span>
+          </button>
         ) : (
-          <span>{name.charAt(0).toUpperCase()}</span>
+          <Link href="/?section=games">
+            Explore Games <span aria-hidden>→</span>
+          </Link>
         )}
-      </Link>
-    </nav>
+      </div>
+      <span className="sr-only">{name}</span>
+    </div>
   );
 }

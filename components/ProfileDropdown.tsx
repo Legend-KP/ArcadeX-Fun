@@ -6,7 +6,17 @@ import { truncateAddress } from "@/lib/player-identity";
 import { getConnectedChainLabel } from "@/lib/wallet-ecosystems";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 
-export default function ProfileDropdown() {
+type Props = {
+  menuOnly?: boolean;
+  label?: string;
+  avatarUrl?: string | null;
+};
+
+export default function ProfileDropdown({
+  menuOnly = false,
+  label,
+  avatarUrl,
+}: Props) {
   const {
     playerName,
     walletAddress,
@@ -29,17 +39,17 @@ export default function ProfileDropdown() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  if (!isAuthenticated) {
+  const displayName = label || playerName || "Player";
+  const shortWallet = walletAddress ? truncateAddress(walletAddress) : "";
+  const chainLabel = getConnectedChainLabel(ecosystem, chainId);
+
+  if (!isAuthenticated && !menuOnly) {
     return (
       <button type="button" className="connect-btn" onClick={() => openConnect()}>
         Connect Wallet
       </button>
     );
   }
-
-  const displayName = playerName || "Player";
-  const shortWallet = walletAddress ? truncateAddress(walletAddress) : "";
-  const chainLabel = getConnectedChainLabel(ecosystem, chainId);
 
   return (
     <div className="profile-dropdown" ref={ref}>
@@ -50,9 +60,14 @@ export default function ProfileDropdown() {
         aria-expanded={open}
         aria-haspopup="menu"
       >
-        <span className="profile-avatar" aria-hidden>
-          {displayName.charAt(0).toUpperCase()}
-        </span>
+        {avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="profile-avatar" src={avatarUrl} alt="" />
+        ) : (
+          <span className="profile-avatar" aria-hidden>
+            {displayName.charAt(0).toUpperCase()}
+          </span>
+        )}
         <span className="profile-trigger__chevron" aria-hidden>
           ▾
         </span>
@@ -62,11 +77,28 @@ export default function ProfileDropdown() {
         <div className="profile-menu" role="menu">
           <div className="profile-menu__header">
             <p className="profile-menu__name">{displayName}</p>
-            <p className="profile-menu__wallet">{shortWallet}</p>
-            <p className="profile-menu__chain">{chainLabel}</p>
+            {shortWallet ? (
+              <p className="profile-menu__wallet">{shortWallet}</p>
+            ) : (
+              <p className="profile-menu__wallet">No external wallet connected</p>
+            )}
+            {isAuthenticated && <p className="profile-menu__chain">{chainLabel}</p>}
           </div>
-          <Link href="/social" className="profile-menu__link" role="menuitem">
-            Social
+          {!isAuthenticated && (
+            <button
+              type="button"
+              className="profile-menu__link"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                openConnect();
+              }}
+            >
+              Connect Wallet
+            </button>
+          )}
+          <Link href="/profile" className="profile-menu__link" role="menuitem">
+            Profile
           </Link>
           <button
             type="button"

@@ -89,6 +89,8 @@ export default function SocialProfilePage() {
               router.push(`/?section=games&q=${encodeURIComponent(value)}`);
             }
           }}
+          profileName={identity.displayName}
+          profileImage={identity.pfpUrl}
         />
         <div className="soc-body">
           <SocialSidebar

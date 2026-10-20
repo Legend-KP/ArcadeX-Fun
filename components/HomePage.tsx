@@ -1,15 +1,17 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Game } from "@/types";
 import GameCard from "@/components/GameCard";
 import LoadingScreen from "@/components/LoadingScreen";
+import HomeAside, { LeaderboardsPanel } from "@/components/social/HomeAside";
+import HomeFeed from "@/components/social/HomeFeed";
 import NotificationsPanel from "@/components/social/NotificationsPanel";
-import ScoreCastFeed from "@/components/social/ScoreCastFeed";
 import SocialSidebar, {
   type SocialSection,
 } from "@/components/social/SocialSidebar";
+import { socialIdentity } from "@/components/farcaster/social-me";
 import { useSocialMe } from "@/components/social/useSocialMe";
 import WebHeader from "@/components/WebHeader";
 
@@ -17,7 +19,13 @@ type FilterTab = "all" | "continue" | "new";
 type HomeSection = Exclude<SocialSection, "profile">;
 
 function sectionFromQuery(value: string | null): HomeSection {
-  if (value === "games" || value === "notifications") return value;
+  if (
+    value === "games" ||
+    value === "notifications" ||
+    value === "leaderboards"
+  ) {
+    return value;
+  }
   return "home";
 }
 
@@ -30,8 +38,9 @@ export default function HomePage() {
 }
 
 function HomePageInner() {
+  const router = useRouter();
   const params = useSearchParams();
-  const { me, ready } = useSocialMe();
+  const { me, ready, loading: socialLoading } = useSocialMe();
   const [games, setGames] = useState<Game[]>([]);
   const [playCounts, setPlayCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -41,6 +50,10 @@ function HomePageInner() {
     sectionFromQuery(params.get("section"))
   );
   const [filter, setFilter] = useState<FilterTab>("all");
+
+  useEffect(() => {
+    if (!socialLoading && !ready) router.replace("/social");
+  }, [socialLoading, ready, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,27 +127,41 @@ function HomePageInner() {
     return list;
   }, [games, search, filter, playCounts]);
 
-  if (loading) {
+  if (loading || socialLoading || !ready || !me) {
     return <LoadingScreen />;
   }
 
+  const identity = socialIdentity(me);
+
   return (
     <div className="home">
-      <div className="home-shell">
-        <WebHeader search={search} onSearchChange={setSearch} />
+      <div className="home-shell home-shell--board">
+        <WebHeader
+          search={search}
+          onSearchChange={setSearch}
+          profileName={identity.displayName}
+          profileImage={identity.pfpUrl}
+        />
 
-        <div className="soc-body">
+        <div className="board">
           <SocialSidebar
             active={section}
             me={me}
             ready={ready}
             onSelect={setSection}
+            onExplore={() => setSection("games")}
           />
-          <div className="soc-main">
-            {section === "home" && <ScoreCastFeed games={games} />}
+          <div className="board__main">
+            {section === "home" && (
+              <HomeFeed games={games} me={me} search={search} />
+            )}
 
             {section === "notifications" && (
               <NotificationsPanel games={games} me={me} ready={ready} />
+            )}
+
+            {section === "leaderboards" && (
+              <LeaderboardsPanel games={games} playCounts={playCounts} />
             )}
 
             {section === "games" && (
@@ -188,6 +215,14 @@ function HomePageInner() {
               </>
             )}
           </div>
+          {section === "home" && (
+            <HomeAside
+              games={games}
+              playCounts={playCounts}
+              onOpenGames={() => setSection("games")}
+              onOpenLeaderboards={() => setSection("leaderboards")}
+            />
+          )}
         </div>
       </div>
     </div>
