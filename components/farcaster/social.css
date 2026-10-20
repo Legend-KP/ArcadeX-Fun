@@ -357,6 +357,142 @@
   cursor: pointer;
 }
 
+.sx--scene {
+  min-height: 100vh;
+  background: #8ecaf5 url("/arcadex_trenchy_background.webp") center / cover no-repeat;
+  color: #1c1430;
+}
+
+.sx-main--scene {
+  width: min(500px, calc(100% - 32px));
+  max-width: none;
+  margin: 0 auto;
+  padding: 18px 0 56px;
+}
+
+@media (min-width: 980px) {
+  .sx-main--scene {
+    width: min(460px, 42vw);
+    margin-left: auto;
+    margin-right: 20vw;
+  }
+}
+
+.sx-lead {
+  text-align: center;
+}
+
+.sx-lead .logo-wrap--login {
+  --logo-w: min(280px, 72vw);
+  margin-bottom: 8px;
+  filter: drop-shadow(0 8px 16px rgba(40, 20, 70, 0.18));
+}
+
+.sx-lead p {
+  margin: 8px auto 0;
+  max-width: 420px;
+  color: #2a2340;
+  font-weight: 800;
+  text-shadow:
+    0 1px 0 #fff,
+    0 0 12px rgba(255, 255, 255, 0.95);
+}
+
+.sx--scene .sx-steps {
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.sx--scene .sx-steps li {
+  background: #fff;
+  color: #5b21b6;
+  padding: 6px 14px;
+  box-shadow: 0 6px 16px rgba(40, 20, 80, 0.08);
+}
+
+.sx--scene .sx-steps li.is-on {
+  background: #6d28d9;
+  color: #fff;
+}
+
+.sx--scene .sx-card {
+  border-radius: 22px;
+  padding: 18px 18px 16px;
+  box-shadow: 0 18px 40px rgba(36, 18, 72, 0.16);
+}
+
+.sx-card__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.sx-card__head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.sx-ico {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: #6d28d9;
+  color: #fff;
+}
+
+.sx-signin {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.farcaster-siwf {
+  position: relative;
+}
+
+.farcaster-siwf__native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.sx--scene .sx-row {
+  align-items: center;
+}
+
+.sx--scene .sx-row button {
+  flex: none;
+  white-space: nowrap;
+}
+
+.sx--scene input {
+  border-radius: 12px;
+  background: #fff;
+}
+
+.sx--scene .sx-ghost {
+  background: #fff;
+}
+
+@media (max-width: 860px) {
+  .sx--scene {
+    background-image: url("/arcadex_trenchy_mobile.webp");
+    background-position: center top;
+  }
+
+  .sx-main--scene {
+    margin: 0 auto;
+    padding-top: 12px;
+  }
+}
+
 @media (max-width: 640px) {
   .sx-top,
   .sx-app-main {

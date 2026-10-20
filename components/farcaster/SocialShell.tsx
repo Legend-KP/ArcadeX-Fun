@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Logo from "@/components/Logo";
 import CreateFidPanel from "@/components/farcaster/CreateFidPanel";
 import EmailVerifyForm from "@/components/farcaster/EmailVerifyForm";
 import SignInWithFarcasterButton from "@/components/farcaster/SignInWithFarcasterButton";
@@ -66,38 +67,52 @@ export default function SocialShell() {
 
   if (!loading && profileReady) {
     return (
-      <SocialChrome>
-        <p className="sx-muted">Opening home…</p>
+      <SocialChrome scene>
+        <p className="sx-muted sx-lead">Opening home…</p>
       </SocialChrome>
     );
   }
 
   return (
-    <SocialChrome>
-      <p className="sx-muted">
-        Sign in with Farcaster, confirm your email, then choose a username.
-      </p>
-      <ol className="sx-steps">
-        {STEPS.map((label, index) => (
-          <li key={label} className={index === step ? "is-on" : undefined}>
-            {label}
-          </li>
-        ))}
-      </ol>
+    <SocialChrome scene>
+      <div className="sx-lead">
+        <Logo variant="login" />
+        <p>
+          Sign in with Farcaster, confirm your email, then choose a username.
+        </p>
+        <ol className="sx-steps">
+          {STEPS.map((label, index) => (
+            <li key={label} className={index === step ? "is-on" : undefined}>
+              {label}
+            </li>
+          ))}
+        </ol>
+      </div>
       {error && <p className="sx-error">{error}</p>}
       {loading && <p className="sx-muted">Loading…</p>}
 
       {!loading && step === 0 && (
         <>
           <section className="sx-card">
-            <h2>Already have a FID</h2>
+            <div className="sx-card__head">
+              <span className="sx-ico" aria-hidden>
+                <svg viewBox="0 0 24 24" width="22" height="22">
+                  <path
+                    d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+              <h2>Already have a FID</h2>
+            </div>
             <p className="sx-muted">
               Scan the QR in Warpcast. ArcadeX stores your FID after the
               signature checks out.
             </p>
-            <div style={{ marginTop: 12 }}>
-              <SignInWithFarcasterButton onSuccess={() => void refresh()} />
-            </div>
+            <SignInWithFarcasterButton onSuccess={() => void refresh()} />
           </section>
           <CreateFidPanel onCreated={() => void refresh()} />
         </>

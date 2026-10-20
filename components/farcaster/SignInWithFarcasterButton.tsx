@@ -69,20 +69,44 @@ export default function SignInWithFarcasterButton({
 
   return (
     <div className="farcaster-siwf">
-      <SignInButton
-        onSuccess={({ message, signature, nonce, fid }) => {
-          void completeSiwf({ message, signature, nonce, fid });
+      <div className="farcaster-siwf__native">
+        <SignInButton
+          onSuccess={({ message, signature, nonce, fid }) => {
+            void completeSiwf({ message, signature, nonce, fid });
+          }}
+          onError={(error) => {
+            const message = error?.message || "Farcaster sign-in cancelled.";
+            setStatus(message);
+            onError?.(message);
+          }}
+        />
+      </div>
+      <button
+        type="button"
+        className="sx-signin"
+        disabled={busy}
+        onClick={(event) => {
+          const native = event.currentTarget.parentElement?.querySelector(
+            ".farcaster-siwf__native button"
+          );
+          if (native instanceof HTMLButtonElement) native.click();
         }}
-        onError={(error) => {
-          const message = error?.message || "Farcaster sign-in cancelled.";
-          setStatus(message);
-          onError?.(message);
-        }}
-      />
-      {busy && <p>Connecting…</p>}
-      {!busy && status && <p>{status}</p>}
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+          <path
+            d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinejoin="round"
+          />
+        </svg>
+        Sign in
+      </button>
+      {busy && <p className="sx-muted">Connecting…</p>}
+      {!busy && status && <p className="sx-muted">{status}</p>}
       {isAuthenticated && profile?.fid != null && !status && (
-        <p>Farcaster FID {profile.fid}</p>
+        <p className="sx-muted">Farcaster FID {profile.fid}</p>
       )}
     </div>
   );

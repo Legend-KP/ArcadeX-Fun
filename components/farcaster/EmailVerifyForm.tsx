@@ -55,7 +55,15 @@ export default function EmailVerifyForm({ onVerified }: Props) {
 
   return (
     <section className="sx-card">
-      <h2>Verify your email</h2>
+      <div className="sx-card__head">
+        <span className="sx-ico" aria-hidden>
+          <svg viewBox="0 0 24 24" width="22" height="22">
+            <rect x="3.5" y="5.5" width="17" height="13" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+            <path d="m4 7 8 6 8-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+          </svg>
+        </span>
+        <h2>Verify your email</h2>
+      </div>
       <p className="sx-muted">
         ArcadeX emails a 6-digit code to confirm this address. It is used for
         your account, not marketing. Search stays locked until this is done.

@@ -19,7 +19,7 @@ type SignPayload = {
 };
 
 export default function CreateFidPanel({ onCreated }: Props) {
-  const { address, isConnected } = useAccount();
+  const { address } = useAccount();
   const { connectAsync, connectors, isPending } = useConnect();
   const { signTypedDataAsync } = useSignTypedData();
   const [fname, setFname] = useState("");
@@ -27,33 +27,30 @@ export default function CreateFidPanel({ onCreated }: Props) {
   const [error, setError] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
 
-  async function connectWallet() {
-    setError("");
+  async function ensureCustody(): Promise<`0x${string}` | null> {
+    if (address) return address;
     const connector =
       connectors.find((item) => item.id === "metaMask") ??
       connectors.find((item) => item.type === "injected") ??
       connectors[0];
-    if (!connector) {
-      setError("No EVM wallet found in this browser.");
-      return;
-    }
-    try {
-      await connectAsync({ connector });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Wallet connection cancelled.");
-    }
+    if (!connector) return null;
+    const connected = await connectAsync({ connector });
+    return connected.accounts[0] ?? null;
   }
 
   async function createAccount() {
-    if (!address) return;
     setBusy(true);
     setError("");
     try {
+      const custody = await ensureCustody();
+      if (!custody) {
+        throw new Error("No EVM wallet found in this browser.");
+      }
       const reserved = await fetch("/api/farcaster/fid/reserve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          custodyAddress: address,
+          custodyAddress: custody,
           turnstileToken,
         }),
       });
@@ -66,7 +63,7 @@ export default function CreateFidPanel({ onCreated }: Props) {
       }
 
       const signRes = await fetch(
-        `/api/farcaster/fid/sign-data?address=${address}`
+        `/api/farcaster/fid/sign-data?address=${custody}`
       );
       const signBody = (await signRes.json()) as SignPayload;
       if (!signRes.ok) {
@@ -103,7 +100,7 @@ export default function CreateFidPanel({ onCreated }: Props) {
         body: JSON.stringify({
           fid: reservedBody.fid,
           signature,
-          custodyAddress: address,
+          custodyAddress: custody,
           deadline: signBody.message.deadline,
           recoveryAddress: signBody.message.recovery,
           fname: fname.trim() || undefined,
@@ -124,34 +121,38 @@ export default function CreateFidPanel({ onCreated }: Props) {
 
   return (
     <section className="sx-card">
-      <h2>Create a Farcaster account</h2>
+      <div className="sx-card__head">
+        <span className="sx-ico" aria-hidden>
+          <svg viewBox="0 0 24 24" width="22" height="22">
+            <circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+            <path
+              d="M5.5 19.2c1.4-3 3.6-4.4 6.5-4.4s5.1 1.4 6.5 4.4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
+          </svg>
+        </span>
+        <h2>Create a Farcaster account</h2>
+      </div>
       <p className="sx-muted">
         For wallets that do not already have a FID. ArcadeX pays the
         registration fee. You only sign a message. No ETH is sent to your
         wallet.
       </p>
-      {!isConnected || !address ? (
-        <div className="sx-row">
-          <button type="button" onClick={() => void connectWallet()} disabled={isPending}>
-            Connect EVM wallet
-          </button>
-        </div>
-      ) : (
-        <>
-          <p className="sx-meta">Wallet {address}</p>
-          <div className="sx-row">
-            <input
-              placeholder="Farcaster name (optional)"
-              value={fname}
-              onChange={(e) => setFname(e.target.value.toLowerCase())}
-            />
-            <button type="button" onClick={() => void createAccount()} disabled={busy}>
-              {busy ? "Creating…" : "Create FID"}
-            </button>
-          </div>
-          <TurnstileWidget onToken={setTurnstileToken} />
-        </>
-      )}
+      {address && <p className="sx-meta">Wallet {address}</p>}
+      <div className="sx-row">
+        <input
+          placeholder="Farcaster name (optional)"
+          value={fname}
+          onChange={(e) => setFname(e.target.value.toLowerCase())}
+        />
+        <button type="button" onClick={() => void createAccount()} disabled={busy || isPending}>
+          {busy ? "Creating…" : "Create FID"}
+        </button>
+      </div>
+      <TurnstileWidget onToken={setTurnstileToken} />
       {error && <p className="sx-error">{error}</p>}
     </section>
   );
