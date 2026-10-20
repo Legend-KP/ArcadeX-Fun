@@ -122,6 +122,8 @@ export default function PlayerProfileProvider({
   const { disconnectAsync } = useDisconnect();
   const pathname = usePathname();
   const isSocialRoute = isFarcasterRoute(pathname);
+  const farcasterRouteRef = useRef(isSocialRoute);
+  farcasterRouteRef.current = isSocialRoute;
   const [playerId, setPlayerId] = useState("");
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [walletAddress, setWalletAddress] = useState("");
@@ -465,6 +467,13 @@ export default function PlayerProfileProvider({
       setProfile(user);
 
       if (!hasPlayerName(user)) {
+        if (farcasterRouteRef.current) {
+          // Farcaster sign-in does not use the game-name gate. Logging out
+          // here deletes the session while /social still shows the profile.
+          setShowOnboarding(false);
+          setShowDailyPlay(false);
+          return;
+        }
         if (opts?.fromColdStart) {
           // Abandoned / incomplete signup — do not reopen the name panel.
           // Always start from network → wallet connect on a fresh visit.
