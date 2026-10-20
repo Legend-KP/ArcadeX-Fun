@@ -56,7 +56,9 @@ function writeStorage(key: string, value: string) {
 
 export function subscribeSocialChallenges(listener: () => void) {
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 export function readChallenges(): SocialChallenge[] {
