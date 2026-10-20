@@ -417,7 +417,7 @@ export default function PlayerProfileProvider({
     setStreakBroken(null);
     setStreakBrokenMeta(null);
     dailyPromptedRef.current = false;
-    setShowConnect(true);
+    setShowConnect(false);
   }, []);
 
   const handleStreakBrokenContinue = useCallback(() => {
@@ -476,8 +476,8 @@ export default function PlayerProfileProvider({
           return;
         }
         if (opts?.fromColdStart) {
-          // Abandoned / incomplete signup — do not reopen the name panel.
-          // Always start from network → wallet connect on a fresh visit.
+          // Abandoned wallet signup. Clear it and leave the Farcaster
+          // screen in charge instead of opening the network picker.
           await resetToConnect();
           return;
         }
@@ -504,16 +504,12 @@ export default function PlayerProfileProvider({
         if (cancelled) return;
 
         if (!session) {
-          // Step 1: choose network → connect wallet (no profile / streak yet).
-          // /social uses Sign in with Farcaster and must not open this gate.
+          // Farcaster sign-in is the entry. The network picker opens only
+          // from Connect Wallet, not on page load.
           setIsAuthenticated(false);
           setShowOnboarding(false);
           setShowDailyPlay(false);
-          // Home is the social feed. Connect stays in the header so the
-          // wallet dialog does not cover it. /social and /profile never gate.
-          if (!isFarcasterRoute(pathname) && pathname !== "/") {
-            setShowConnect(true);
-          }
+          setShowConnect(false);
           return;
         }
 
@@ -527,7 +523,7 @@ export default function PlayerProfileProvider({
         );
         setShowOnboarding(false);
         setShowDailyPlay(false);
-        setShowConnect(true);
+        setShowConnect(false);
       } finally {
         if (!cancelled) setIsReady(true);
       }
@@ -702,7 +698,8 @@ export default function PlayerProfileProvider({
     setConnectInitialChainKey(chainKey);
     setShowDailyPlay(false);
     await logout();
-  }, [ecosystem, chainId, logout]);
+    openConnect(chainKey);
+  }, [ecosystem, chainId, logout, openConnect]);
 
   const value = useMemo(
     () => ({
@@ -774,6 +771,7 @@ export default function PlayerProfileProvider({
           setConnectInitialChainKey(null);
           setShowOnboarding(false);
           await logout();
+          openConnect();
         }}
       />
       <DailyCheckInModal
