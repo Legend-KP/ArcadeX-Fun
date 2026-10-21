@@ -13,11 +13,7 @@ import {
   getClientIp,
   rateLimitResponse,
 } from "@/lib/rate-limit";
-import { shouldRequireAvalanchePlayGate } from "@/lib/avalanche-play-gate";
-import {
-  AvalanchePlayGateError,
-  verifyAndClaimAvalanchePlayGate,
-} from "@/lib/avalanche-play-gate-server";
+import { AvalanchePlayGateError } from "@/lib/avalanche-play-gate-server";
 import { createPlaySessionOnServer } from "@/lib/play-session-server";
 
 export const dynamic = "force-dynamic";
@@ -95,28 +91,6 @@ export async function POST(request: Request) {
         { error: "gameId is required to start a play session.", code: "INVALID_GAME" },
         { status: 400 }
       );
-    }
-
-    if (shouldRequireAvalanchePlayGate({ ecosystem, chainId })) {
-      const message = body.playGate?.message?.trim() ?? "";
-      const signature = body.playGate?.signature?.trim() ?? "";
-      if (!message || !signature) {
-        return NextResponse.json(
-          {
-            error: "Avalanche play intent signature is required.",
-            code: "PLAY_GATE_REQUIRED",
-          },
-          { status: 400 }
-        );
-      }
-
-      await verifyAndClaimAvalanchePlayGate({
-        message,
-        signature,
-        expectedFrom: session.address,
-        gameId,
-        chainId,
-      });
     }
 
     const result = await spendSparkOnServer(playerId, Date.now(), {

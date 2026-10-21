@@ -1,10 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import { gameHasContestLiveForSession } from "@/lib/contest-chains";
-import { gameAssetCandidates, gameFallbackCandidates } from "@/lib/game-assets";
+import {
+  gameAssetCandidates,
+  gameFallbackCandidates,
+  gameVideoSources,
+} from "@/lib/game-assets";
 import { formatPlayCount } from "@/lib/format-play-count";
 import { Game, gameIsLive } from "@/types";
 
@@ -21,6 +25,8 @@ export default function GameCard({ game, playCount = 0 }: GameCardProps) {
     ecosystem,
     requireChain: !isAuthenticated,
   });
+  const thumbRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const thumbCandidates = useMemo(
     () => gameAssetCandidates(game, "thumbnail"),
@@ -34,14 +40,76 @@ export default function GameCard({ game, playCount = 0 }: GameCardProps) {
     () => gameFallbackCandidates(game),
     [game]
   );
+  const videoSources = useMemo(() => gameVideoSources(game), [game]);
 
   const [thumbIdx, setThumbIdx] = useState(0);
   const [logoIdx, setLogoIdx] = useState(0);
   const [fallbackIdx, setFallbackIdx] = useState(0);
+  const [inView, setInView] = useState(false);
+  const [videoFailed, setVideoFailed] = useState(false);
+  const [videoPlaying, setVideoPlaying] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
 
   const thumbSrc = thumbCandidates[thumbIdx];
   const logoSrc = logoCandidates[logoIdx];
   const fallbackSrc = fallbackCandidates[fallbackIdx];
+  const posterSrc = thumbSrc || videoSources?.poster;
+  const showVideo =
+    isLive && !!videoSources && !videoFailed && !reduceMotion && inView;
+
+  useEffect(() => {
+    setVideoFailed(false);
+    setVideoPlaying(false);
+    setInView(false);
+  }, [game.id]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const apply = () => setReduceMotion(media.matches);
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, []);
+
+  useEffect(() => {
+    if (!isLive || !videoSources || videoFailed || reduceMotion) return;
+    const node = thumbRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setInView(entry.isIntersecting),
+      { rootMargin: "100px", threshold: 0.15 }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [isLive, videoSources, videoFailed, reduceMotion]);
+
+  useEffect(() => {
+    if (!showVideo) setVideoPlaying(false);
+  }, [showVideo]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !showVideo) return;
+
+    video.muted = true;
+    const attempt = video.play();
+    if (!attempt) return;
+
+    attempt.catch((err: unknown) => {
+      const name = err instanceof DOMException ? err.name : "";
+      if (name === "AbortError") return;
+      setVideoFailed(true);
+    });
+
+    return () => {
+      video.pause();
+    };
+  }, [showVideo]);
 
   const thumbContent = thumbSrc ? (
     // eslint-disable-next-line @next/next/no-img-element
@@ -73,8 +141,25 @@ export default function GameCard({ game, playCount = 0 }: GameCardProps) {
 
   const cardBody = (
     <>
-      <div className="thumb-wrap">
+      <div className="thumb-wrap" ref={thumbRef}>
         {thumbContent}
+        {showVideo && videoSources && (
+          <video
+            ref={videoRef}
+            className={videoPlaying ? "thumb-video is-playing" : "thumb-video"}
+            muted
+            playsInline
+            loop
+            preload="metadata"
+            poster={posterSrc}
+            aria-hidden
+            onPlaying={() => setVideoPlaying(true)}
+            onError={() => setVideoFailed(true)}
+          >
+            <source src={videoSources.webm} type="video/webm" />
+            <source src={videoSources.mp4} type="video/mp4" />
+          </video>
+        )}
         {contestLive && (
           <span className="game-card-contest-badge">CONTEST LIVE</span>
         )}

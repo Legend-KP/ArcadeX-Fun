@@ -24,7 +24,10 @@ export default function SocialSelfProfile() {
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/farcaster/me")
+    fetch("/api/farcaster/me", {
+      cache: "no-store",
+      credentials: "same-origin",
+    })
       .then(async (res) => {
         if (res.status === 401) {
           if (!cancelled) router.replace("/social");

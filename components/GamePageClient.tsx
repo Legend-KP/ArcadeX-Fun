@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useSignMessage } from "wagmi";
 import { Game, gameHasLeaderboard, gameIsLive } from "@/types";
 import GameClient from "@/components/GameClient";
 import GameMenu from "@/components/GameMenu";
@@ -12,11 +11,6 @@ import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import { useSparks } from "@/components/SparkProvider";
 import { SparkClientError } from "@/lib/spark-client";
 import { formatSparkCountdown } from "@/lib/spark";
-import { shouldRequireBaseTxHubSignIn } from "@/lib/arcadex-tx-hub";
-import { signInOnArcadeXTxHub } from "@/lib/arcadex-tx-hub-client";
-import { verifyBasePlaySignIn } from "@/lib/arcadex-tx-hub-api";
-import { shouldRequireAvalanchePlayGate } from "@/lib/avalanche-play-gate";
-import { signAvalanchePlayIntent } from "@/lib/avalanche-play-gate-client";
 
 export default function GamePageClient() {
   const { id } = useParams<{ id: string }>();
@@ -32,7 +26,6 @@ export default function GamePageClient() {
     chainId,
   } = usePlayerProfile();
   const { sparks, spendForGame } = useSparks();
-  const { signMessageAsync } = useSignMessage();
   const [game, setGame] = useState<Game | null>(null);
   const [started, setStarted] = useState(false);
   const [playSessionId, setPlaySessionId] = useState<string | null>(null);
@@ -133,36 +126,14 @@ export default function GamePageClient() {
 
     setSpending(true);
     try {
-      let playGate: { message: string; signature: string } | undefined;
-
       if (ecosystem === "vara") {
         throw new Error(
           "Vara support has been removed. Connect an EVM or other supported wallet."
         );
-      } else if (shouldRequireBaseTxHubSignIn({ ecosystem, chainId })) {
-        setSparkError("Approve free play sign-in in your wallet…");
-        const txHash = await signInOnArcadeXTxHub({
-          fromAddress: walletAddress,
-          gameId: game.id,
-          onStatus: (message) => setSparkError(message),
-        });
-        setSparkError("Confirming sign-in…");
-        await verifyBasePlaySignIn({ txHash, gameId: game.id });
-        setSparkError("");
-      } else if (shouldRequireAvalanchePlayGate({ ecosystem, chainId })) {
-        setSparkError("Sign play intent in your wallet…");
-        playGate = await signAvalanchePlayIntent({
-          gameId: game.id,
-          address: walletAddress,
-          chainId: chainId ?? undefined,
-          signMessageAsync,
-        });
-        setSparkError("");
       }
 
       const { playSessionId: sessionId } = await spendForGame({
         gameId: game.id,
-        playGate,
       });
       setPlaySessionId(sessionId);
       setStarted(true);

@@ -11,6 +11,15 @@ const TUTORIAL_BY_SLUG: Record<string, string> = {
   "block-blast": "BLOCK-BLAST.webp",
   basedrop: "BASE-DROP.webp",
   "base-drop": "BASE-DROP.webp",
+  reflector: "REFLECTOR.webp",
+  goe: "GOE.webp",
+  "guardians-of-the-earth": "GOE.webp",
+  "free-fall": "free-fall.webp",
+  "infinite-spiral": "INFINITE-SPIRAL.webp",
+  "hungry-hole": "hungry-hole.webp",
+  "fruit-swipe": "fruite-swipe.webp",
+  "fruite-swipe": "fruite-swipe.webp",
+  "jelly-jumble": "JELLY-JUMBLE.webp",
 };
 
 const SEEN_PREFIX = "arcadex_tutorial_seen_";

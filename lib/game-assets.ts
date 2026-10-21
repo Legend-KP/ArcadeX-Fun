@@ -21,10 +21,44 @@ const FLAT_LOGO_BY_SLUG: Record<string, string> = {
   "sand-drop": "/games/sanddrop-logo.webp",
   sanddrop: "/games/sanddrop-logo.webp",
   burger: "/games/burger-logo.webp",
+  "burger-game": "/games/burger-logo.webp",
+  "restaurant-empire": "/games/burger-logo.webp",
   cake: "/games/cake-logo.webp",
   dunk: "/games/Dunk-logo.webp",
   "jelly-jumble": "/games/jelly-logo.webp",
   jelly: "/games/jelly-logo.webp",
+  reflector: "/games/reflector-logo.webp",
+  goe: "/games/goe-logo.webp",
+  "guardians-of-the-earth": "/games/goe-logo.webp",
+  "free-fall": "/games/free-logo.webp",
+  "infinite-spiral": "/games/spiral-logo.webp",
+  tower: "/games/tower-logo.webp",
+  "defend-tower": "/games/tower-logo.webp",
+  "defend-the-tower": "/games/tower-logo.webp",
+  "hungry-hole": "/games/hungry-logo.webp",
+  fruit: "/games/fruit-logo.webp",
+  "fruit-game": "/games/fruit-logo.webp",
+  "fruit-swipe": "/games/fruit-logo.webp",
+  "fruite-swipe": "/games/fruit-logo.webp",
+};
+
+/** Wide card art in public/thumbnails when the name slug does not match the file. */
+const FLAT_THUMB_BY_SLUG: Record<string, string> = {
+  reflector: "/thumbnails/reflector.webp",
+  goe: "/thumbnails/goe.webp",
+  "guardians-of-the-earth": "/thumbnails/goe.webp",
+  "free-fall": "/thumbnails/free-fall.webp",
+  "infinite-spiral": "/thumbnails/infinite-spiral.webp",
+  burger: "/thumbnails/burger-game.webp",
+  "burger-game": "/thumbnails/burger-game.webp",
+  "restaurant-empire": "/thumbnails/burger-game.webp",
+  "defend-tower": "/thumbnails/defend-tower.webp",
+  "defend-the-tower": "/thumbnails/defend-tower.webp",
+  "hungry-hole": "/thumbnails/hungry-hole.webp",
+  fruit: "/thumbnails/fruit-game.webp",
+  "fruit-game": "/thumbnails/fruit-game.webp",
+  "fruit-swipe": "/thumbnails/fruit-game.webp",
+  "fruite-swipe": "/thumbnails/fruit-game.webp",
 };
 
 /**
@@ -60,14 +94,25 @@ function resolveLocalGameFolder(game: Game): string | null {
   return null;
 }
 
-function resolveFlatLogo(game: Game): string | null {
+function resolveFromSlugMap(
+  game: Pick<Game, "id" | "name">,
+  map: Record<string, string>
+): string | null {
   const nameSlug = slugifyGameName(game.name);
-  if (FLAT_LOGO_BY_SLUG[nameSlug]) return FLAT_LOGO_BY_SLUG[nameSlug];
+  if (map[nameSlug]) return map[nameSlug];
 
   const id = game.id.trim().toLowerCase();
-  if (id && FLAT_LOGO_BY_SLUG[id]) return FLAT_LOGO_BY_SLUG[id];
+  if (id && map[id]) return map[id];
 
   return null;
+}
+
+function resolveFlatLogo(game: Game): string | null {
+  return resolveFromSlugMap(game, FLAT_LOGO_BY_SLUG);
+}
+
+function resolveFlatThumb(game: Game): string | null {
+  return resolveFromSlugMap(game, FLAT_THUMB_BY_SLUG);
 }
 
 function resolveFlatFallback(game: Game): string | null {
@@ -78,6 +123,76 @@ function resolveFlatFallback(game: Game): string | null {
   if (id && FLAT_FALLBACK_BY_SLUG[id]) return FLAT_FALLBACK_BY_SLUG[id];
 
   return null;
+}
+
+/**
+ * Games that have both /thumbnails/{slug}.webm and .mp4.
+ * Cards outside this set stay on the static WebP (no 404 probes).
+ */
+export const LOCAL_PREVIEW_VIDEO_FOLDERS = new Set([
+  "basedrop",
+  "block-blast",
+  "burger-game",
+  "coin-sort",
+  "dot-connect",
+  "free-fall",
+  "fruit-game",
+  "goe",
+  "hungry-hole",
+  "infinite-spiral",
+  "jelly-jumble",
+  "line-link",
+  "orbit-flow",
+  "reflector",
+]);
+
+/** Catalog name/id slugs that don't match the thumbnail filename. */
+const PREVIEW_VIDEO_ALIAS: Record<string, string> = {
+  "base-drop": "basedrop",
+  burger: "burger-game",
+  "burger-life": "burger-game",
+  "restaurant-empire": "burger-game",
+  fruit: "fruit-game",
+  "fruit-swipe": "fruit-game",
+  "fruite-swipe": "fruit-game",
+  "guardians-of-the-earth": "goe",
+  jelly: "jelly-jumble",
+};
+
+export type GameVideoSources = {
+  webm: string;
+  mp4: string;
+  poster: string;
+};
+
+/** Allowlisted preview folder for a catalog game, or null when it should stay an image. */
+export function resolvePreviewVideoFolder(
+  game: Pick<Game, "id" | "name">
+): string | null {
+  const nameSlug = slugifyGameName(game.name);
+  const fromName = PREVIEW_VIDEO_ALIAS[nameSlug] ?? nameSlug;
+  if (LOCAL_PREVIEW_VIDEO_FOLDERS.has(fromName)) return fromName;
+
+  const id = game.id.trim().toLowerCase();
+  if (id && !isFirestoreAutoId(id)) {
+    const fromId = PREVIEW_VIDEO_ALIAS[id] ?? id;
+    if (LOCAL_PREVIEW_VIDEO_FOLDERS.has(fromId)) return fromId;
+  }
+
+  return null;
+}
+
+/** Static preview clips. Null means the card should keep the WebP only. */
+export function gameVideoSources(
+  game: Pick<Game, "id" | "name">
+): GameVideoSources | null {
+  const folder = resolvePreviewVideoFolder(game);
+  if (!folder) return null;
+  return {
+    webm: `/thumbnails/${folder}.webm`,
+    mp4: `/thumbnails/${folder}.mp4`,
+    poster: `/thumbnails/${folder}.webp`,
+  };
 }
 
 function pushLocalGameAssets(
@@ -115,6 +230,8 @@ export function gameAssetCandidates(
   // Prefer bundled assets so they show even when remote URLs fail.
   if (kind === "logo") {
     push(resolveFlatLogo(game) ?? undefined);
+  } else {
+    push(resolveFlatThumb(game) ?? undefined);
   }
 
   if (localFolder) {

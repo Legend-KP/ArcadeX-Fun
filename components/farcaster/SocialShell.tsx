@@ -25,7 +25,10 @@ export default function SocialShell() {
   const refresh = useCallback(async () => {
     setError("");
     try {
-      const res = await fetch("/api/farcaster/me");
+      const res = await fetch("/api/farcaster/me", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
       if (res.status === 401) {
         setMe(null);
         return;
@@ -42,6 +45,11 @@ export default function SocialShell() {
 
   useEffect(() => {
     void refresh();
+    function onPageShow(event: PageTransitionEvent) {
+      if (event.persisted) void refresh();
+    }
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
   }, [refresh]);
 
   async function signOut() {

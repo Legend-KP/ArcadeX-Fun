@@ -16,7 +16,13 @@ export async function GET() {
   try {
     const session = await readSessionFromCookies();
     if (!session?.fid) {
-      return NextResponse.json({ signedIn: false }, { status: 401 });
+      return NextResponse.json(
+      { signedIn: false },
+      {
+        status: 401,
+        headers: { "Cache-Control": "private, no-store, max-age=0" },
+      }
+    );
     }
 
     const [profile, usernameSkipped, custody, recovery, neynar] =
@@ -34,18 +40,21 @@ export async function GET() {
         custody.toLowerCase() !== session.address.toLowerCase()
     );
 
-    return NextResponse.json({
-      signedIn: true,
-      playerId: session.playerId,
-      address: session.address,
-      fid: session.fid,
-      profile,
-      usernameSkipped,
-      custody,
-      recovery: recovery ?? profile?.recoveryAddress ?? null,
-      custodyChanged,
-      neynar,
-    });
+    return NextResponse.json(
+      {
+        signedIn: true,
+        playerId: session.playerId,
+        address: session.address,
+        fid: session.fid,
+        profile,
+        usernameSkipped,
+        custody,
+        recovery: recovery ?? profile?.recoveryAddress ?? null,
+        custodyChanged,
+        neynar,
+      },
+      { headers: { "Cache-Control": "private, no-store, max-age=0" } }
+    );
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Could not load your profile.";

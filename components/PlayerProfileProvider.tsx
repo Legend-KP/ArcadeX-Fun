@@ -99,6 +99,9 @@ interface PlayerProfileContextValue {
   logout: () => Promise<void>;
 }
 
+/** On-chain streak modals are paused. Home check-in is a click, no transaction. */
+const ONCHAIN_STREAK_MODAL = false;
+
 const PlayerProfileContext = createContext<PlayerProfileContextValue | null>(
   null
 );
@@ -165,6 +168,13 @@ export default function PlayerProfileProvider({
       },
       opts?: { force?: boolean }
     ) => {
+      if (!ONCHAIN_STREAK_MODAL) {
+        setShowDailyPlay(false);
+        setStreakBroken(null);
+        setStreakBrokenMeta(null);
+        return;
+      }
+
       const sessionChainId =
         session.chainId == null ? undefined : Number(session.chainId);
 
@@ -476,9 +486,10 @@ export default function PlayerProfileProvider({
           return;
         }
         if (opts?.fromColdStart) {
-          // Abandoned wallet signup. Clear it and leave the Farcaster
-          // screen in charge instead of opening the network picker.
-          await resetToConnect();
+          // Keep the session cookie. Back/refresh must not sign the user out.
+          // A missing wallet display name is not a logout.
+          setShowOnboarding(false);
+          setShowDailyPlay(false);
           return;
         }
         // New user right after wallet sign-in — collect name.
@@ -744,6 +755,7 @@ export default function PlayerProfileProvider({
     Boolean(walletAddress) &&
     !isSocialRoute;
   const dailyOpen =
+    ONCHAIN_STREAK_MODAL &&
     showDailyPlay &&
     !showConnect &&
     !showOnboarding &&
@@ -811,7 +823,7 @@ export default function PlayerProfileProvider({
         onContinue={handleStreakBrokenContinue}
       />
       <DailyStreakSuccessModal
-        open={Boolean(streakSuccess)}
+        open={ONCHAIN_STREAK_MODAL && Boolean(streakSuccess)}
         result={streakSuccess}
         onClose={() => setStreakSuccess(null)}
       />

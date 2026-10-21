@@ -103,6 +103,7 @@ export async function fetchAuthSession(): Promise<{
   address: string;
   ecosystem: WalletEcosystem;
   chainId?: number;
+  fid?: number;
 } | null> {
   const res = await fetch("/api/auth/session", {
     cache: "no-store",
@@ -114,6 +115,7 @@ export async function fetchAuthSession(): Promise<{
       address: string;
       ecosystem: WalletEcosystem;
       chainId?: number;
+      fid?: number;
     } | null;
     error?: string;
   };

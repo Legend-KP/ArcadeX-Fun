@@ -4,7 +4,7 @@ import { WalletEcosystem } from "@/lib/player-identity";
 import { isWalletEcosystem } from "@/lib/wallet-ecosystems";
 
 export const SESSION_COOKIE = "arcadex_session";
-const SESSION_TTL = "7d";
+const SESSION_TTL = "30d";
 
 export interface SessionPayload {
   playerId: string;
@@ -84,6 +84,6 @@ export function sessionCookieOptions(token: string) {
     secure,
     sameSite: "lax" as const,
     path: "/",
-    maxAge: 60 * 60 * 24 * 7,
+    maxAge: 60 * 60 * 24 * 30,
   };
 }

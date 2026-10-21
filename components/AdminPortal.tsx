@@ -36,6 +36,7 @@ export default function AdminPortal() {
 
   const [name, setName] = useState("");
   const [thumbnail, setThumbnail] = useState("");
+  const [logo, setLogo] = useState("");
   const [url, setUrl] = useState("");
   const [plays, setPlays] = useState("");
   const [fallbackImage, setFallbackImage] = useState("");
@@ -45,6 +46,7 @@ export default function AdminPortal() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editThumbnail, setEditThumbnail] = useState("");
+  const [editLogo, setEditLogo] = useState("");
   const [editUrl, setEditUrl] = useState("");
   const [editPlays, setEditPlays] = useState("");
   const [editFallbackImage, setEditFallbackImage] = useState("");
@@ -136,6 +138,7 @@ export default function AdminPortal() {
       await createAdminGame({
         name: name.trim(),
         thumbnail: thumbnail.trim(),
+        logo: logo.trim() || undefined,
         url: url.trim(),
         plays: plays.trim() || "0",
         fallbackImage: fallbackImage.trim(),
@@ -145,6 +148,7 @@ export default function AdminPortal() {
       });
       setName("");
       setThumbnail("");
+      setLogo("");
       setUrl("");
       setPlays("");
       setFallbackImage("");
@@ -200,6 +204,7 @@ export default function AdminPortal() {
     setEditingId(game.id);
     setEditName(game.name);
     setEditThumbnail(game.thumbnail);
+    setEditLogo(game.logo || "");
     setEditUrl(game.url);
     setEditPlays(game.plays);
     setEditFallbackImage(game.fallbackImage || "");
@@ -224,6 +229,7 @@ export default function AdminPortal() {
       await updateAdminGame(editingId, {
         name: editName.trim(),
         thumbnail: editThumbnail.trim(),
+        logo: editLogo.trim(),
         url: editUrl.trim(),
         plays: editPlays.trim() || "0",
         fallbackImage: editFallbackImage.trim(),
@@ -420,6 +426,21 @@ export default function AdminPortal() {
             )}
           </div>
           <div className="form-group">
+            <label className="form-label">1:1 logo URL</label>
+            <input
+              className="form-input"
+              placeholder="/games/my-game-logo.webp"
+              value={logo}
+              onChange={(e) => setLogo(e.target.value)}
+            />
+            {logo && (
+              <div className="thumb-preview-wrap">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={logo} alt="logo preview" />
+              </div>
+            )}
+          </div>
+          <div className="form-group">
             <label className="form-label">Unity WebGL URL</label>
             <input
               className="form-input"
@@ -534,6 +555,21 @@ export default function AdminPortal() {
                     )}
                   </div>
                   <div className="form-group">
+                    <label className="form-label">1:1 logo URL</label>
+                    <input
+                      className="form-input"
+                      placeholder="/games/my-game-logo.webp"
+                      value={editLogo}
+                      onChange={(e) => setEditLogo(e.target.value)}
+                    />
+                    {editLogo && (
+                      <div className="thumb-preview-wrap">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={editLogo} alt="logo preview" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="form-group">
                     <label className="form-label">Unity WebGL URL</label>
                     <input
                       className="form-input"
@@ -632,6 +668,12 @@ export default function AdminPortal() {
                       <span>🎮</span>
                     )}
                   </div>
+                  {g.logo ? (
+                    <div className="admin-logo">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={g.logo} alt="" />
+                    </div>
+                  ) : null}
                   <div className="admin-game-info">
                     <p className="admin-game-name">{g.name}</p>
                     <p className="admin-game-url">{g.url}</p>
