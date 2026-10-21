@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { NoSparksError, spendSparkOnServer } from "@/lib/rtdb-server";
 import {
-  buildPlayerId,
-  isValidAddress,
   normalizeAddress,
   resolvePlayerId,
   WalletEcosystem,
@@ -17,22 +15,6 @@ import { AvalanchePlayGateError } from "@/lib/avalanche-play-gate-server";
 import { createPlaySessionOnServer } from "@/lib/play-session-server";
 
 export const dynamic = "force-dynamic";
-
-function resolvePlayerIdFromBody(body: {
-  playerId?: string;
-  walletAddress?: string;
-  ecosystem?: WalletEcosystem;
-}): string | null {
-  const fromPlayerId = resolvePlayerId(body.playerId ?? "");
-  if (fromPlayerId) return fromPlayerId;
-
-  const wallet = body.walletAddress?.trim() ?? "";
-  if (wallet && body.ecosystem && isValidAddress(body.ecosystem, wallet)) {
-    return buildPlayerId(body.ecosystem, wallet);
-  }
-
-  return resolvePlayerId(wallet);
-}
 
 export async function POST(request: Request) {
   try {
@@ -65,18 +47,8 @@ export async function POST(request: Request) {
       return rateLimitResponse();
     }
 
-    const bodyPlayerId = resolvePlayerIdFromBody(body);
-    if (bodyPlayerId && bodyPlayerId !== session.playerId) {
-      return NextResponse.json(
-        {
-          error: "Player does not match your signed-in session.",
-          code: "PLAYER_MISMATCH",
-        },
-        { status: 403 }
-      );
-    }
-
-    const playerId = session.playerId;
+    const sessionPlayerId = resolvePlayerId(session.playerId) ?? session.playerId;
+    const playerId = sessionPlayerId;
     const ecosystem = session.ecosystem;
     const chainId =
       typeof session.chainId === "number"

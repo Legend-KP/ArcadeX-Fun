@@ -8,7 +8,7 @@ import {
   handleCorsPreflightRequest,
 } from "@/lib/cors";
 import { gameHasLeaderboard } from "@/types";
-import { resolvePlayerId } from "@/lib/player-identity";
+import { resolvePlayerId, samePlayerId } from "@/lib/player-identity";
 import { cachedGetProgress, invalidateProgressCache } from "@/lib/progress-response-cache";
 import { coalesceProgressWrite } from "@/lib/progress-write-coalesce";
 import { readSessionFromCookies } from "@/lib/auth-session";
@@ -54,7 +54,7 @@ export async function GET(
     }
 
     const { searchParams } = new URL(request.url);
-    const playerId =
+    let playerId =
       resolvePlayerId(searchParams.get("playerId") ?? "") ??
       resolvePlayerId(searchParams.get("wallet") ?? "");
 
@@ -67,15 +67,8 @@ export async function GET(
     }
 
     const session = await readSessionFromCookies();
-    if (session && playerId !== session.playerId) {
-      return corsJsonResponse(
-        request,
-        {
-          error: "Player does not match your signed-in session.",
-          code: "PLAYER_MISMATCH",
-        },
-        { status: 403 }
-      );
+    if (session && !samePlayerId(playerId, session.playerId)) {
+      playerId = resolvePlayerId(session.playerId) ?? session.playerId;
     }
 
     const hasLeaderboard = gameHasLeaderboard(game);
@@ -143,22 +136,7 @@ export async function POST(
       playSessionId?: string;
     };
 
-    const bodyPlayerId =
-      resolvePlayerId(body.playerId ?? "") ??
-      resolvePlayerId(body.walletAddress ?? "");
-
-    if (bodyPlayerId && bodyPlayerId !== session.playerId) {
-      return corsJsonResponse(
-        request,
-        {
-          error: "Player does not match your signed-in session.",
-          code: "PLAYER_MISMATCH",
-        },
-        { status: 403 }
-      );
-    }
-
-    const playerId = session.playerId;
+    const playerId = resolvePlayerId(session.playerId) ?? session.playerId;
     const playSessionId = body.playSessionId?.trim() ?? "";
     if (!playSessionId) {
       return corsJsonResponse(

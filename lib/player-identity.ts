@@ -198,6 +198,13 @@ export function tryParsePlayerId(
   }
 }
 
+/** True when both ids are the same player, including checksum differences. */
+export function samePlayerId(left: string, right: string): boolean {
+  const a = resolvePlayerId(left) ?? left.trim();
+  const b = resolvePlayerId(right) ?? right.trim();
+  return Boolean(a) && a === b;
+}
+
 /** Resolve API / storage id — accepts namespaced id or raw EVM/Vara address. */
 export function resolvePlayerId(id: string): string | null {
   const parsed = tryParsePlayerId(id);

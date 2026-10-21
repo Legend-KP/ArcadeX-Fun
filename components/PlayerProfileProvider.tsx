@@ -74,7 +74,7 @@ import {
   clearCachedSession,
   setCachedSession,
 } from "@/lib/player-id";
-import { WalletEcosystem } from "@/lib/player-identity";
+import { samePlayerId, WalletEcosystem } from "@/lib/player-identity";
 import { PlayerProfile, type ChainKey } from "@/types";
 import { ensureSessionWalletReady } from "@/lib/ensure-session-wallet";
 import { getChainKeyForSession } from "@/lib/chain-registry";
@@ -129,6 +129,8 @@ export default function PlayerProfileProvider({
   const farcasterRouteRef = useRef(isSocialRoute);
   farcasterRouteRef.current = isSocialRoute;
   const [playerId, setPlayerId] = useState("");
+  const playerIdRef = useRef("");
+  playerIdRef.current = playerId;
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [walletAddress, setWalletAddress] = useState("");
   const [ecosystem, setEcosystem] = useState<WalletEcosystem | null>(null);
@@ -545,6 +547,24 @@ export default function PlayerProfileProvider({
       cancelled = true;
     };
   }, [loadProfileForSession]);
+
+  // Farcaster sign-in replaces the cookie without remounting this provider.
+  // Pick up that session before Start Game compares player ids.
+  useEffect(() => {
+    if (!isReady) return;
+    let cancelled = false;
+
+    void (async () => {
+      const session = await fetchAuthSession().catch(() => null);
+      if (cancelled || !session) return;
+      if (samePlayerId(session.playerId, playerIdRef.current)) return;
+      await loadProfileForSession(session, { fromColdStart: true });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname, isReady, loadProfileForSession]);
 
   // Soft-restore the live wallet after session bootstrap (no popup).
   useEffect(() => {

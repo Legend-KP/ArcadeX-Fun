@@ -276,21 +276,8 @@ export async function POST(
     }
 
     const wallet = tryNormalizeWalletAddress(body.walletAddress);
-    const bodyPlayerId =
-      resolvePlayerId(body.playerId ?? "") ?? resolvePlayerId(wallet ?? "");
 
-    if (bodyPlayerId && bodyPlayerId !== session.playerId) {
-      return corsJsonResponse(
-        request,
-        {
-          error: "Player does not match your signed-in session.",
-          code: "PLAYER_MISMATCH",
-        },
-        { status: 403 }
-      );
-    }
-
-    const playerId = session.playerId;
+    const playerId = resolvePlayerId(session.playerId) ?? session.playerId;
 
     let name = body.name?.trim() || body.playerName?.trim() || "";
 
