@@ -108,11 +108,7 @@ export default function SparkProvider({
       playGate?: { message: string; signature: string };
     }) => {
       if (!playerId || !isAuthenticated) {
-        throw new SparkClientError(
-          "Connect your wallet to play.",
-          "NO_WALLET",
-          400
-        );
+        throw new SparkClientError("Sign in to play.", "NO_SESSION", 401);
       }
 
       const data = await spendSpark(playerId, {

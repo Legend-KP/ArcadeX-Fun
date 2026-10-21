@@ -16,14 +16,11 @@ export default function GamePageClient() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const {
-    walletAddress,
     isAuthenticated,
-    openConnect,
-    ensureWalletReady,
     playerId,
     playerName,
-    ecosystem,
     chainId,
+    walletAddress,
   } = usePlayerProfile();
   const { sparks, spendForGame } = useSparks();
   const [game, setGame] = useState<Game | null>(null);
@@ -105,15 +102,9 @@ export default function GamePageClient() {
   const handleStart = async () => {
     setSparkError("");
 
-    if (!walletAddress || !isAuthenticated) {
-      setSparkError("Connect your wallet to play.");
-      openConnect();
-      return;
-    }
-
-    const walletReady = await ensureWalletReady();
-    if (!walletReady) {
-      setSparkError("Reconnect your wallet to play.");
+    if (!isAuthenticated) {
+      setSparkError("Sign in to play.");
+      router.push("/social");
       return;
     }
 
@@ -126,12 +117,6 @@ export default function GamePageClient() {
 
     setSpending(true);
     try {
-      if (ecosystem === "vara") {
-        throw new Error(
-          "Vara support has been removed. Connect an EVM or other supported wallet."
-        );
-      }
-
       const { playSessionId: sessionId } = await spendForGame({
         gameId: game.id,
       });

@@ -567,16 +567,18 @@ export default function PlayerProfileProvider({
   }, [pathname, isReady, loadProfileForSession]);
 
   // Soft-restore the live wallet after session bootstrap (no popup).
+  // Game pages must not touch the browser wallet.
   useEffect(() => {
     if (!isReady || !isAuthenticated || !ecosystem || !walletAddress) {
       return;
     }
+    if (pathname?.startsWith("/game/")) return;
     void ensureSessionWalletReady({
       ecosystem,
       expectedAddress: walletAddress,
       allowPrompt: false,
     });
-  }, [isReady, isAuthenticated, ecosystem, walletAddress]);
+  }, [pathname, isReady, isAuthenticated, ecosystem, walletAddress]);
 
   const openConnect = useCallback((chainKey?: ChainKey | null) => {
     setConnectInitialChainKey(chainKey ?? null);
