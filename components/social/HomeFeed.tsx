@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import CastActions from "@/components/social/CastActions";
 import { loadScoreCasts, type ScoreCast } from "@/lib/score-casts";
 import type { TextPost } from "@/lib/social-board";
+import type { ReactionSummary } from "@/lib/social-reactions";
 import type { Game } from "@/types";
 
 type FeedTab =
@@ -67,6 +69,7 @@ export default function HomeFeed({ games, search, posted }: Props) {
   const [posts, setPosts] = useState<TextPost[] | null>(null);
   const [casts, setCasts] = useState<ScoreCast[] | null>(null);
   const [postError, setPostError] = useState("");
+  const [reactions, setReactions] = useState<Record<string, ReactionSummary>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -134,6 +137,33 @@ export default function HomeFeed({ games, search, posted }: Props) {
         );
       });
   }, [posts, casts, query]);
+
+  const reactionIds = items
+    .map((item) => (item.kind === "text" ? item.post.id : item.cast.id))
+    .join("\n");
+
+  useEffect(() => {
+    const ids = reactionIds.split("\n").filter(Boolean);
+    if (ids.length === 0) return;
+    let cancelled = false;
+    fetch("/api/social/reactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      cache: "no-store",
+      body: JSON.stringify({ action: "list", ids }),
+    })
+      .then(async (res) => {
+        const data = (await res.json()) as {
+          reactions?: Record<string, ReactionSummary>;
+        };
+        if (!cancelled && res.ok && data.reactions) setReactions(data.reactions);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [reactionIds]);
 
   const matchedGames = useMemo(() => {
     if (!query) return [];
@@ -216,6 +246,22 @@ export default function HomeFeed({ games, search, posted }: Props) {
                     </time>
                   </header>
                   <p className="board-cast__body">{item.post.body}</p>
+                  <CastActions
+                    postId={item.post.id}
+                    text={item.post.body}
+                    reaction={
+                      reactions[item.post.id] ?? {
+                        likes: 0,
+                        liked: false,
+                        comments: 0,
+                        shares: 0,
+                        shared: false,
+                      }
+                    }
+                    onChange={(next) =>
+                      setReactions((current) => ({ ...current, [item.post.id]: next }))
+                    }
+                  />
                 </div>
               </article>
             ) : (
@@ -246,6 +292,22 @@ export default function HomeFeed({ games, search, posted }: Props) {
                       {item.cast.gameName}
                     </Link>
                   )}
+                  <CastActions
+                    postId={item.cast.id}
+                    text={`scored ${item.cast.score.toLocaleString()} in ${item.cast.gameName}`}
+                    reaction={
+                      reactions[item.cast.id] ?? {
+                        likes: 0,
+                        liked: false,
+                        comments: 0,
+                        shares: 0,
+                        shared: false,
+                      }
+                    }
+                    onChange={(next) =>
+                      setReactions((current) => ({ ...current, [item.cast.id]: next }))
+                    }
+                  />
                 </div>
               </article>
             )

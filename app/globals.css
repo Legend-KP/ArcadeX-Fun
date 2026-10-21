@@ -5477,6 +5477,92 @@ a { color: inherit; text-decoration: none; }
   overflow-wrap: anywhere;
 }
 
+.cast-actions {
+  margin-top: 8px;
+}
+
+.cast-actions__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 320px;
+}
+
+.cast-actions__row button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+
+.cast-actions__row button:hover {
+  color: #7c5cfc;
+}
+
+.cast-actions__row button.is-shared {
+  color: #0f9f6e;
+}
+
+.cast-actions__row button.is-liked,
+.cast-actions__row button.is-liked:hover {
+  color: #e11d48;
+}
+
+.cast-actions__note {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cast-actions__thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.cast-actions__thread p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cast-actions__thread p span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.cast-actions__thread form {
+  display: flex;
+  gap: 8px;
+}
+
+.cast-actions__thread input {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font: inherit;
+}
+
+.cast-actions__thread form button {
+  border: 0;
+  border-radius: 999px;
+  background: #6d4aff;
+  color: #fff;
+  font-weight: 800;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
 .board-post__media {
   display: block;
   margin-top: 12px;
