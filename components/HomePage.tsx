@@ -24,6 +24,7 @@ function sectionFromQuery(value: string | null): HomeSection {
   if (
     value === "games" ||
     value === "notifications" ||
+    value === "challenges" ||
     value === "leaderboards"
   ) {
     return value;
@@ -160,8 +161,13 @@ function HomePageInner() {
               <HomeFeed games={games} search={search} posted={latestPost} />
             )}
 
-            {section === "notifications" && (
-              <NotificationsPanel games={games} me={me} ready={ready} />
+            {(section === "notifications" || section === "challenges") && (
+              <NotificationsPanel
+                games={games}
+                me={me}
+                ready={ready}
+                title={section === "challenges" ? "Challenge" : "Notifications"}
+              />
             )}
 
             {section === "leaderboards" && (

@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import {
+  loadChallenges,
   pendingChallengeCount,
-  readChallenges,
-  subscribeSocialChallenges,
-  viewerKeys,
-} from "@/lib/social-challenges";
+  readChallengeList,
+  readChallengeSnapshot,
+  subscribeChallenges,
+} from "@/lib/social-challenges-client";
 import { socialIdentity, type SocialMe } from "@/components/farcaster/social-me";
 
 export type SocialSection =
@@ -15,6 +16,7 @@ export type SocialSection =
   | "games"
   | "leaderboards"
   | "notifications"
+  | "challenges"
   | "profile";
 
 type Props = {
@@ -73,6 +75,27 @@ function IconBell() {
   );
 }
 
+function IconChallenge() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden width="20" height="20">
+      <path
+        d="M14.2 3.8 20.2 9.8 9.2 20.8H3.8v-5.4L14.2 3.8Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12.5 5.5 18.5 11.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function IconProfile() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden width="20" height="20">
@@ -91,6 +114,7 @@ const ITEMS: {
   { id: "games", label: "Games", icon: IconGames },
   { id: "leaderboards", label: "Leaderboards", icon: IconBoards },
   { id: "notifications", label: "Notifications", icon: IconBell },
+  { id: "challenges", label: "Challenge", icon: IconChallenge },
 ];
 
 export default function SocialSidebar({
@@ -103,21 +127,18 @@ export default function SocialSidebar({
   onSearchChange,
 }: Props) {
   const challenges = useSyncExternalStore(
-    subscribeSocialChallenges,
-    readChallenges,
-    readChallenges
+    subscribeChallenges,
+    readChallengeList,
+    readChallengeSnapshot
   );
   const identity = me ? socialIdentity(me) : null;
   const name = identity?.displayName || "Player";
-  const badge = pendingChallengeCount(
-    challenges,
-    viewerKeys([
-      identity?.fid,
-      identity?.username,
-      identity?.displayName,
-      identity?.playerId,
-    ])
-  );
+  const badge = pendingChallengeCount(challenges, identity?.fid);
+
+  useEffect(() => {
+    if (!ready) return;
+    void loadChallenges();
+  }, [ready]);
   const profileHref = ready ? "/profile" : "/social";
 
   return (
@@ -147,9 +168,7 @@ export default function SocialSidebar({
             >
               <Icon />
               <span>{item.label}</span>
-              {item.id === "notifications" && badge > 0 && (
-                <em>{badge}</em>
-              )}
+              {item.id === "challenges" && badge > 0 && <em>{badge}</em>}
             </button>
           );
         })}

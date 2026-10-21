@@ -1,26 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { socialIdentity, type SocialMe } from "@/components/farcaster/social-me";
 import {
-  castChallengeResult,
   challengeDeadline,
-  challengesForViewer,
-  createChallenge,
-  readChallenges,
-  setChallengeStatus,
-  subscribeSocialChallenges,
-  viewerKeys,
-  type ChallengeExpiryHours,
+  loadChallenges,
+  readChallengeList,
+  readChallengeSnapshot,
+  respondToChallenge,
+  sendChallenge,
+  subscribeChallenges,
   type SocialChallenge,
-} from "@/lib/social-challenges";
+} from "@/lib/social-challenges-client";
 import type { Game } from "@/types";
 
 type Props = {
   games: Game[];
   me: SocialMe | null;
   ready: boolean;
+  title?: string;
 };
 
 function formatWhen(timestamp: number): string {
@@ -60,17 +59,16 @@ function Timeline({ challenge }: { challenge: SocialChallenge }) {
 
 function ResultComposer({
   challenge,
-  authorName,
+  onPosted,
 }: {
   challenge: SocialChallenge;
-  authorName: string;
+  onPosted: (message: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [text, setText] = useState(
-    `finished a ${challenge.gameName} challenge`
-  );
+  const [text, setText] = useState(`finished a ${challenge.gameName} challenge`);
+  const [busy, setBusy] = useState(false);
 
-  if (challenge.resultCastId) {
+  if (challenge.resultPostId) {
     return <p className="soc-note">Result posted on Home.</p>;
   }
 
@@ -87,58 +85,79 @@ function ResultComposer({
       className="soc-challenge-form"
       onSubmit={(event) => {
         event.preventDefault();
-        castChallengeResult(challenge, text, authorName);
+        setBusy(true);
+        void respondToChallenge(challenge.id, "result", text).then((message) => {
+          setBusy(false);
+          onPosted(message);
+          if (!message) setOpen(false);
+        });
       }}
     >
       <label>
         Result post
         <input value={text} onChange={(event) => setText(event.target.value)} />
       </label>
-      <button type="submit" className="connect-btn" disabled={!text.trim()}>
+      <button type="submit" className="connect-btn" disabled={busy || !text.trim()}>
         Post to Home
       </button>
     </form>
   );
 }
 
-export default function NotificationsPanel({ games, me, ready }: Props) {
+export default function NotificationsPanel({
+  games,
+  me,
+  ready,
+  title = "Notifications",
+}: Props) {
   const challenges = useSyncExternalStore(
-    subscribeSocialChallenges,
-    readChallenges,
-    readChallenges
+    subscribeChallenges,
+    readChallengeList,
+    readChallengeSnapshot
   );
   const identity = me ? socialIdentity(me) : null;
-  const keys = viewerKeys([
-    identity?.fid,
-    identity?.username,
-    identity?.displayName,
-    identity?.playerId,
-  ]);
-  const incoming = challengesForViewer(challenges, keys).filter(
-    (challenge) => challenge.status !== "declined"
+  const fid = identity?.fid ?? null;
+  const incoming = challenges.filter(
+    (challenge) => challenge.targetFid === fid && challenge.status !== "declined"
   );
-  const outgoing = useMemo(() => {
-    const id = identity?.fid ? String(identity.fid) : identity?.username || "";
-    if (!id) return [];
-    return challenges.filter(
-      (challenge) =>
-        challenge.challengerId.toLowerCase() === id.toLowerCase() &&
-        !keys.includes(challenge.targetId.trim().toLowerCase())
-    );
-  }, [challenges, identity?.fid, identity?.username, keys]);
+  const outgoing = useMemo(
+    () =>
+      challenges.filter(
+        (challenge) =>
+          fid != null &&
+          challenge.challengerFid === fid &&
+          challenge.targetFid !== fid
+      ),
+    [challenges, fid]
+  );
 
   const [targetId, setTargetId] = useState("");
-  const [gameId, setGameId] = useState(games[0]?.id ?? "");
-  const [expiryHours, setExpiryHours] = useState<ChallengeExpiryHours>(24);
+  const [gameId, setGameId] = useState("");
+  const [expiryHours, setExpiryHours] = useState<24 | 72>(24);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!gameId && games[0]?.id) setGameId(games[0].id);
+  }, [gameId, games]);
+
+  useEffect(() => {
+    if (!ready) return;
+    void loadChallenges().then((message) => {
+      if (message) setError(message);
+    });
+  }, [ready]);
 
   return (
     <section className="soc-notes" aria-label="Notifications">
-      <h1>Notifications</h1>
-      <p className="soc-note">Challenges stay here. They are not posts on Home.</p>
+      <h1>{title}</h1>
+      <p className="soc-note">
+        Send a challenge with the other player&apos;s username or FID. They see it here
+        when they sign in.
+      </p>
+      {error && <p className="board-error">{error}</p>}
 
-      {incoming.length === 0 && (
-        <p className="no-games">No incoming challenges.</p>
-      )}
+      {incoming.length === 0 && <p className="no-games">No incoming challenges.</p>}
 
       <ul className="soc-challenge-list">
         {incoming.map((challenge) => (
@@ -155,14 +174,22 @@ export default function NotificationsPanel({ games, me, ready }: Props) {
                 <button
                   type="button"
                   className="connect-btn"
-                  onClick={() => setChallengeStatus(challenge.id, "accepted")}
+                  onClick={() => {
+                    void respondToChallenge(challenge.id, "accept").then((message) => {
+                      if (message) setError(message);
+                    });
+                  }}
                 >
                   Accept
                 </button>
                 <button
                   type="button"
                   className="soc-decline"
-                  onClick={() => setChallengeStatus(challenge.id, "declined")}
+                  onClick={() => {
+                    void respondToChallenge(challenge.id, "decline").then((message) => {
+                      if (message) setError(message);
+                    });
+                  }}
                 >
                   Decline
                 </button>
@@ -171,10 +198,7 @@ export default function NotificationsPanel({ games, me, ready }: Props) {
             {challenge.status === "accepted" && (
               <>
                 <Timeline challenge={challenge} />
-                <ResultComposer
-                  challenge={challenge}
-                  authorName={identity?.displayName || "Player"}
-                />
+                <ResultComposer challenge={challenge} onPosted={(message) => setError(message ?? "")} />
               </>
             )}
           </li>
@@ -188,7 +212,7 @@ export default function NotificationsPanel({ games, me, ready }: Props) {
             {outgoing.map((challenge) => (
               <li key={challenge.id} className="soc-challenge">
                 <p>
-                  Waiting on <strong>{challenge.targetId}</strong>
+                  Waiting on <strong>{challenge.targetLabel}</strong>
                 </p>
                 <p>
                   {challenge.gameName} · {challenge.expiryHours}h · {challenge.status}
@@ -197,9 +221,9 @@ export default function NotificationsPanel({ games, me, ready }: Props) {
                   <>
                     <Timeline challenge={challenge} />
                     <ResultComposer
-                  challenge={challenge}
-                  authorName={identity?.displayName || "Player"}
-                />
+                      challenge={challenge}
+                      onPosted={(message) => setError(message ?? "")}
+                    />
                   </>
                 )}
               </li>
@@ -219,16 +243,22 @@ export default function NotificationsPanel({ games, me, ready }: Props) {
           onSubmit={(event) => {
             event.preventDefault();
             const game = games.find((item) => item.id === gameId);
-            if (!game || !identity) return;
-            createChallenge({
-              challengerName: identity.displayName,
-              challengerId: String(identity.fid ?? identity.username ?? identity.playerId),
-              targetId,
+            if (!game) return;
+            setBusy(true);
+            setError("");
+            void sendChallenge({
+              target: targetId,
               gameId: game.id,
               gameName: game.name,
               expiryHours,
+            }).then((message) => {
+              setBusy(false);
+              if (message) {
+                setError(message);
+                return;
+              }
+              setTargetId("");
             });
-            setTargetId("");
           }}
         >
           <label>
@@ -270,7 +300,11 @@ export default function NotificationsPanel({ games, me, ready }: Props) {
               72 hours
             </label>
           </fieldset>
-          <button type="submit" className="connect-btn" disabled={!targetId.trim() || !gameId}>
+          <button
+            type="submit"
+            className="connect-btn"
+            disabled={busy || !targetId.trim() || !gameId}
+          >
             Send challenge
           </button>
         </form>
