@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import CastActions from "@/components/social/CastActions";
 import { loadScoreCasts, type ScoreCast } from "@/lib/score-casts";
 import type { TextPost } from "@/lib/social-board";
 import type { ReactionSummary } from "@/lib/social-reactions";
+import { profileHref } from "@/lib/farcaster/public-profile";
 import type { Game } from "@/types";
 
 type FeedTab =
@@ -54,6 +55,21 @@ function postedAt(timestamp: number): string {
     dateStyle: "medium",
     timeStyle: "short",
   });
+}
+
+function ProfileLink({
+  href,
+  children,
+}: {
+  href: string | null;
+  children: ReactNode;
+}) {
+  if (!href) return <>{children}</>;
+  return (
+    <Link href={href} className="board-cast__profile">
+      {children}
+    </Link>
+  );
 }
 
 function Avatar({ name, src }: { name: string; src?: string | null }) {
@@ -248,10 +264,24 @@ export default function HomeFeed({
           {items.map((item) =>
             item.kind === "text" ? (
               <article key={item.post.id} className="board-post board-cast">
-                <Avatar name={item.post.authorName} src={item.post.pfpUrl} />
+                <ProfileLink
+                  href={profileHref({
+                    username: item.post.authorHandle,
+                    fid: item.post.fid,
+                  })}
+                >
+                  <Avatar name={item.post.authorName} src={item.post.pfpUrl} />
+                </ProfileLink>
                 <div className="board-cast__main">
                   <header>
-                    <strong>{item.post.authorName}</strong>
+                    <ProfileLink
+                      href={profileHref({
+                        username: item.post.authorHandle,
+                        fid: item.post.fid,
+                      })}
+                    >
+                      <strong>{item.post.authorName}</strong>
+                    </ProfileLink>
                     {item.post.authorHandle && (
                       <span className="board-cast__handle">
                         @{item.post.authorHandle.replace(/^@/, "")}

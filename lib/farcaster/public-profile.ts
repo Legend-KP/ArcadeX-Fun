@@ -16,3 +16,13 @@ export function toPublicSocialProfile(profile: SocialProfile | null) {
     emailVerified: Boolean(profile.emailVerifiedAt),
   };
 }
+
+export function profileHref(input: {
+  username?: string | null;
+  fid?: number | null;
+}): string | null {
+  const username = input.username?.replace(/^@/, "").trim();
+  if (username) return `/u/${encodeURIComponent(username)}`;
+  if (input.fid && input.fid > 0) return `/fid/${input.fid}`;
+  return null;
+}

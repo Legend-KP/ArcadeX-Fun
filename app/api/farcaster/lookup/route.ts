@@ -59,9 +59,14 @@ export async function GET(request: Request) {
       const profile = await fetchSocialProfileByUsername(username).catch(
         () => null
       );
+      const neynar = profile?.fid
+        ? await fetchNeynarUserByFid(profile.fid).catch(() => null)
+        : null;
       return NextResponse.json({
         username,
+        fid: profile?.fid ?? neynar?.fid ?? null,
         profile: toPublicSocialProfile(profile),
+        neynar,
       });
     }
 

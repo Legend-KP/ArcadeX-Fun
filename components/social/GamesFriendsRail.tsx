@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { profileHref } from "@/lib/farcaster/public-profile";
 import { sendChallenge } from "@/lib/social-challenges-client";
 import type { RailActivity, RailFriend } from "@/lib/friends-rail";
 import type { Game } from "@/types";
@@ -16,6 +18,11 @@ type Rail = {
 };
 
 const EMPTY: Rail = { online: [], activity: [], suggestions: [] };
+
+function friendProfileHref(friend: { handle: string; fid: number }): string {
+  if (/^\d+$/.test(friend.handle)) return profileHref({ fid: friend.fid }) || "/";
+  return profileHref({ username: friend.handle, fid: friend.fid }) || "/";
+}
 
 function Avatar({ name, src }: { name: string; src?: string | null }) {
   if (src) {
@@ -100,10 +107,15 @@ export default function GamesFriendsRail({ games }: Props) {
           <ul className="games-rail__online">
             {rail.online.map((friend) => (
               <li key={friend.fid}>
-                <span className="games-rail__avatar">
-                  <Avatar name={friend.name} src={friend.pfpUrl} />
-                </span>
-                <strong>{friend.name}</strong>
+                <Link
+                  href={friendProfileHref(friend)}
+                  className="games-rail__person"
+                >
+                  <span className="games-rail__avatar">
+                    <Avatar name={friend.name} src={friend.pfpUrl} />
+                  </span>
+                  <strong>{friend.name}</strong>
+                </Link>
                 <button
                   type="button"
                   disabled={!fallbackGame || busyKey === `${friend.fid}:${fallbackGame?.id}`}
@@ -134,13 +146,18 @@ export default function GamesFriendsRail({ games }: Props) {
               };
               return (
                 <li key={item.id}>
-                  <span className="games-rail__avatar">
-                    <Avatar name={item.name} src={item.pfpUrl} />
-                  </span>
-                  <p>
-                    <strong>{item.name}</strong>
-                    <small>{item.gameName}</small>
-                  </p>
+                  <Link
+                    href={friendProfileHref({ handle: item.handle, fid: item.fid })}
+                    className="games-rail__person"
+                  >
+                    <span className="games-rail__avatar">
+                      <Avatar name={item.name} src={item.pfpUrl} />
+                    </span>
+                    <p>
+                      <strong>{item.name}</strong>
+                      <small>{item.gameName}</small>
+                    </p>
+                  </Link>
                   <button
                     type="button"
                     disabled={busyKey === `${item.fid}:${item.gameId}`}
@@ -165,13 +182,15 @@ export default function GamesFriendsRail({ games }: Props) {
           {prompt ? (
             <>
               <div className="games-rail__prompt-person">
-                <span className="games-rail__avatar">
-                  <Avatar name={prompt.name} src={prompt.pfpUrl} />
-                </span>
-                <p>
-                  Challenge <strong>{prompt.name}</strong>
-                  {fallbackGame ? ` to ${fallbackGame.name}` : ""}.
-                </p>
+                <Link href={friendProfileHref(prompt)} className="games-rail__person">
+                  <span className="games-rail__avatar">
+                    <Avatar name={prompt.name} src={prompt.pfpUrl} />
+                  </span>
+                  <p>
+                    Challenge <strong>{prompt.name}</strong>
+                    {fallbackGame ? ` to ${fallbackGame.name}` : ""}.
+                  </p>
+                </Link>
               </div>
               <button
                 type="button"
