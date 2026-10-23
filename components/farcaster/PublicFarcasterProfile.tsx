@@ -13,6 +13,8 @@ import {
   socialIdentity,
 } from "@/components/farcaster/social-me";
 import { getGameProgress } from "@/lib/game-progress-client";
+import ShareLink from "@/components/social/ShareLink";
+import { profileHref } from "@/lib/farcaster/public-profile";
 import { sendChallenge } from "@/lib/social-challenges-client";
 import type { Game } from "@/types";
 
@@ -48,7 +50,7 @@ type Props = {
 
 export default function PublicFarcasterProfile({ kind, value }: Props) {
   const router = useRouter();
-  const { me, loading: meLoading, ready } = useSocialMe();
+  const { me, ready } = useSocialMe();
   const [data, setData] = useState<Lookup | null>(null);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -57,10 +59,6 @@ export default function PublicFarcasterProfile({ kind, value }: Props) {
   const [played, setPlayed] = useState<Game[] | null>(null);
   const [challengeNote, setChallengeNote] = useState("");
   const [challenging, setChallenging] = useState(false);
-
-  useEffect(() => {
-    if (!meLoading && !ready) router.replace("/social");
-  }, [meLoading, ready, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,9 +168,10 @@ export default function PublicFarcasterProfile({ kind, value }: Props) {
     setChallengeNote(message || `Challenge sent to ${displayName}.`);
   }
 
-  if (meLoading || !ready || !me) {
-    return <p className="no-games">Loading…</p>;
-  }
+  const pageHref = profileHref({
+    username: username || (kind === "username" ? value : null),
+    fid,
+  });
 
   return (
     <div className="home">
@@ -239,22 +238,27 @@ export default function PublicFarcasterProfile({ kind, value }: Props) {
                         </span>
                       </p>
                     )}
+                    {pageHref && (
+                      <ShareLink
+                        path={pageHref}
+                        title={`${displayName} on ArcadeX`}
+                        text={`Open ${displayName}'s ArcadeX profile`}
+                      />
+                    )}
                     {isYou ? (
                       <p className="soc-note">
                         <Link href="/profile">This is you</Link>
                       </p>
-                    ) : (
-                      target && (
-                        <button
-                          type="button"
-                          className="connect-btn soc-profile__wallet"
-                          disabled={challenging || games.length === 0}
-                          onClick={() => void challenge()}
-                        >
-                          {challenging ? "Sending…" : "Challenge"}
-                        </button>
-                      )
-                    )}
+                    ) : ready && target ? (
+                      <button
+                        type="button"
+                        className="connect-btn soc-profile__wallet"
+                        disabled={challenging || games.length === 0}
+                        onClick={() => void challenge()}
+                      >
+                        {challenging ? "Sending…" : "Challenge"}
+                      </button>
+                    ) : null}
                     {challengeNote && <p className="soc-note">{challengeNote}</p>}
                   </div>
                 </header>

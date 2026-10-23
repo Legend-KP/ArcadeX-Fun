@@ -13,6 +13,7 @@ import {
   markTutorialSeen,
 } from "@/lib/game-tutorial";
 import ChallengeFriendControl from "@/components/social/ChallengeFriendControl";
+import ShareLink from "@/components/social/ShareLink";
 import { Game, gameHasLeaderboard } from "@/types";
 
 interface GameMenuProps {
@@ -230,6 +231,11 @@ export default function GameMenu({
               gameId={game.id}
               gameName={game.name}
               trigger="menu"
+            />
+            <ShareLink
+              path={`/game/${game.id}`}
+              title={game.name}
+              text={`Play ${game.name} on ArcadeX`}
             />
           </div>
         </div>

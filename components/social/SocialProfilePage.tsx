@@ -13,6 +13,8 @@ import {
   formatSocialCount,
   socialIdentity,
 } from "@/components/farcaster/social-me";
+import ShareLink from "@/components/social/ShareLink";
+import { profileHref } from "@/lib/farcaster/public-profile";
 import { getGameProgress } from "@/lib/game-progress-client";
 import { truncateAddress } from "@/lib/player-identity";
 import type { Game } from "@/types";
@@ -155,6 +157,21 @@ export default function SocialProfilePage() {
                 >
                   {walletLabel}
                 </button>
+                {profileHref({
+                  username: identity.username,
+                  fid: identity.fid,
+                }) && (
+                  <ShareLink
+                    path={
+                      profileHref({
+                        username: identity.username,
+                        fid: identity.fid,
+                      })!
+                    }
+                    title={`${identity.displayName} on ArcadeX`}
+                    text={`Open ${identity.displayName}'s ArcadeX profile`}
+                  />
+                )}
               </div>
             </header>
 

@@ -5739,6 +5739,46 @@ a { color: inherit; text-decoration: none; }
   color: #e11d48;
 }
 
+.cast-actions__link,
+.share-link a {
+  display: block;
+  margin-top: 6px;
+  color: #6d4aff;
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+}
+
+.share-link {
+  margin-top: 10px;
+}
+
+.share-link button {
+  border: 0;
+  border-radius: 999px;
+  background: #6d4aff;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.share-link span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.game-menu-actions .share-link a,
+.game-menu-actions .share-link span {
+  color: #fff;
+}
+
 .cast-actions__note {
   margin: 4px 0 0;
   color: var(--muted);

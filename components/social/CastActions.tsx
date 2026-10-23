@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { absoluteUrl } from "@/lib/public-url";
 import type { PostComment, ReactionSummary } from "@/lib/social-reactions";
 
 type Props = {
   postId: string;
   text: string;
+  sharePath: string;
   reaction: ReactionSummary;
   onChange: (next: ReactionSummary) => void;
 };
@@ -40,7 +42,13 @@ async function react(
   return data;
 }
 
-export default function CastActions({ postId, text, reaction, onChange }: Props) {
+export default function CastActions({
+  postId,
+  text,
+  sharePath,
+  reaction,
+  onChange,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [comments, setComments] = useState<PostComment[] | null>(null);
   const [draft, setDraft] = useState("");
@@ -78,20 +86,26 @@ export default function CastActions({ postId, text, reaction, onChange }: Props)
 
   async function onShare() {
     setNote("");
-    const url = `${window.location.origin}/`;
-    const payload = { title: "ArcadeX", text, url };
+    const url = absoluteUrl(sharePath);
     try {
-      if (navigator.share) {
-        await navigator.share(payload);
+      if (typeof navigator.share === "function") {
+        await navigator.share({ title: "ArcadeX", text, url });
       } else {
-        await navigator.clipboard.writeText(`${text}\n${url}`);
-        setNote("Copied");
+        await navigator.clipboard.writeText(url);
       }
-      const data = await react("share", postId);
-      if (data.reaction) onChange(data.reaction);
+      setNote("Link copied");
+      if (sharePath.startsWith("/post/")) {
+        const data = await react("share", postId);
+        if (data.reaction) onChange(data.reaction);
+      }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
-      setNote(err instanceof Error ? err.message : "Could not share this post.");
+      try {
+        await navigator.clipboard.writeText(url);
+        setNote("Link copied");
+      } catch {
+        setNote(url);
+      }
     }
   }
 
@@ -139,6 +153,9 @@ export default function CastActions({ postId, text, reaction, onChange }: Props)
           {current.likes > 0 && <span>{current.likes}</span>}
         </button>
       </div>
+      <a className="cast-actions__link" href={sharePath}>
+        {absoluteUrl(sharePath)}
+      </a>
       {note && <p className="cast-actions__note">{note}</p>}
       {open && (
         <div className="cast-actions__thread">

@@ -204,6 +204,22 @@ export async function listTextPosts(limit = 40): Promise<TextPost[]> {
   return (result.results ?? []).map(toPost);
 }
 
+export async function getTextPost(id: string): Promise<TextPost | null> {
+  const clean = id.trim();
+  if (!clean || clean.length > 80) return null;
+  await ensureSocialBoardSchema();
+  const db = await requireSocialDb();
+  const row = await db
+    .prepare(
+      `SELECT id, fid, author_name, author_handle, pfp_url, body, created_at
+       FROM posts
+       WHERE id = ?`
+    )
+    .bind(clean)
+    .first<PostRow>();
+  return row ? toPost(row) : null;
+}
+
 export async function createTextPost(input: {
   fid: number;
   playerId: string;

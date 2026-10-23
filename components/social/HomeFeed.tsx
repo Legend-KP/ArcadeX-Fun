@@ -298,6 +298,7 @@ export default function HomeFeed({
                   <CastActions
                     postId={item.post.id}
                     text={item.post.body}
+                    sharePath={`/post/${item.post.id}`}
                     reaction={
                       reactions[item.post.id] ?? {
                         likes: 0,
@@ -344,6 +345,7 @@ export default function HomeFeed({
                   <CastActions
                     postId={item.cast.id}
                     text={`scored ${item.cast.score.toLocaleString()} in ${item.cast.gameName}`}
+                    sharePath={`/game/${item.cast.gameId}`}
                     reaction={
                       reactions[item.cast.id] ?? {
                         likes: 0,
