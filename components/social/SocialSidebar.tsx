@@ -43,11 +43,17 @@ function IconHome() {
   );
 }
 
-function IconGames() {
+function IconActivity() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden width="20" height="20">
-      <rect x="3" y="6" width="18" height="12" rx="4" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M8 12h3M9.5 10.5v3M16 11h.01M18 13h.01" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path
+        d="M4 13h4l2-5 4 10 2-5h4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -110,8 +116,8 @@ const ITEMS: {
   label: string;
   icon: () => ReturnType<typeof IconHome>;
 }[] = [
-  { id: "home", label: "Home", icon: IconHome },
-  { id: "games", label: "Games", icon: IconGames },
+  { id: "games", label: "Home", icon: IconHome },
+  { id: "home", label: "Activity", icon: IconActivity },
   { id: "leaderboards", label: "Leaderboards", icon: IconBoards },
   { id: "notifications", label: "Notifications", icon: IconBell },
   { id: "challenges", label: "Challenge", icon: IconChallenge },

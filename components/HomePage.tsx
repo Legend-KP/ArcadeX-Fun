@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Game } from "@/types";
 import GameCard from "@/components/GameCard";
 import LoadingScreen from "@/components/LoadingScreen";
-import AppBottomBar from "@/components/social/AppBottomBar";
 import GamesFriendsRail from "@/components/social/GamesFriendsRail";
 import HomeAside, { LeaderboardsPanel } from "@/components/social/HomeAside";
 import HomeFeed from "@/components/social/HomeFeed";
@@ -261,16 +260,6 @@ function HomePageInner() {
           )}
           {section === "games" && <GamesFriendsRail games={games} />}
         </div>
-        <AppBottomBar
-          active={
-            section === "home"
-              ? "activity"
-              : section === "challenges" || section === "notifications"
-                ? "challenges"
-                : "play"
-          }
-          onSelect={(tab) => setSection(tab === "activity" ? "home" : tab === "challenges" ? "challenges" : "games")}
-        />
       </div>
     </div>
   );

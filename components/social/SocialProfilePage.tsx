@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import GameCard from "@/components/GameCard";
+import { usePlayerProfile } from "@/components/PlayerProfileProvider";
 import WebHeader from "@/components/WebHeader";
 import SocialSidebar from "@/components/social/SocialSidebar";
 import PostComposer from "@/components/social/PostComposer";
@@ -13,11 +14,17 @@ import {
   socialIdentity,
 } from "@/components/farcaster/social-me";
 import { getGameProgress } from "@/lib/game-progress-client";
+import { truncateAddress } from "@/lib/player-identity";
 import type { Game } from "@/types";
 
 export default function SocialProfilePage() {
   const router = useRouter();
   const { me, loading, ready } = useSocialMe();
+  const { isAuthenticated, walletAddress, openConnect } = usePlayerProfile();
+  const walletLabel =
+    isAuthenticated && walletAddress
+      ? truncateAddress(walletAddress)
+      : "Connect Wallet";
   const [search, setSearch] = useState("");
   const [games, setGames] = useState<Game[]>([]);
   const [playCounts, setPlayCounts] = useState<Record<string, number>>({});
@@ -103,7 +110,15 @@ export default function SocialProfilePage() {
               }
             }}
             onSelect={(section) => {
-              router.push(section === "home" ? "/" : `/?section=${section}`);
+              if (section === "games") {
+                router.push("/");
+                return;
+              }
+              if (section === "home") {
+                router.push("/?section=activity");
+                return;
+              }
+              router.push(`/?section=${section}`);
             }}
           />
           <div className="soc-main">
@@ -133,6 +148,13 @@ export default function SocialProfilePage() {
                     </span>
                   </p>
                 )}
+                <button
+                  type="button"
+                  className="connect-btn connect-btn--wallet soc-profile__wallet"
+                  onClick={() => openConnect()}
+                >
+                  {walletLabel}
+                </button>
               </div>
             </header>
 

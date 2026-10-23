@@ -5114,6 +5114,10 @@ a { color: inherit; text-decoration: none; }
   font-weight: 800;
 }
 
+.soc-profile__wallet {
+  margin-top: 12px;
+}
+
 .soc-profile__photo,
 .soc-profile__photo img {
   width: 72px;
@@ -5163,42 +5167,6 @@ a { color: inherit; text-decoration: none; }
 
 .home-shell--board {
   max-width: 1360px;
-  padding-bottom: 84px;
-}
-
-.app-bottom-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 40;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
-  background: rgba(248, 251, 255, 0.96);
-  border-top: 1px solid var(--border, #e5e7eb);
-  backdrop-filter: blur(12px);
-}
-
-.app-bottom-bar a,
-.app-bottom-bar button {
-  border: none;
-  background: transparent;
-  border-radius: 12px;
-  padding: 10px 4px;
-  color: var(--muted, #6b7280);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 800;
-  text-align: center;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.app-bottom-bar .is-on {
-  color: var(--text, #1a1a2e);
-  background: #fff;
 }
 
 .challenge-friend {
