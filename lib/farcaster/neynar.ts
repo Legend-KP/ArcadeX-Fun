@@ -100,6 +100,16 @@ export async function fetchNeynarUsersByFids(
   return data.users ?? [];
 }
 
+export async function searchNeynarUsers(query: string): Promise<NeynarUser[]> {
+  const q = query.trim().replace(/^@/, "").slice(0, 40);
+  if (q.length < 2) return [];
+  const data = await neynarFetch<{
+    result?: { users?: NeynarUser[] };
+    users?: NeynarUser[];
+  }>(`/farcaster/user/search?q=${encodeURIComponent(q)}&limit=5`);
+  return data.result?.users ?? data.users ?? [];
+}
+
 export async function fetchNeynarUserByFid(
   fid: number
 ): Promise<NeynarUser | null> {

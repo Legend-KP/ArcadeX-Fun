@@ -9,6 +9,7 @@ import GamesFriendsRail from "@/components/social/GamesFriendsRail";
 import HomeAside, { LeaderboardsPanel } from "@/components/social/HomeAside";
 import HomeFeed from "@/components/social/HomeFeed";
 import NotificationsPanel from "@/components/social/NotificationsPanel";
+import ProfileSearchResults from "@/components/social/ProfileSearchResults";
 import SocialSidebar, {
   type SocialSection,
 } from "@/components/social/SocialSidebar";
@@ -176,6 +177,7 @@ function HomePageInner() {
             onSearchChange={setSearch}
           />
           <div className="board__main">
+            <ProfileSearchResults query={search} />
             {section === "home" && (
               <HomeFeed
                 games={games}

@@ -109,6 +109,45 @@ export async function setUsernameSkipped(
     .run();
 }
 
+export type ProfileSearchRow = {
+  playerId: string;
+  fid?: number;
+  username?: string;
+  displayName?: string;
+  fname?: string;
+  pfpUrl?: string;
+};
+
+export async function searchSocialProfiles(
+  query: string,
+  limit = 8
+): Promise<ProfileSearchRow[]> {
+  const q = query.trim().replace(/^@/, "").slice(0, 40);
+  if (!q) return [];
+  const needle = `%${q.replace(/[%_\\]/g, "")}%`;
+  const db = await requireSocialDb();
+  const result = await db
+    .prepare(
+      `SELECT player_id, fid, username, display_name, fname, pfp_url
+       FROM profiles
+       WHERE username LIKE ? COLLATE NOCASE
+          OR display_name LIKE ? COLLATE NOCASE
+          OR fname LIKE ? COLLATE NOCASE
+          OR CAST(fid AS TEXT) = ?
+       LIMIT ?`
+    )
+    .bind(needle, needle, needle, q, limit)
+    .all<ProfileRow>();
+  return (result.results ?? []).map((row) => ({
+    playerId: row.player_id,
+    fid: row.fid ?? undefined,
+    username: row.username ?? undefined,
+    displayName: row.display_name ?? undefined,
+    fname: row.fname ?? undefined,
+    pfpUrl: row.pfp_url ?? undefined,
+  }));
+}
+
 export async function fetchSocialProfileByUsername(
   username: string
 ): Promise<SocialProfile | null> {
