@@ -6,6 +6,7 @@ import { Game } from "@/types";
 import GameCard from "@/components/GameCard";
 import LoadingScreen from "@/components/LoadingScreen";
 import AppBottomBar from "@/components/social/AppBottomBar";
+import GamesFriendsRail from "@/components/social/GamesFriendsRail";
 import HomeAside, { LeaderboardsPanel } from "@/components/social/HomeAside";
 import HomeFeed from "@/components/social/HomeFeed";
 import NotificationsPanel from "@/components/social/NotificationsPanel";
@@ -258,6 +259,7 @@ function HomePageInner() {
               onOpenLeaderboards={() => setSection("leaderboards")}
             />
           )}
+          {section === "games" && <GamesFriendsRail games={games} />}
         </div>
         <AppBottomBar
           active={

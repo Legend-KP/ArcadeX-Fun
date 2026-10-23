@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
+import ChallengeFriendControl from "@/components/social/ChallengeFriendControl";
 import { gameHasContestLiveForSession } from "@/lib/contest-chains";
 import {
   gameAssetCandidates,
@@ -139,6 +140,14 @@ export default function GameCard({ game, playCount = 0 }: GameCardProps) {
     <div className="thumb-placeholder">🎮</div>
   );
 
+  const frameClass = [
+    "game-card",
+    !isLive && "game-card--coming-soon",
+    contestLive && "game-card--contest-live",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   const cardBody = (
     <>
       <div className="thumb-wrap" ref={thumbRef}>
@@ -177,34 +186,29 @@ export default function GameCard({ game, playCount = 0 }: GameCardProps) {
     </>
   );
 
+  const challenge = (
+    <ChallengeFriendControl
+      gameId={game.id}
+      gameName={game.name}
+      trigger="card"
+    />
+  );
+
   if (!isLive) {
     return (
-      <div
-        className={[
-          "game-card",
-          "game-card--coming-soon",
-          contestLive && "game-card--contest-live",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        aria-label={`${game.name} — coming soon`}
-      >
+      <div className={frameClass} aria-label={`${game.name} — coming soon`}>
         {cardBody}
+        {challenge}
       </div>
     );
   }
 
   return (
-    <Link
-      href={`/game/${game.id}`}
-      className={[
-        "game-card",
-        contestLive && "game-card--contest-live",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    >
-      {cardBody}
-    </Link>
+    <div className={frameClass}>
+      <Link href={`/game/${game.id}`} className="game-card__open">
+        {cardBody}
+      </Link>
+      {challenge}
+    </div>
   );
 }

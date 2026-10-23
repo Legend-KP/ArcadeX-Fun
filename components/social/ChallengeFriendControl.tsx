@@ -6,7 +6,7 @@ import { sendChallenge } from "@/lib/social-challenges-client";
 type Props = {
   gameId: string;
   gameName: string;
-  trigger?: "bar" | "menu";
+  trigger?: "bar" | "menu" | "card";
 };
 
 export default function ChallengeFriendControl({
@@ -48,7 +48,9 @@ export default function ChallengeFriendControl({
         className={
           trigger === "menu"
             ? "game-menu-btn game-menu-btn--challenge"
-            : "challenge-friend__trigger"
+            : trigger === "card"
+              ? "game-card__challenge"
+              : "challenge-friend__trigger"
         }
         aria-expanded={open}
         onClick={() => {
@@ -56,7 +58,7 @@ export default function ChallengeFriendControl({
           setSent(false);
         }}
       >
-        {trigger === "menu" ? "Challenge" : "Challenge a friend"}
+        {trigger === "bar" ? "Challenge a friend" : "Challenge"}
       </button>
       {open && (
         <form className="challenge-friend__panel" onSubmit={(event) => void submit(event)}>

@@ -89,6 +89,17 @@ export async function fetchNeynarFollowingFids(fid: number): Promise<number[]> {
   return [...ids];
 }
 
+export async function fetchNeynarUsersByFids(
+  fids: number[]
+): Promise<NeynarUser[]> {
+  const unique = [...new Set(fids.filter((fid) => fid > 0))].slice(0, 100);
+  if (unique.length === 0) return [];
+  const data = await neynarFetch<{ users?: NeynarUser[] }>(
+    `/farcaster/user/bulk?fids=${unique.join(",")}`
+  );
+  return data.users ?? [];
+}
+
 export async function fetchNeynarUserByFid(
   fid: number
 ): Promise<NeynarUser | null> {
