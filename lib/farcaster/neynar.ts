@@ -6,6 +6,13 @@ export type NeynarUser = {
   display_name?: string;
   pfp_url?: string;
   custody_address?: string;
+  follower_count?: number;
+  following_count?: number;
+  profile?: {
+    bio?: {
+      text?: string;
+    };
+  };
   verified_addresses?: {
     eth_addresses?: string[];
     sol_addresses?: string[];
@@ -67,6 +74,19 @@ async function neynarFetch<T>(
   }
 
   return json as T;
+}
+
+export async function fetchNeynarFollowingFids(fid: number): Promise<number[]> {
+  if (!Number.isFinite(fid) || fid <= 0) return [];
+  const data = await neynarFetch<{
+    users?: Array<{ fid?: number; user?: { fid?: number } }>;
+  }>(`/farcaster/following?fid=${fid}&limit=100`);
+  const ids = new Set<number>();
+  for (const row of data.users ?? []) {
+    const id = row.user?.fid ?? row.fid;
+    if (typeof id === "number" && id > 0) ids.add(id);
+  }
+  return [...ids];
 }
 
 export async function fetchNeynarUserByFid(

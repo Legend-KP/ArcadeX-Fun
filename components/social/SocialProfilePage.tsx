@@ -8,7 +8,10 @@ import SocialSidebar from "@/components/social/SocialSidebar";
 import PostComposer from "@/components/social/PostComposer";
 import ScoreCastFeed from "@/components/social/ScoreCastFeed";
 import { useSocialMe } from "@/components/social/useSocialMe";
-import { socialIdentity } from "@/components/farcaster/social-me";
+import {
+  formatSocialCount,
+  socialIdentity,
+} from "@/components/farcaster/social-me";
 import { getGameProgress } from "@/lib/game-progress-client";
 import type { Game } from "@/types";
 
@@ -115,7 +118,21 @@ export default function SocialProfilePage() {
               </div>
               <div>
                 <h1>{identity.displayName}</h1>
-                {handle && <p>{handle}</p>}
+                {handle && <p className="soc-profile__handle">{handle}</p>}
+                {identity.bio && <p className="soc-profile__bio">{identity.bio}</p>}
+                {(identity.followerCount != null ||
+                  identity.followingCount != null) && (
+                  <p className="soc-profile__stats">
+                    <span>
+                      <strong>{formatSocialCount(identity.followingCount)}</strong>
+                      Following
+                    </span>
+                    <span>
+                      <strong>{formatSocialCount(identity.followerCount)}</strong>
+                      Followers
+                    </span>
+                  </p>
+                )}
               </div>
             </header>
 

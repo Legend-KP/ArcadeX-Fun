@@ -15,6 +15,13 @@ export type SocialMe = {
     username?: string;
     display_name?: string;
     pfp_url?: string;
+    follower_count?: number;
+    following_count?: number;
+    profile?: {
+      bio?: {
+        text?: string;
+      };
+    };
   } | null;
   error?: string;
 };
@@ -37,6 +44,8 @@ export function socialIdentity(me: SocialMe) {
     profile?.username ||
     "Player";
 
+  const bio = me.neynar?.profile?.bio?.text?.trim() || null;
+
   return {
     displayName,
     fname: profile?.fname || me.neynar?.username || null,
@@ -44,5 +53,22 @@ export function socialIdentity(me: SocialMe) {
     pfpUrl: profile?.pfpUrl || me.neynar?.pfp_url || null,
     fid: me.fid ?? profile?.fid ?? null,
     playerId: me.playerId || profile?.playerId || null,
+    bio,
+    followerCount:
+      typeof me.neynar?.follower_count === "number"
+        ? me.neynar.follower_count
+        : null,
+    followingCount:
+      typeof me.neynar?.following_count === "number"
+        ? me.neynar.following_count
+        : null,
   };
+}
+
+export function formatSocialCount(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "0";
+  return new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
 }

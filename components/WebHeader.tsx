@@ -36,7 +36,9 @@ export default function WebHeader({
 
   return (
     <header className="web-header">
-      <div className="web-header__inner">
+      <div
+        className={`web-header__inner${post ? "" : " web-header__inner--plain"}`}
+      >
         <div className="web-header__brand">
           <Logo variant="header" />
         </div>

@@ -12,6 +12,7 @@ import {
   hasTutorial,
   markTutorialSeen,
 } from "@/lib/game-tutorial";
+import ChallengeFriendControl from "@/components/social/ChallengeFriendControl";
 import { Game, gameHasLeaderboard } from "@/types";
 
 interface GameMenuProps {
@@ -131,6 +132,12 @@ export default function GameMenu({
               />
             </svg>
           </button>
+          <div className="game-menu-topbar__right">
+            <ChallengeFriendControl
+              gameId={game.id}
+              gameName={game.name}
+              trigger="bar"
+            />
           {showTutorialButton && (
             <button
               type="button"
@@ -161,6 +168,7 @@ export default function GameMenu({
               </svg>
             </button>
           )}
+          </div>
         </div>
 
         <div className="game-menu-stack">
@@ -218,6 +226,11 @@ export default function GameMenu({
                 Leaderboard
               </button>
             )}
+            <ChallengeFriendControl
+              gameId={game.id}
+              gameName={game.name}
+              trigger="menu"
+            />
           </div>
         </div>
       </div>

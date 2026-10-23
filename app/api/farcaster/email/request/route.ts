@@ -3,6 +3,7 @@ import { createHash, randomInt, randomUUID } from "crypto";
 import { readSessionFromCookies } from "@/lib/auth-session";
 import { requireSocialDb, upsertSocialProfile } from "@/lib/farcaster/social-db";
 import { assertTurnstile } from "@/lib/farcaster/turnstile";
+import { sendResendEmail } from "@/lib/resend";
 import {
   checkRateLimit,
   getClientIp,
@@ -51,8 +52,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const apiKey = process.env.RESEND_API_KEY?.trim();
-    if (!apiKey) {
+    if (!process.env.RESEND_API_KEY?.trim()) {
       return NextResponse.json(
         { error: "RESEND_API_KEY is not configured." },
         { status: 500 }
@@ -88,27 +88,11 @@ export async function POST(request: Request) {
       chainId: session.chainId ?? 10,
     });
 
-    const from =
-      process.env.RESEND_FROM_EMAIL?.trim() || "ArcadeX <onboarding@resend.dev>";
-
-    const sendRes = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from,
-        to: [email],
-        subject: "Your ArcadeX verification code",
-        text: `Your ArcadeX code is ${code}. It expires in 10 minutes.`,
-      }),
+    await sendResendEmail({
+      to: email,
+      subject: "Your ArcadeX verification code",
+      text: `Your ArcadeX code is ${code}. It expires in 10 minutes.`,
     });
-
-    if (!sendRes.ok) {
-      const errText = await sendRes.text();
-      throw new Error(`Resend failed: ${errText.slice(0, 200)}`);
-    }
 
     return NextResponse.json({ ok: true, expiresInSeconds: 600 });
   } catch (err) {

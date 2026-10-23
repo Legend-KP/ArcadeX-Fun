@@ -4,9 +4,9 @@ import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import ExitGameModal from "@/components/ExitGameModal";
 import LoadingScreen from "@/components/LoadingScreen";
-import ScoreSubmitModal from "@/components/ScoreSubmitModal";
+import ChallengeFriendControl from "@/components/social/ChallengeFriendControl";
 import { sendToUnity, UnityMessage } from "@/lib/bridge";
-import { getLeaderboard } from "@/lib/leaderboard-client";
+import { getLeaderboard, savePersonalBest } from "@/lib/leaderboard-client";
 import { getGameProgress, saveGameProgress } from "@/lib/game-progress-client";
 import { buildGameIframeUrl, getShellOrigin } from "@/lib/game-iframe-url";
 import { usePlayerProfile } from "@/components/PlayerProfileProvider";
@@ -41,6 +41,8 @@ export default function GameClient({
   const [exitOpen, setExitOpen] = useState(false);
   const [gameReady, setGameReady] = useState(false);
   const [scoreSubmitOpen, setScoreSubmitOpen] = useState(false);
+  const [submittingScore, setSubmittingScore] = useState(false);
+  const [scoreError, setScoreError] = useState("");
   const [pendingScore, setPendingScore] = useState<{
     score: number;
     name: string;
@@ -414,7 +416,7 @@ export default function GameClient({
           <img src="/home-button.png" alt="" className="game-home-btn-icon" />
         </button>
         <span className="game-title-bar">{game.name}</span>
-        <div className="game-topbar-spacer" aria-hidden="true" />
+        <ChallengeFriendControl gameId={game.id} gameName={game.name} />
       </div>
 
       <div className="iframe-wrap">
@@ -440,35 +442,60 @@ export default function GameClient({
         onPlayMore={() => router.push("/")}
       />
 
-      {pendingScore && (
-        <ScoreSubmitModal
-          open={scoreSubmitOpen}
-          gameId={game.id}
-          score={pendingScore.score}
-          playerName={pendingScore.name}
-          walletAddress={
-            pendingScore.walletAddress || resolvedWallet || ""
-          }
-          playSessionId={playSessionId}
-          contestLive={contestLive}
-          onClose={() => {
-            setScoreSubmitOpen(false);
-            setPendingScore(null);
-            sendToUnity(iframeRef, "OnScoreSubmitted", {
-              success: false,
-              error: "Score submission cancelled.",
-            });
-          }}
-          onSuccess={(submittedBest) => {
-            setScoreSubmitOpen(false);
-            setPendingScore(null);
-            sendToUnity(iframeRef, "OnScoreSubmitted", {
-              success: true,
-              highScore: submittedBest,
-            });
-            onScoreSubmitted?.();
-          }}
-        />
+      {scoreSubmitOpen && pendingScore && (
+        <div className="plain-score" role="dialog" aria-label="Submit score">
+          <p className="plain-score__value">{pendingScore.score.toLocaleString()}</p>
+          <p className="plain-score__label">Your score</p>
+          <button
+            type="button"
+            className="plain-score__submit"
+            disabled={submittingScore}
+            onClick={() => {
+              const score = pendingScore;
+              setSubmittingScore(true);
+              setScoreError("");
+              void savePersonalBest(game.id, {
+                score: score.score,
+                name: score.name,
+                walletAddress: score.walletAddress || resolvedWallet || undefined,
+                playerId: resolvedPlayerId || undefined,
+              })
+                .then((best) => {
+                  setScoreSubmitOpen(false);
+                  setPendingScore(null);
+                  sendToUnity(iframeRef, "OnScoreSubmitted", {
+                    success: true,
+                    highScore: best,
+                  });
+                  onScoreSubmitted?.();
+                })
+                .catch((err: unknown) => {
+                  setScoreError(
+                    err instanceof Error ? err.message : "Could not submit score."
+                  );
+                })
+                .finally(() => setSubmittingScore(false));
+            }}
+          >
+            {submittingScore ? "Submitting…" : "Submit Score"}
+          </button>
+          <ChallengeFriendControl gameId={game.id} gameName={game.name} />
+          {scoreError && <p className="plain-score__err">{scoreError}</p>}
+          <button
+            type="button"
+            className="plain-score__later"
+            onClick={() => {
+              setScoreSubmitOpen(false);
+              setPendingScore(null);
+              sendToUnity(iframeRef, "OnScoreSubmitted", {
+                success: false,
+                error: "Score submission cancelled.",
+              });
+            }}
+          >
+            Not now
+          </button>
+        </div>
       )}
     </div>
   );

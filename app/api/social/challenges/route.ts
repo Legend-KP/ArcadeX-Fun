@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readSessionFromCookies } from "@/lib/auth-session";
 import { fetchSocialProfileByPlayerId } from "@/lib/farcaster/social-db";
+import { sendResendEmail } from "@/lib/resend";
 import {
   checkRateLimit,
   getClientIp,
@@ -108,6 +109,36 @@ export async function POST(request: Request) {
       gameName: gameName.slice(0, 80),
       expiryHours,
     });
+
+    const invitedEmail = target.email?.trim();
+    if (invitedEmail && target.emailVerifiedAt) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+      const challengesUrl = appUrl
+        ? `${appUrl.replace(/\/$/, "")}/?section=challenges`
+        : "";
+      const who = profile?.username
+        ? `${challengerName} (@${profile.username})`
+        : challengerName;
+      try {
+        await sendResendEmail({
+          to: invitedEmail,
+          subject: `${challengerName} challenged you to ${challenge.gameName}`,
+          text: [
+            `${who} challenged you to ${challenge.gameName} on ArcadeX.`,
+            `After you accept, you have ${challenge.expiryHours} hours to finish.`,
+            challengesUrl
+              ? `Open the challenge: ${challengesUrl}`
+              : "Open ArcadeX and check Challenges.",
+          ].join("\n\n"),
+        });
+      } catch (err) {
+        console.error(
+          "Challenge invite email failed:",
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
+
     return NextResponse.json({ challenge });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not send the challenge.";

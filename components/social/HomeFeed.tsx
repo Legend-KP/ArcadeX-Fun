@@ -31,6 +31,8 @@ type Props = {
   games: Game[];
   search: string;
   posted: TextPost | null;
+  viewerFid?: number | null;
+  followingFids?: number[] | null;
 };
 
 function timeAgo(timestamp: number): string {
@@ -64,7 +66,13 @@ function Avatar({ name, src }: { name: string; src?: string | null }) {
   return <span className="board-avatar">{name.charAt(0).toUpperCase()}</span>;
 }
 
-export default function HomeFeed({ games, search, posted }: Props) {
+export default function HomeFeed({
+  games,
+  search,
+  posted,
+  viewerFid = null,
+  followingFids = null,
+}: Props) {
   const [tab, setTab] = useState<FeedTab>("all");
   const [posts, setPosts] = useState<TextPost[] | null>(null);
   const [casts, setCasts] = useState<ScoreCast[] | null>(null);
@@ -121,9 +129,18 @@ export default function HomeFeed({ games, search, posted }: Props) {
       createdAt: cast.createdAt,
       cast,
     }));
+    const followed = followingFids ? new Set(followingFids) : null;
     return [...textItems, ...scoreItems]
       .sort((a, b) => b.createdAt - a.createdAt)
       .filter((item) => {
+        if (
+          followed &&
+          item.kind === "text" &&
+          item.post.fid !== viewerFid &&
+          !followed.has(item.post.fid)
+        ) {
+          return false;
+        }
         if (!query) return true;
         if (item.kind === "text") {
           return (
@@ -136,7 +153,7 @@ export default function HomeFeed({ games, search, posted }: Props) {
           item.cast.gameName.toLowerCase().includes(query)
         );
       });
-  }, [posts, casts, query]);
+  }, [posts, casts, query, followingFids, viewerFid]);
 
   const reactionIds = items
     .map((item) => (item.kind === "text" ? item.post.id : item.cast.id))
@@ -182,7 +199,9 @@ export default function HomeFeed({ games, search, posted }: Props) {
             ARCADE
           </h1>
           <p>Play · Share · Compete · Earn</p>
-          <p className="board-hero__tag">Good games, better friends.</p>
+          <p className="board-hero__tag">
+            People you follow on Farcaster, plus ArcadeX scores.
+          </p>
         </div>
       </section>
 

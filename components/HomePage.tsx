@@ -5,31 +5,32 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Game } from "@/types";
 import GameCard from "@/components/GameCard";
 import LoadingScreen from "@/components/LoadingScreen";
+import AppBottomBar from "@/components/social/AppBottomBar";
 import HomeAside, { LeaderboardsPanel } from "@/components/social/HomeAside";
 import HomeFeed from "@/components/social/HomeFeed";
-import PostComposer from "@/components/social/PostComposer";
 import NotificationsPanel from "@/components/social/NotificationsPanel";
 import SocialSidebar, {
   type SocialSection,
 } from "@/components/social/SocialSidebar";
 import { socialIdentity } from "@/components/farcaster/social-me";
 import { useSocialMe } from "@/components/social/useSocialMe";
-import type { TextPost } from "@/lib/social-board";
 import WebHeader from "@/components/WebHeader";
 
 type FilterTab = "all" | "continue" | "new";
 type HomeSection = Exclude<SocialSection, "profile">;
 
 function sectionFromQuery(value: string | null): HomeSection {
+  if (value === "home" || value === "activity") return "home";
   if (
     value === "games" ||
+    value === "play" ||
     value === "notifications" ||
     value === "challenges" ||
     value === "leaderboards"
   ) {
-    return value;
+    return value === "play" ? "games" : value;
   }
-  return "home";
+  return "games";
 }
 
 export default function HomePage() {
@@ -53,7 +54,7 @@ function HomePageInner() {
     sectionFromQuery(params.get("section"))
   );
   const [filter, setFilter] = useState<FilterTab>("all");
-  const [latestPost, setLatestPost] = useState<TextPost | null>(null);
+  const [followingFids, setFollowingFids] = useState<number[] | null>(null);
 
   useEffect(() => {
     if (!socialLoading && !ready) router.replace("/social");
@@ -112,6 +113,25 @@ function HomePageInner() {
     };
   }, []);
 
+  useEffect(() => {
+    if (section !== "home" || !me?.fid) return;
+    let cancelled = false;
+    fetch("/api/farcaster/following", {
+      cache: "no-store",
+      credentials: "same-origin",
+    })
+      .then(async (res) => {
+        const data = (await res.json()) as { fids?: number[] };
+        if (!cancelled && res.ok) setFollowingFids(data.fids ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setFollowingFids(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [section, me?.fid]);
+
   const filteredGames = useMemo(() => {
     let list = [...games];
 
@@ -143,7 +163,6 @@ function HomePageInner() {
         <WebHeader
           profileName={identity.displayName}
           profileImage={identity.pfpUrl}
-          post={<PostComposer me={me} onPosted={setLatestPost} />}
         />
 
         <div className="board">
@@ -158,7 +177,13 @@ function HomePageInner() {
           />
           <div className="board__main">
             {section === "home" && (
-              <HomeFeed games={games} search={search} posted={latestPost} />
+              <HomeFeed
+                games={games}
+                search={search}
+                posted={null}
+                viewerFid={me.fid ?? null}
+                followingFids={followingFids}
+              />
             )}
 
             {(section === "notifications" || section === "challenges") && (
@@ -234,6 +259,16 @@ function HomePageInner() {
             />
           )}
         </div>
+        <AppBottomBar
+          active={
+            section === "home"
+              ? "activity"
+              : section === "challenges" || section === "notifications"
+                ? "challenges"
+                : "play"
+          }
+          onSelect={(tab) => setSection(tab === "activity" ? "home" : tab === "challenges" ? "challenges" : "games")}
+        />
       </div>
     </div>
   );
