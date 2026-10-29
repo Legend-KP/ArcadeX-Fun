@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import PlayerSuggestInput from "@/components/social/PlayerSuggestInput";
 import { socialIdentity, type SocialMe } from "@/components/farcaster/social-me";
 import {
   challengeDeadline,
@@ -152,7 +153,7 @@ export default function NotificationsPanel({
     <section className="soc-notes" aria-label="Notifications">
       <h1>{title}</h1>
       <p className="soc-note">
-        Send a challenge with the other player&apos;s username or FID. They see it here
+        Send a challenge by name or username. Pick them from the list. They see it here
         when they sign in.
       </p>
       {error && <p className="board-error">{error}</p>}
@@ -261,14 +262,12 @@ export default function NotificationsPanel({
             });
           }}
         >
-          <label>
-            Their FID or username
-            <input
-              value={targetId}
-              onChange={(event) => setTargetId(event.target.value)}
-              placeholder="kushal or 1234"
-            />
-          </label>
+          <PlayerSuggestInput
+            label="Their name or username"
+            value={targetId}
+            onChange={setTargetId}
+            placeholder="Start typing a name"
+          />
           <label>
             Game
             <select value={gameId} onChange={(event) => setGameId(event.target.value)}>

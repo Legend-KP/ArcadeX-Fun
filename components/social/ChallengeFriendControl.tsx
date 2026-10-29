@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import PlayerSuggestInput from "@/components/social/PlayerSuggestInput";
 import { sendChallenge } from "@/lib/social-challenges-client";
 
 type Props = {
@@ -63,14 +64,12 @@ export default function ChallengeFriendControl({
       {open && (
         <form className="challenge-friend__panel" onSubmit={(event) => void submit(event)}>
           <p>Challenge a friend to this game</p>
-          <label>
-            Their username or FID
-            <input
-              value={target}
-              onChange={(event) => setTarget(event.target.value)}
-              placeholder="kushal or 1234"
-            />
-          </label>
+          <PlayerSuggestInput
+            label="Their name or username"
+            value={target}
+            onChange={setTarget}
+            placeholder="Start typing a name"
+          />
           <div className="challenge-friend__hours">
             <label>
               <input

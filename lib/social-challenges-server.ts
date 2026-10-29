@@ -2,6 +2,7 @@ import {
   fetchSocialProfileByFid,
   fetchSocialProfileByUsername,
   requireSocialDb,
+  searchSocialProfiles,
 } from "@/lib/farcaster/social-db";
 import { ensureSocialBoardSchema } from "@/lib/social-board";
 import type { SocialProfile } from "@/types";
@@ -68,7 +69,20 @@ export async function findChallengeTarget(
     const byFid = await fetchSocialProfileByFid(Number(target));
     if (byFid?.fid) return byFid;
   }
-  return fetchSocialProfileByUsername(target);
+  const byUsername = await fetchSocialProfileByUsername(target);
+  if (byUsername?.fid) return byUsername;
+
+  const matches = await searchSocialProfiles(target, 8).catch(() => []);
+  const needle = target.toLowerCase();
+  const exact = matches.filter((row) => {
+    const name = row.displayName?.trim().toLowerCase();
+    const fname = row.fname?.trim().toLowerCase();
+    const username = row.username?.trim().toLowerCase();
+    return name === needle || fname === needle || username === needle;
+  });
+  const pick = exact.length === 1 ? exact[0] : matches.length === 1 ? matches[0] : null;
+  if (!pick?.fid) return null;
+  return fetchSocialProfileByFid(pick.fid);
 }
 
 export async function listChallengesForFid(fid: number): Promise<SocialChallenge[]> {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { readSessionFromCookies } from "@/lib/auth-session";
 import { profileHref } from "@/lib/farcaster/public-profile";
 import {
   fetchNeynarUserByFid,
@@ -8,6 +9,7 @@ import {
   fetchSocialProfileByFid,
   searchSocialProfiles,
 } from "@/lib/farcaster/social-db";
+import { suggestPlayers } from "@/lib/player-suggest";
 import {
   checkRateLimit,
   getClientIp,
@@ -36,6 +38,8 @@ export async function GET(request: Request) {
   }
 
   try {
+    const session = await readSessionFromCookies();
+    const suggested = await suggestPlayers(q, session?.fid ?? null).catch(() => []);
     const [local, remote] = await Promise.all([
       searchSocialProfiles(q).catch(() => []),
       /^\d+$/.test(q)
@@ -52,6 +56,21 @@ export async function GET(request: Request) {
       if (seen.has(hit.href)) return;
       seen.add(hit.href);
       hits.push(hit);
+    }
+
+    for (const player of suggested) {
+      const href = profileHref({
+        username: player.handle?.replace(/^@/, ""),
+        fid: player.fid,
+      });
+      if (!href) continue;
+      add({
+        fid: player.fid,
+        name: player.name,
+        handle: player.handle,
+        pfpUrl: player.pfpUrl,
+        href,
+      });
     }
 
     for (const profile of local) {
