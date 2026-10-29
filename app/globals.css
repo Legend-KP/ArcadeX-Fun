@@ -6251,3 +6251,39 @@ a { color: inherit; text-decoration: none; }
     gap: 4px;
   }
 }
+
+.invite-banner,
+.invite-manager {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow);
+  margin-bottom: 16px;
+}
+
+.invite-banner h1,
+.invite-manager h2 {
+  font-family: var(--font-head);
+  margin: 0 0 8px;
+}
+
+.invite-banner p,
+.invite-manager p {
+  margin: 0 0 8px;
+}
+
+.invite-banner__badge {
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.invite-fresh code {
+  display: block;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f8fbff;
+  word-break: break-all;
+}

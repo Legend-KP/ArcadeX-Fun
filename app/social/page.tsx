@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import dynamic from "next/dynamic";
 
 const SocialShell = dynamic(
@@ -8,5 +9,9 @@ const SocialShell = dynamic(
 );
 
 export default function SocialPage() {
-  return <SocialShell />;
+  return (
+    <Suspense fallback={null}>
+      <SocialShell />
+    </Suspense>
+  );
 }

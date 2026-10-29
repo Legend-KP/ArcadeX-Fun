@@ -17,7 +17,8 @@ export type SocialSection =
   | "leaderboards"
   | "notifications"
   | "challenges"
-  | "profile";
+  | "profile"
+  | "circles";
 
 type Props = {
   active: SocialSection;
@@ -102,6 +103,15 @@ function IconChallenge() {
   );
 }
 
+function IconCircles() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden width="20" height="20">
+      <circle cx="8" cy="12" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="16" cy="12" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
 function IconProfile() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden width="20" height="20">
@@ -178,6 +188,14 @@ export default function SocialSidebar({
             </button>
           );
         })}
+        <Link
+          href="/circles"
+          className={active === "circles" ? "is-on" : undefined}
+          aria-current={active === "circles" ? "page" : undefined}
+        >
+          <IconCircles />
+          <span>Circles</span>
+        </Link>
         <Link
           href={profileHref}
           className={active === "profile" ? "is-on" : undefined}

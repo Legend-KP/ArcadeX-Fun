@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Logo from "@/components/Logo";
 import CreateFidPanel from "@/components/farcaster/CreateFidPanel";
 import EmailVerifyForm from "@/components/farcaster/EmailVerifyForm";
@@ -16,8 +16,22 @@ import {
 
 const STEPS = ["Account", "Email", "Username"] as const;
 
+function inviteReturnPath(value: string | null): string | null {
+  if (!value) return null;
+  let path = value;
+  try {
+    path = decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+  if (!/^\/invite\/[A-Za-z0-9_-]{22}$/.test(path)) return null;
+  return path;
+}
+
 export default function SocialShell() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = inviteReturnPath(searchParams.get("next"));
   const [me, setMe] = useState<SocialMe | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -70,13 +84,13 @@ export default function SocialShell() {
   const pfpUrl = profile?.pfpUrl || me?.neynar?.pfp_url;
 
   useEffect(() => {
-    if (!loading && profileReady) router.replace("/");
-  }, [loading, profileReady, router]);
+    if (!loading && profileReady) router.replace(returnTo ?? "/");
+  }, [loading, profileReady, returnTo, router]);
 
   if (!loading && profileReady) {
     return (
       <SocialChrome scene>
-        <p className="sx-muted sx-lead">Opening home…</p>
+        <p className="sx-muted sx-lead">Opening…</p>
       </SocialChrome>
     );
   }
