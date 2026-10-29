@@ -75,7 +75,7 @@ class FixTemplateOctalPlugin {
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(process.cwd()),
-  serverExternalPackages: ["jose"],
+  serverExternalPackages: ["jose", "@farcaster/core", "protobufjs"],
   experimental: {
     optimizePackageImports: ["viem", "wagmi", "@tanstack/react-query"],
   },

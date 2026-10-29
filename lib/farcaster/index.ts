@@ -34,3 +34,8 @@ export {
   setUsernameSkipped,
 } from "@/lib/farcaster/social-db";
 export { verifySiwfMessage } from "@/lib/farcaster/siwf";
+
+/**
+ * Cast publishing lives in lib/farcaster/signer/. It is not re-exported here
+ * so client bundles do not pull in @farcaster/core.
+ */

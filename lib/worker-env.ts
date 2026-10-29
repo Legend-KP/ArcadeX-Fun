@@ -44,6 +44,21 @@ export type ShuffleBudgetNamespace = {
   get(id: DurableObjectIdLike): ShuffleBudgetStub;
 };
 
+/** Wraps data keys only. The binding must not log the DEK or the signer seed. */
+export type FarcasterHsmBinding = {
+  wrap(input: {
+    keyName: string;
+    dekB64: string;
+    aad: string;
+  }): Promise<{ ivB64: string; wrappedDekB64: string }>;
+  unwrap(input: {
+    keyName: string;
+    ivB64: string;
+    wrappedDekB64: string;
+    aad: string;
+  }): Promise<{ dekB64: string }>;
+};
+
 export type D1DatabaseBinding = {
   prepare(query: string): {
     bind(...values: unknown[]): {
@@ -62,6 +77,13 @@ export type WorkerEnv = {
   SHUFFLE_BUDGET_DO?: ShuffleBudgetNamespace;
   /** Farcaster / social identity (profiles, usernames, email OTP). */
   ARCADEX_SOCIAL_DB?: D1DatabaseBinding;
+  /**
+   * Envelope ciphertext for Farcaster cast signers.
+   * Never point this at ARCADEX_SOCIAL_DB or RATE_LIMIT_KV.
+   */
+  FARCASTER_SIGNER_VAULT?: KvLike;
+  /** Optional HSM/KMS binding. Used only when FARCASTER_HSM_KEY_NAME is set. */
+  FARCASTER_HSM?: FarcasterHsmBinding;
 };
 
 export type WorkerExecutionContext = {

@@ -35,6 +35,14 @@ export function ensureSocialBoardSchema(): Promise<void> {
       } catch {
         // Column already exists.
       }
+      try {
+        await db
+          .prepare(`ALTER TABLE posts ADD COLUMN hub_hash TEXT`)
+          .bind()
+          .run();
+      } catch {
+        // Column already exists.
+      }
       await db
         .prepare(
           `CREATE TABLE IF NOT EXISTS fid_streaks (
@@ -142,6 +150,7 @@ export type TextPost = {
   pfpUrl: string | null;
   body: string;
   createdAt: number;
+  hubHash: string | null;
 };
 
 export type FidStreak = {
@@ -159,6 +168,7 @@ type PostRow = {
   pfp_url: string | null;
   body: string;
   created_at: number;
+  hub_hash: string | null;
 };
 
 type StreakRow = {
@@ -180,6 +190,7 @@ function toPost(row: PostRow): TextPost {
     pfpUrl: row.pfp_url,
     body: row.body,
     createdAt: row.created_at,
+    hubHash: row.hub_hash ?? null,
   };
 }
 
@@ -194,7 +205,7 @@ export async function listTextPosts(limit = 40): Promise<TextPost[]> {
   const db = await requireSocialDb();
   const result = await db
     .prepare(
-      `SELECT id, fid, author_name, author_handle, pfp_url, body, created_at
+      `SELECT id, fid, author_name, author_handle, pfp_url, body, created_at, hub_hash
        FROM posts
        ORDER BY created_at DESC
        LIMIT ?`
@@ -211,7 +222,7 @@ export async function getTextPost(id: string): Promise<TextPost | null> {
   const db = await requireSocialDb();
   const row = await db
     .prepare(
-      `SELECT id, fid, author_name, author_handle, pfp_url, body, created_at
+      `SELECT id, fid, author_name, author_handle, pfp_url, body, created_at, hub_hash
        FROM posts
        WHERE id = ?`
     )
@@ -238,6 +249,7 @@ export async function createTextPost(input: {
     pfpUrl: input.pfpUrl ?? null,
     body: input.body,
     createdAt: Date.now(),
+    hubHash: null,
   };
   await db
     .prepare(
@@ -256,6 +268,15 @@ export async function createTextPost(input: {
     )
     .run();
   return post;
+}
+
+export async function setPostHubHash(id: string, hubHash: string): Promise<void> {
+  await ensureSocialBoardSchema();
+  const db = await requireSocialDb();
+  await db
+    .prepare(`UPDATE posts SET hub_hash = ? WHERE id = ?`)
+    .bind(hubHash, id)
+    .run();
 }
 
 export async function readFidStreak(fid: number): Promise<FidStreak> {

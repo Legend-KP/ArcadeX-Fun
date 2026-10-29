@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import DiscoverCircles from "@/components/social/DiscoverCircles";
 import { profileHref } from "@/lib/farcaster/public-profile";
 import { sendChallenge } from "@/lib/social-challenges-client";
 import type { RailActivity, RailFriend } from "@/lib/friends-rail";
@@ -39,7 +40,6 @@ export default function GamesFriendsRail({ games }: Props) {
   const [error, setError] = useState("");
   const [busyKey, setBusyKey] = useState("");
   const [note, setNote] = useState("");
-  const [promptIndex, setPromptIndex] = useState(0);
 
   const fallbackGame = useMemo(
     () => games.find((game) => game.live !== false) ?? games[0] ?? null,
@@ -66,19 +66,6 @@ export default function GamesFriendsRail({ games }: Props) {
       cancelled = true;
     };
   }, []);
-
-  const quiet = rail.online.length === 0;
-  const suggestions = rail.suggestions;
-
-  useEffect(() => {
-    if (!quiet || suggestions.length < 2) return;
-    const timer = window.setInterval(() => {
-      setPromptIndex((index) => (index + 1) % suggestions.length);
-    }, 5000);
-    return () => window.clearInterval(timer);
-  }, [quiet, suggestions.length]);
-
-  const prompt = suggestions[promptIndex % Math.max(suggestions.length, 1)] ?? null;
 
   async function challenge(friend: RailFriend, game: { id: string; name: string } | null) {
     if (!game) return;
@@ -129,6 +116,8 @@ export default function GamesFriendsRail({ games }: Props) {
         )}
       </section>
 
+      <DiscoverCircles />
+
       <section className="board-card">
         <header>
           <h2>Recent games</h2>
@@ -173,40 +162,6 @@ export default function GamesFriendsRail({ games }: Props) {
           </ul>
         )}
       </section>
-
-      {quiet && (
-        <section className="board-card games-rail__prompt" aria-live="polite">
-          <header>
-            <h2>Play with someone</h2>
-          </header>
-          {prompt ? (
-            <>
-              <div className="games-rail__prompt-person">
-                <Link href={friendProfileHref(prompt)} className="games-rail__person">
-                  <span className="games-rail__avatar">
-                    <Avatar name={prompt.name} src={prompt.pfpUrl} />
-                  </span>
-                  <p>
-                    Challenge <strong>{prompt.name}</strong>
-                    {fallbackGame ? ` to ${fallbackGame.name}` : ""}.
-                  </p>
-                </Link>
-              </div>
-              <button
-                type="button"
-                disabled={!fallbackGame || busyKey === `${prompt.fid}:${fallbackGame?.id}`}
-                onClick={() => void challenge(prompt, fallbackGame)}
-              >
-                Challenge
-              </button>
-            </>
-          ) : (
-            <p className="board-empty">
-              When friends are quiet, suggestions to play will show up here.
-            </p>
-          )}
-        </section>
-      )}
 
       {error && <p className="board-error">{error}</p>}
       {note && <p className="board-note">{note}</p>}

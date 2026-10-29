@@ -30,6 +30,9 @@ export function getMissingRequiredSecrets(): string[] {
     missing.push("NEYNAR_API_KEY");
   }
 
+  // Cast signing is checked when a signer route runs, not at boot, so the
+  // rest of the app still starts. See lib/farcaster/signer/config.ts.
+
   // Fun prefers service-account OAuth for Firestore + RTDB.
   // Legacy FIREBASE_DATABASE_SECRET remains a fallback when no service account is set.
   const hasDbSecret = Boolean(process.env.FIREBASE_DATABASE_SECRET?.trim());

@@ -52,3 +52,16 @@ CREATE TABLE IF NOT EXISTS circle_invite_links (
 
 CREATE INDEX IF NOT EXISTS idx_circle_invite_links_circle
   ON circle_invite_links (circle_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS circle_join_requests (
+  id TEXT PRIMARY KEY NOT NULL,
+  circle_id TEXT NOT NULL,
+  fid INTEGER NOT NULL,
+  player_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_circle_join_requests_fid
+  ON circle_join_requests (fid, status);

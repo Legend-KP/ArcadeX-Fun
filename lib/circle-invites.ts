@@ -95,6 +95,17 @@ export function ensureCircleSchema(): Promise<void> {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_circle_invite_links_circle
          ON circle_invite_links (circle_id, created_at DESC)`,
+        `CREATE TABLE IF NOT EXISTS circle_join_requests (
+          id TEXT PRIMARY KEY NOT NULL,
+          circle_id TEXT NOT NULL,
+          fid INTEGER NOT NULL,
+          player_id TEXT NOT NULL,
+          status TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          resolved_at INTEGER
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_circle_join_requests_fid
+         ON circle_join_requests (fid, status)`,
       ];
       for (const sql of statements) {
         await db.prepare(sql).bind().run();
@@ -232,6 +243,118 @@ export async function listCirclesForFid(fid: number): Promise<CircleSummary[]> {
     .bind(fid)
     .all<CircleRow>();
   return (result.results ?? []).map(circleFrom);
+}
+
+export type DiscoverCircle = CircleSummary & {
+  joined: boolean;
+  requested: boolean;
+};
+
+export async function listDiscoverCircles(fid: number): Promise<DiscoverCircle[]> {
+  await ensureCircleSchema();
+  const db = await requireSocialDb();
+  const result = await db
+    .prepare("SELECT * FROM circles ORDER BY updated_at DESC LIMIT 6")
+    .bind()
+    .all<CircleRow>();
+  const rows = result.results ?? [];
+  if (rows.length === 0) return [];
+  const marks = rows.map(() => "?").join(", ");
+  const [members, requests] = await Promise.all([
+    db
+      .prepare(
+        `SELECT circle_id FROM circle_members
+         WHERE fid = ? AND circle_id IN (${marks})`
+      )
+      .bind(fid, ...rows.map((row) => row.id))
+      .all<{ circle_id: string }>(),
+    db
+      .prepare(
+        `SELECT circle_id FROM circle_join_requests
+         WHERE fid = ? AND status = 'pending' AND circle_id IN (${marks})`
+      )
+      .bind(fid, ...rows.map((row) => row.id))
+      .all<{ circle_id: string }>(),
+  ]);
+  const joined = new Set((members.results ?? []).map((row) => row.circle_id));
+  const requested = new Set((requests.results ?? []).map((row) => row.circle_id));
+  return rows.map((row) => ({
+    ...circleFrom(row),
+    joined: joined.has(row.id),
+    requested: requested.has(row.id),
+  }));
+}
+
+export async function joinPublicCircle(input: {
+  circleId: string;
+  fid: number;
+  playerId: string;
+}): Promise<"joined" | "already" | "private" | "missing"> {
+  await ensureCircleSchema();
+  const db = await requireSocialDb();
+  const circle = await db
+    .prepare("SELECT visibility FROM circles WHERE id = ?")
+    .bind(input.circleId)
+    .first<{ visibility: string }>();
+  if (!circle) return "missing";
+  if (circle.visibility !== "public") return "private";
+  const existing = await db
+    .prepare("SELECT fid FROM circle_members WHERE circle_id = ? AND fid = ?")
+    .bind(input.circleId, input.fid)
+    .first<{ fid: number }>();
+  if (existing) return "already";
+  const now = Date.now();
+  await db
+    .prepare(
+      `INSERT INTO circle_members (circle_id, fid, player_id, role, joined_at)
+       VALUES (?, ?, ?, 'member', ?)`
+    )
+    .bind(input.circleId, input.fid, input.playerId, now)
+    .run();
+  await db
+    .prepare(
+      `UPDATE circles SET member_count = member_count + 1, updated_at = ? WHERE id = ?`
+    )
+    .bind(now, input.circleId)
+    .run();
+  return "joined";
+}
+
+export async function requestCircleJoin(input: {
+  circleId: string;
+  fid: number;
+  playerId: string;
+}): Promise<"requested" | "already" | "member" | "public" | "missing"> {
+  await ensureCircleSchema();
+  const db = await requireSocialDb();
+  const circle = await db
+    .prepare("SELECT visibility FROM circles WHERE id = ?")
+    .bind(input.circleId)
+    .first<{ visibility: string }>();
+  if (!circle) return "missing";
+  if (circle.visibility !== "private") return "public";
+  const member = await db
+    .prepare("SELECT fid FROM circle_members WHERE circle_id = ? AND fid = ?")
+    .bind(input.circleId, input.fid)
+    .first<{ fid: number }>();
+  if (member) return "member";
+  const pending = await db
+    .prepare(
+      `SELECT id FROM circle_join_requests
+       WHERE circle_id = ? AND fid = ? AND status = 'pending'`
+    )
+    .bind(input.circleId, input.fid)
+    .first<{ id: string }>();
+  if (pending) return "already";
+  await db
+    .prepare(
+      `INSERT INTO circle_join_requests (
+        id, circle_id, fid, player_id, status, created_at, resolved_at
+      ) VALUES (?, ?, ?, ?, 'pending', ?, NULL)`
+    )
+    .bind(crypto.randomUUID(), input.circleId, input.fid, input.playerId, Date.now())
+    .run();
+  return "requested";
 }
 
 export async function getCircleForViewer(

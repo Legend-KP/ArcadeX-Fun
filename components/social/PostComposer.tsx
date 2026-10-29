@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import SignerApproval from "@/components/farcaster/SignerApproval";
 import { socialIdentity, type SocialMe } from "@/components/farcaster/social-me";
 import type { TextPost } from "@/lib/social-board";
 
@@ -34,13 +35,24 @@ export default function PostComposer({ me, onPosted }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body }),
       });
-      const data = (await res.json()) as { post?: TextPost; error?: string };
+      const data = (await res.json()) as {
+        post?: TextPost;
+        error?: string;
+        farcaster?: { published?: boolean; reason?: string; error?: string };
+      };
       if (!res.ok || !data.post) {
         throw new Error(data.error || "Could not publish.");
       }
       onPosted(data.post);
       setDraft("");
       if (fieldRef.current) fieldRef.current.style.height = "auto";
+      if (data.farcaster?.published) {
+        setError("");
+      } else if (data.farcaster?.reason === "approval_required") {
+        setError("Saved in ArcadeX. Approve the Farcaster signer to also publish it on your profile.");
+      } else if (data.farcaster?.error) {
+        setError(data.farcaster.error);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not publish.");
     } finally {
@@ -84,6 +96,7 @@ export default function PostComposer({ me, onPosted }: Props) {
         </button>
       </form>
       {error && <p className="board-error web-header__post-error">{error}</p>}
+      <SignerApproval />
     </div>
   );
 }

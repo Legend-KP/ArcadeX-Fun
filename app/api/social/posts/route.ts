@@ -6,7 +6,9 @@ import {
   getClientIp,
   rateLimitResponse,
 } from "@/lib/rate-limit";
-import { cleanPostBody, createTextPost, listTextPosts } from "@/lib/social-board";
+import { SignerHttpError } from "@/lib/farcaster/signer/errors";
+import { publishCast } from "@/lib/farcaster/signer/publish";
+import { cleanPostBody, createTextPost, listTextPosts, setPostHubHash } from "@/lib/social-board";
 
 export const dynamic = "force-dynamic";
 
@@ -74,7 +76,36 @@ export async function POST(request: Request) {
       pfpUrl: profile?.pfpUrl ?? null,
       body,
     });
-    return NextResponse.json({ post });
+
+    let farcaster: {
+      published: boolean;
+      hash?: string;
+      reason?: string;
+      error?: string;
+    } = { published: false, reason: "approval_required" };
+    try {
+      const cast = await publishCast({
+        fid: session.fid,
+        playerId: session.playerId,
+        text: body,
+        ip,
+      });
+      if (cast) {
+        await setPostHubHash(post.id, cast.hash);
+        post.hubHash = cast.hash;
+        farcaster = { published: true, hash: cast.hash };
+      }
+    } catch (error) {
+      farcaster = {
+        published: false,
+        error:
+          error instanceof SignerHttpError
+            ? error.message
+            : "Saved in ArcadeX. The Farcaster hub did not accept the cast.",
+      };
+    }
+
+    return NextResponse.json({ post, farcaster });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not publish.";
     return NextResponse.json({ error: message }, { status: 503 });
