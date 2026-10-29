@@ -75,7 +75,10 @@ class FixTemplateOctalPlugin {
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(process.cwd()),
-  serverExternalPackages: ["jose", "@farcaster/core", "protobufjs"],
+  // `isows` (via viem) has a `workerd` export that points at `_esm/native.js`.
+  // Next traces the Node entry only, so OpenNext's esbuild cannot resolve it
+  // unless the package is external and copied in full.
+  serverExternalPackages: ["jose", "@farcaster/core", "protobufjs", "isows"],
   experimental: {
     optimizePackageImports: ["viem", "wagmi", "@tanstack/react-query"],
   },
