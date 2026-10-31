@@ -4,7 +4,9 @@ import {
   requireSocialDb,
   searchSocialProfiles,
 } from "@/lib/farcaster/social-db";
+import { ensureCircleSchema } from "@/lib/circle-invites";
 import { ensureSocialBoardSchema } from "@/lib/social-board";
+import { notifyUser } from "@/lib/social-inbox";
 import type { SocialProfile } from "@/types";
 
 export type ChallengeStatus = "pending" | "accepted" | "declined";
@@ -22,6 +24,7 @@ export type SocialChallenge = {
   status: ChallengeStatus;
   acceptedAt: number | null;
   resultPostId: string | null;
+  circleId: string | null;
 };
 
 type ChallengeRow = {
@@ -38,6 +41,7 @@ type ChallengeRow = {
   created_at: number;
   accepted_at: number | null;
   result_post_id: string | null;
+  circle_id: string | null;
 };
 
 function toChallenge(row: ChallengeRow): SocialChallenge {
@@ -57,7 +61,16 @@ function toChallenge(row: ChallengeRow): SocialChallenge {
         : "pending",
     acceptedAt: row.accepted_at,
     resultPostId: row.result_post_id,
+    circleId: row.circle_id,
   };
+}
+
+export function challengeWindowOpen(
+  challenge: Pick<SocialChallenge, "status" | "acceptedAt" | "expiryHours">,
+  now = Date.now()
+): boolean {
+  if (challenge.status !== "accepted" || !challenge.acceptedAt) return false;
+  return now <= challenge.acceptedAt + challenge.expiryHours * 60 * 60 * 1000;
 }
 
 export async function findChallengeTarget(
@@ -92,13 +105,33 @@ export async function listChallengesForFid(fid: number): Promise<SocialChallenge
     .prepare(
       `SELECT id, challenger_fid, challenger_name, challenger_player_id,
               target_fid, target_label, game_id, game_name, expiry_hours,
-              status, created_at, accepted_at, result_post_id
+              status, created_at, accepted_at, result_post_id, circle_id
        FROM challenges
        WHERE challenger_fid = ? OR target_fid = ?
        ORDER BY created_at DESC
        LIMIT 50`
     )
     .bind(fid, fid)
+    .all<ChallengeRow>();
+  return (result.results ?? []).map(toChallenge);
+}
+
+export async function listChallengesForCircle(
+  circleId: string
+): Promise<SocialChallenge[]> {
+  await ensureSocialBoardSchema();
+  const db = await requireSocialDb();
+  const result = await db
+    .prepare(
+      `SELECT id, challenger_fid, challenger_name, challenger_player_id,
+              target_fid, target_label, game_id, game_name, expiry_hours,
+              status, created_at, accepted_at, result_post_id, circle_id
+       FROM challenges
+       WHERE circle_id = ?
+       ORDER BY created_at DESC
+       LIMIT 40`
+    )
+    .bind(circleId)
     .all<ChallengeRow>();
   return (result.results ?? []).map(toChallenge);
 }
@@ -112,12 +145,27 @@ export async function createChallenge(input: {
   gameId: string;
   gameName: string;
   expiryHours: 24 | 72;
+  circleId?: string | null;
 }): Promise<SocialChallenge> {
   await ensureSocialBoardSchema();
   if (!input.target.fid) {
     throw new Error("That player has no FID.");
   }
   const db = await requireSocialDb();
+  const circleId = input.circleId ?? null;
+  if (circleId) {
+    await ensureCircleSchema();
+    const members = await db
+      .prepare(
+        `SELECT fid FROM circle_members
+         WHERE circle_id = ? AND fid IN (?, ?)`
+      )
+      .bind(circleId, input.challengerFid, input.target.fid)
+      .all<{ fid: number }>();
+    if ((members.results ?? []).length < 2) {
+      throw new Error("Both players have to be in this circle.");
+    }
+  }
   const row: ChallengeRow = {
     id: crypto.randomUUID(),
     challenger_fid: input.challengerFid,
@@ -132,14 +180,15 @@ export async function createChallenge(input: {
     created_at: Date.now(),
     accepted_at: null,
     result_post_id: null,
+    circle_id: circleId,
   };
   await db
     .prepare(
       `INSERT INTO challenges (
         id, challenger_fid, challenger_name, challenger_player_id,
         target_fid, target_label, game_id, game_name, expiry_hours,
-        status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        status, created_at, circle_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       row.id,
@@ -152,9 +201,19 @@ export async function createChallenge(input: {
       row.game_name,
       row.expiry_hours,
       row.status,
-      row.created_at
+      row.created_at,
+      circleId
     )
     .run();
+  await notifyUser({
+    fid: input.target.fid,
+    kind: "challenge",
+    title: `${input.challengerName} challenged you`,
+    body: `${input.gameName} · ${input.expiryHours}h after you accept`,
+    href: circleId ? `/circle/${circleId}` : "/?section=challenges",
+    campKind: circleId ? "circle" : null,
+    campId: circleId,
+  });
   return toChallenge(row);
 }
 
@@ -165,7 +224,7 @@ export async function getChallenge(id: string): Promise<SocialChallenge | null> 
     .prepare(
       `SELECT id, challenger_fid, challenger_name, challenger_player_id,
               target_fid, target_label, game_id, game_name, expiry_hours,
-              status, created_at, accepted_at, result_post_id
+              status, created_at, accepted_at, result_post_id, circle_id
        FROM challenges WHERE id = ?`
     )
     .bind(id)
@@ -189,7 +248,24 @@ export async function setChallengeStatus(
     )
     .bind(status, acceptedAt, id, fid)
     .run();
-  return getChallenge(id);
+  const challenge = await getChallenge(id);
+  if (challenge && challenge.status === status) {
+    await notifyUser({
+      fid: challenge.challengerFid,
+      kind: "challenge",
+      title:
+        status === "accepted"
+          ? "Your challenge was accepted"
+          : "Your challenge was declined",
+      body: `${challenge.gameName} · ${challenge.targetLabel}`,
+      href: challenge.circleId
+        ? `/circle/${challenge.circleId}`
+        : "/?section=challenges",
+      campKind: challenge.circleId ? "circle" : null,
+      campId: challenge.circleId,
+    });
+  }
+  return challenge;
 }
 
 export async function attachChallengeResult(
@@ -199,6 +275,8 @@ export async function attachChallengeResult(
 ): Promise<boolean> {
   await ensureSocialBoardSchema();
   const db = await requireSocialDb();
+  const current = await getChallenge(id);
+  if (!current || !challengeWindowOpen(current)) return false;
   await db
     .prepare(
       `UPDATE challenges

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readSessionFromCookies } from "@/lib/auth-session";
-import { acceptInvite, previewInvite } from "@/lib/circle-invites";
+import { acceptInvite, declineInvite, previewInvite } from "@/lib/circle-invites";
 import { checkRateLimit, getClientIp, rateLimitResponse } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +26,7 @@ export async function GET(
       valid: true,
       signedIn: Boolean(session?.fid),
       member: preview.member,
+      declined: preview.declined,
       inviterName: preview.inviterName,
       circle: {
         id: preview.circle.id,
@@ -62,11 +63,20 @@ export async function POST(
     action = "accept";
   }
 
-  if (action === "decline") {
-    return NextResponse.json({ ok: true, declined: true });
-  }
-
   const { token } = await context.params;
+
+  if (action === "decline") {
+    try {
+      const declined = await declineInvite(token, session.fid);
+      if (!declined.ok) {
+        return NextResponse.json({ error: INVALID }, { status: 400 });
+      }
+      return NextResponse.json({ ok: true, declined: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not decline this invite.";
+      return NextResponse.json({ error: message }, { status: 503 });
+    }
+  }
   try {
     const result = await acceptInvite({
       token,

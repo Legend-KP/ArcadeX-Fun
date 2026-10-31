@@ -1,4 +1,5 @@
 import { requireSocialDb } from "@/lib/farcaster/social-db";
+import { screenText } from "@/lib/moderation";
 import { cleanPostBody, ensureSocialBoardSchema } from "@/lib/social-board";
 
 export type ReactionSummary = {
@@ -165,7 +166,9 @@ export async function listComments(postId: string): Promise<PostComment[]> {
   const result = await db
     .prepare(
       `SELECT id, author_name, author_handle, body, created_at
-       FROM post_comments WHERE post_id = ? ORDER BY created_at ASC LIMIT 40`
+       FROM post_comments
+       WHERE post_id = ? AND removed_at IS NULL
+       ORDER BY created_at ASC LIMIT 40`
     )
     .bind(postId)
     .all<{
@@ -191,7 +194,7 @@ export async function addComment(input: {
   authorHandle: string | null;
   body: string;
 }): Promise<PostComment> {
-  const body = cleanPostBody(input.body);
+  const body = cleanPostBody(screenText(input.body));
   if (!body) throw new Error("Write a comment up to 280 characters.");
   await ensureSocialBoardSchema();
   const db = await requireSocialDb();

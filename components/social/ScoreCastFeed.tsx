@@ -3,22 +3,18 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { loadScoreCasts, type ScoreCast } from "@/lib/score-casts";
-import {
-  readResultCasts,
-  subscribeSocialChallenges,
-} from "@/lib/social-challenges";
+import type { TextPost } from "@/lib/social-board";
 import type { Game } from "@/types";
 
 type Props = {
   games: Game[];
+  fid?: number | null;
   mine?: { names: string[]; wallet?: string | null };
 };
 
-export default function ScoreCastFeed({ games, mine }: Props) {
+export default function ScoreCastFeed({ games, fid, mine }: Props) {
   const [casts, setCasts] = useState<ScoreCast[] | null>(null);
-  const [results, setResults] = useState(readResultCasts);
-
-  useEffect(() => subscribeSocialChallenges(() => setResults(readResultCasts())), []);
+  const [posts, setPosts] = useState<TextPost[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -31,6 +27,28 @@ export default function ScoreCastFeed({ games, mine }: Props) {
     };
   }, [games]);
 
+  useEffect(() => {
+    if (!fid) {
+      setPosts([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/social/posts?fid=${fid}`, {
+      cache: "no-store",
+      credentials: "same-origin",
+    })
+      .then(async (res) => {
+        const data = (await res.json()) as { posts?: TextPost[] };
+        if (!cancelled && res.ok) setPosts(data.posts ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setPosts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fid]);
+
   const names = new Set((mine?.names ?? []).map((name) => name.toLowerCase()));
   const wallet = mine?.wallet?.toLowerCase() ?? "";
 
@@ -40,12 +58,7 @@ export default function ScoreCastFeed({ games, mine }: Props) {
     return names.has(cast.playerName.toLowerCase());
   });
 
-  const resultItems = results.filter((cast) => {
-    if (!mine) return true;
-    return names.has(cast.playerName.toLowerCase());
-  });
-
-  const empty = casts !== null && scoreItems.length === 0 && resultItems.length === 0;
+  const empty = casts !== null && scoreItems.length === 0 && posts.length === 0;
 
   return (
     <section className="soc-feed" aria-label={mine ? "Your casts" : "Home"}>
@@ -55,29 +68,13 @@ export default function ScoreCastFeed({ games, mine }: Props) {
           No casts yet. Submit a score from a game menu and it will show up here.
         </p>
       )}
-      {resultItems.map((cast) => {
-        const game = games.find((item) => item.id === cast.gameId);
-        const thumb = scoreItems.find((item) => item.gameId === cast.gameId)?.thumbnail
-          || game?.thumbnail
-          || "";
-        return (
-          <article key={cast.id} className="cast-card">
-            <p className="cast-card__text">
-              <strong>{cast.playerName}</strong> {cast.text}
-            </p>
-            {thumb ? (
-              <Link href={`/game/${cast.gameId}`} className="cast-card__frame">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={thumb} alt={cast.gameName} />
-              </Link>
-            ) : (
-              <Link href={`/game/${cast.gameId}`} className="cast-card__game">
-                {cast.gameName}
-              </Link>
-            )}
-          </article>
-        );
-      })}
+      {posts.map((post) => (
+        <article key={post.id} className="cast-card">
+          <p className="cast-card__text">
+            <strong>{post.authorName}</strong> {post.body}
+          </p>
+        </article>
+      ))}
       {scoreItems.map((cast) => (
         <article key={cast.id} className="cast-card">
           <p className="cast-card__text">

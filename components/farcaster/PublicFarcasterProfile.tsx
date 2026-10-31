@@ -286,6 +286,7 @@ export default function PublicFarcasterProfile({ kind, value }: Props) {
                   <h2>Casts</h2>
                   <ScoreCastFeed
                     games={games}
+                    fid={fid}
                     mine={{
                       names: [displayName, username ?? "", fname ?? ""].filter(Boolean),
                       wallet: profile?.primaryWallet,

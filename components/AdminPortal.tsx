@@ -19,6 +19,7 @@ import { chainSupportsShopPaymentsConfig } from "@/lib/chain-registry";
 import { anyChainContestStatus, chainContestStatusSummary } from "@/lib/contest-chains";
 import { Game, ChainFeatures, ChainKey, ChainSettingsEntry, gameHasLeaderboard, gameIsLive } from "@/types";
 import Logo from "@/components/Logo";
+import AdminSocialPanel from "@/components/AdminSocialPanel";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "/";
 
@@ -399,6 +400,7 @@ export default function AdminPortal() {
       </header>
 
       <div className="admin-content">
+        <AdminSocialPanel onToast={showToast} />
         <h2 className="admin-section-title">Add New Game</h2>
         <div className="add-game-card">
           <div className="form-group">

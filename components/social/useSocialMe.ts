@@ -60,5 +60,23 @@ export function useSocialMe() {
     };
   }, [load]);
 
+  useEffect(() => {
+    if (!me?.fid) return;
+    let stop = false;
+    const ping = () => {
+      if (stop || document.visibilityState === "hidden") return;
+      void fetch("/api/social/presence", {
+        method: "POST",
+        credentials: "same-origin",
+      });
+    };
+    ping();
+    const timer = window.setInterval(ping, 45_000);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, [me?.fid]);
+
   return { me, loading, ready: isSocialProfileReady(me) };
 }

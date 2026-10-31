@@ -8,7 +8,14 @@ import {
 } from "@/lib/rate-limit";
 import { SignerHttpError } from "@/lib/farcaster/signer/errors";
 import { publishCast } from "@/lib/farcaster/signer/publish";
-import { cleanPostBody, createTextPost, listTextPosts, setPostHubHash } from "@/lib/social-board";
+import { moderationFailure } from "@/lib/moderation";
+import {
+  cleanPostBody,
+  createTextPost,
+  listTextPosts,
+  listTextPostsByFid,
+  setPostHubHash,
+} from "@/lib/social-board";
 
 export const dynamic = "force-dynamic";
 
@@ -23,8 +30,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   }
 
+  const fidParam = new URL(request.url).searchParams.get("fid");
+  const fid = fidParam && /^\d+$/.test(fidParam) ? Number(fidParam) : null;
+
   try {
-    const posts = await listTextPosts();
+    const posts = fid ? await listTextPostsByFid(fid) : await listTextPosts();
     return NextResponse.json({ posts });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not load posts.";
@@ -107,6 +117,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ post, farcaster });
   } catch (err) {
+    const blocked = moderationFailure(err);
+    if (blocked) return NextResponse.json({ error: blocked }, { status: 400 });
     const message = err instanceof Error ? err.message : "Could not publish.";
     return NextResponse.json({ error: message }, { status: 503 });
   }

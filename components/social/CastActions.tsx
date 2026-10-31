@@ -153,6 +153,25 @@ export default function CastActions({
           {current.likes > 0 && <span>{current.likes}</span>}
         </button>
       </div>
+        <button
+          type="button"
+          onClick={() => {
+            const reason = window.prompt("Why are you reporting this?");
+            if (!reason || reason.trim().length < 3) return;
+            void fetch("/api/social/reports", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ targetKind: "post", targetId: postId, reason: reason.trim() }),
+            }).then(async (res) => {
+              const data = (await res.json()) as { error?: string };
+              setNote(res.ok ? "Reported. A moderator can remove it." : data.error || "Could not report this.");
+            });
+          }}
+          aria-label="Report"
+        >
+          Report
+        </button>
       <a className="cast-actions__link" href={sharePath}>
         {absoluteUrl(sharePath)}
       </a>
@@ -167,7 +186,27 @@ export default function CastActions({
                 <strong>{comment.authorName}</strong>
                 {comment.authorHandle ? <span> @{comment.authorHandle.replace(/^@/, "")}</span> : null}
                 {" "}
-                {comment.body}
+                {comment.body}{" "}
+                <button
+                  type="button"
+                  className="soc-text-btn"
+                  onClick={() => {
+                    const reason = window.prompt("Why are you reporting this comment?");
+                    if (!reason || reason.trim().length < 3) return;
+                    void fetch("/api/social/reports", {
+                      method: "POST",
+                      credentials: "same-origin",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        targetKind: "comment",
+                        targetId: comment.id,
+                        reason: reason.trim(),
+                      }),
+                    }).then(() => setNote("Reported. A moderator can remove it."));
+                  }}
+                >
+                  Report
+                </button>
               </p>
             ))
           )}

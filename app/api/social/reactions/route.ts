@@ -6,6 +6,7 @@ import {
   getClientIp,
   rateLimitResponse,
 } from "@/lib/rate-limit";
+import { moderationFailure } from "@/lib/moderation";
 import {
   addComment,
   listComments,
@@ -86,6 +87,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   } catch (err) {
+    const blocked = moderationFailure(err);
+    if (blocked) return NextResponse.json({ error: blocked }, { status: 400 });
     const message = err instanceof Error ? err.message : "Could not update the post.";
     return NextResponse.json({ error: message }, { status: 503 });
   }

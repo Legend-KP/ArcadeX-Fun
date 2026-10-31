@@ -7,8 +7,10 @@ import {
   rateLimitResponse,
 } from "@/lib/rate-limit";
 import { cleanPostBody, createTextPost } from "@/lib/social-board";
+import { moderationFailure } from "@/lib/moderation";
 import {
   attachChallengeResult,
+  challengeWindowOpen,
   getChallenge,
   setChallengeStatus,
 } from "@/lib/social-challenges-server";
@@ -82,6 +84,12 @@ export async function POST(
           { status: 409 }
         );
       }
+      if (!challengeWindowOpen(current)) {
+        return NextResponse.json(
+          { error: "The challenge window has ended." },
+          { status: 400 }
+        );
+      }
       const body = cleanPostBody(typeof payload.text === "string" ? payload.text : "");
       if (!body) {
         return NextResponse.json(
@@ -111,6 +119,8 @@ export async function POST(
 
     return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   } catch (err) {
+    const blocked = moderationFailure(err);
+    if (blocked) return NextResponse.json({ error: blocked }, { status: 400 });
     const message = err instanceof Error ? err.message : "Could not update the challenge.";
     return NextResponse.json({ error: message }, { status: 503 });
   }

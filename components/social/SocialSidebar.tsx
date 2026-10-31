@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   loadChallenges,
   pendingChallengeCount,
@@ -55,14 +55,6 @@ function IconActivity() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </svg>
-  );
-}
-
-function IconBoards() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden width="20" height="20">
-      <path d="M6 20V10M12 20V4M18 20v-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
@@ -128,7 +120,6 @@ const ITEMS: {
 }[] = [
   { id: "games", label: "Home", icon: IconHome },
   { id: "home", label: "Activity", icon: IconActivity },
-  { id: "leaderboards", label: "Leaderboards", icon: IconBoards },
   { id: "notifications", label: "Notifications", icon: IconBell },
   { id: "challenges", label: "Challenge", icon: IconChallenge },
 ];
@@ -150,10 +141,33 @@ export default function SocialSidebar({
   const identity = me ? socialIdentity(me) : null;
   const name = identity?.displayName || "Player";
   const badge = pendingChallengeCount(challenges, identity?.fid);
+  const [unread, setUnread] = useState(0);
 
   useEffect(() => {
     if (!ready) return;
     void loadChallenges();
+  }, [ready]);
+
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    const load = () => {
+      void fetch("/api/social/notifications", {
+        cache: "no-store",
+        credentials: "same-origin",
+      })
+        .then(async (res) => {
+          const data = (await res.json()) as { unread?: number };
+          if (!cancelled && res.ok) setUnread(data.unread ?? 0);
+        })
+        .catch(() => undefined);
+    };
+    load();
+    window.addEventListener("arcadex-inbox", load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("arcadex-inbox", load);
+    };
   }, [ready]);
   const profileHref = ready ? "/profile" : "/social";
 
@@ -185,6 +199,7 @@ export default function SocialSidebar({
               <Icon />
               <span>{item.label}</span>
               {item.id === "challenges" && badge > 0 && <em>{badge}</em>}
+              {item.id === "notifications" && unread > 0 && <em>{unread}</em>}
             </button>
           );
         })}

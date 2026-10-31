@@ -1,4 +1,5 @@
 import { requireSocialDb } from "@/lib/farcaster/social-db";
+import { screenText } from "@/lib/moderation";
 
 let schemaReady: Promise<void> | null = null;
 
@@ -132,6 +133,19 @@ export function ensureSocialBoardSchema(): Promise<void> {
         )
         .bind()
         .run();
+      for (const sql of [
+        `ALTER TABLE posts ADD COLUMN removed_at INTEGER`,
+        `ALTER TABLE post_comments ADD COLUMN removed_at INTEGER`,
+        `ALTER TABLE challenges ADD COLUMN circle_id TEXT`,
+        `CREATE INDEX IF NOT EXISTS idx_challenges_circle
+         ON challenges (circle_id, created_at DESC)`,
+      ]) {
+        try {
+          await db.prepare(sql).bind().run();
+        } catch {
+          // Column or index already exists.
+        }
+      }
     })().catch((err) => {
       schemaReady = null;
       throw err;
@@ -200,6 +214,10 @@ export function cleanPostBody(raw: string): string | null {
   return body;
 }
 
+export function cleanScreenedPost(raw: string): string | null {
+  return cleanPostBody(screenText(raw));
+}
+
 export async function listTextPosts(limit = 40): Promise<TextPost[]> {
   await ensureSocialBoardSchema();
   const db = await requireSocialDb();
@@ -207,6 +225,7 @@ export async function listTextPosts(limit = 40): Promise<TextPost[]> {
     .prepare(
       `SELECT id, fid, author_name, author_handle, pfp_url, body, created_at, hub_hash
        FROM posts
+       WHERE removed_at IS NULL
        ORDER BY created_at DESC
        LIMIT ?`
     )
@@ -224,7 +243,7 @@ export async function getTextPost(id: string): Promise<TextPost | null> {
     .prepare(
       `SELECT id, fid, author_name, author_handle, pfp_url, body, created_at, hub_hash
        FROM posts
-       WHERE id = ?`
+       WHERE id = ? AND removed_at IS NULL`
     )
     .bind(clean)
     .first<PostRow>();
@@ -241,13 +260,15 @@ export async function createTextPost(input: {
 }): Promise<TextPost> {
   await ensureSocialBoardSchema();
   const db = await requireSocialDb();
+  const body = cleanScreenedPost(input.body);
+  if (!body) throw new Error("Write a text post up to 280 characters.");
   const post: TextPost = {
     id: crypto.randomUUID(),
     fid: input.fid,
     authorName: input.authorName,
     authorHandle: input.authorHandle ?? null,
     pfpUrl: input.pfpUrl ?? null,
-    body: input.body,
+    body,
     createdAt: Date.now(),
     hubHash: null,
   };
@@ -268,6 +289,37 @@ export async function createTextPost(input: {
     )
     .run();
   return post;
+}
+
+export async function listTextPostsByFid(fid: number, limit = 30): Promise<TextPost[]> {
+  await ensureSocialBoardSchema();
+  const db = await requireSocialDb();
+  const result = await db
+    .prepare(
+      `SELECT id, fid, author_name, author_handle, pfp_url, body, created_at, hub_hash
+       FROM posts
+       WHERE fid = ? AND removed_at IS NULL
+       ORDER BY created_at DESC
+       LIMIT ?`
+    )
+    .bind(fid, limit)
+    .all<PostRow>();
+  return (result.results ?? []).map(toPost);
+}
+
+export async function removeOwnPost(id: string, fid: number): Promise<boolean> {
+  await ensureSocialBoardSchema();
+  const db = await requireSocialDb();
+  const row = await db
+    .prepare(`SELECT fid FROM posts WHERE id = ? AND removed_at IS NULL`)
+    .bind(id)
+    .first<{ fid: number }>();
+  if (!row || row.fid !== fid) return false;
+  await db
+    .prepare(`UPDATE posts SET removed_at = ? WHERE id = ?`)
+    .bind(Date.now(), id)
+    .run();
+  return true;
 }
 
 export async function setPostHubHash(id: string, hubHash: string): Promise<void> {

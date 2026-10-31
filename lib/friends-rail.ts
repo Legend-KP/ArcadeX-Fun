@@ -1,9 +1,7 @@
 import { fetchNeynarUsersByFids, fetchNeynarFollowingFids } from "@/lib/farcaster/neynar";
 import { requireSocialDb } from "@/lib/farcaster/social-db";
 import { ensureSocialBoardSchema } from "@/lib/social-board";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-const ONLINE_MS = DAY_MS;
+import { onlineFids } from "@/lib/social-inbox";
 
 export type RailFriend = {
   fid: number;
@@ -100,43 +98,8 @@ export async function loadFriendsRail(viewerFid: number): Promise<{
 
   const friendFids = following.filter((fid) => byFid.has(fid)).slice(0, 16);
 
-  const onlineFids = new Set<number>();
-  if (friendFids.length > 0) {
-    const marks = placeholders(friendFids.length);
-    const since = Date.now() - ONLINE_MS;
-    const [streaks, posts, challenges] = await Promise.all([
-      db
-        .prepare(
-          `SELECT fid FROM fid_streaks
-           WHERE fid IN (${marks}) AND last_check_in >= ?`
-        )
-        .bind(...friendFids, since)
-        .all<{ fid: number }>(),
-      db
-        .prepare(
-          `SELECT fid FROM posts
-           WHERE fid IN (${marks}) AND created_at >= ?`
-        )
-        .bind(...friendFids, since)
-        .all<{ fid: number }>(),
-      db
-        .prepare(
-          `SELECT challenger_fid, target_fid FROM challenges
-           WHERE created_at >= ?
-             AND (challenger_fid IN (${marks}) OR target_fid IN (${marks}))`
-        )
-        .bind(since, ...friendFids, ...friendFids)
-        .all<{ challenger_fid: number; target_fid: number }>(),
-    ]);
-    for (const row of streaks.results ?? []) onlineFids.add(row.fid);
-    for (const row of posts.results ?? []) onlineFids.add(row.fid);
-    for (const row of challenges.results ?? []) {
-      if (friendFids.includes(row.challenger_fid)) onlineFids.add(row.challenger_fid);
-      if (friendFids.includes(row.target_fid)) onlineFids.add(row.target_fid);
-    }
-  }
-
-  const online = [...onlineFids]
+  const live = await onlineFids(friendFids);
+  const online = [...live]
     .slice(0, 8)
     .map((fid) => friendFrom(fid, byFid.get(fid), neynarByFid.get(fid)));
 

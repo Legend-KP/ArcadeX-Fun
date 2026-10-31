@@ -1,4 +1,5 @@
 import { fetchSocialProfileByFid, requireSocialDb } from "@/lib/farcaster/social-db";
+import { notifyUser } from "@/lib/social-inbox";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -106,6 +107,15 @@ export function ensureCircleSchema(): Promise<void> {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_circle_join_requests_fid
          ON circle_join_requests (fid, status)`,
+        `CREATE INDEX IF NOT EXISTS idx_circle_join_requests_circle
+         ON circle_join_requests (circle_id, status)`,
+        `CREATE INDEX IF NOT EXISTS idx_circles_updated ON circles (updated_at DESC)`,
+        `CREATE TABLE IF NOT EXISTS circle_invite_declines (
+          token_hash TEXT NOT NULL,
+          fid INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (token_hash, fid)
+        )`,
       ];
       for (const sql of statements) {
         await db.prepare(sql).bind().run();
@@ -354,6 +364,21 @@ export async function requestCircleJoin(input: {
     )
     .bind(crypto.randomUUID(), input.circleId, input.fid, input.playerId, Date.now())
     .run();
+  const owner = await db
+    .prepare(`SELECT creator_fid, name FROM circles WHERE id = ?`)
+    .bind(input.circleId)
+    .first<{ creator_fid: number; name: string }>();
+  if (owner && owner.creator_fid !== input.fid) {
+    await notifyUser({
+      fid: owner.creator_fid,
+      kind: "join_request",
+      title: "Someone asked to join your circle",
+      body: owner.name,
+      href: `/circle/${input.circleId}`,
+      campKind: "circle",
+      campId: input.circleId,
+    });
+  }
   return "requested";
 }
 
@@ -493,6 +518,7 @@ export type InvitePreview =
       circle: CircleSummary;
       inviterName: string | null;
       member: boolean;
+      declined: boolean;
     };
 
 export async function previewInvite(
@@ -514,12 +540,20 @@ export async function previewInvite(
     .first<CircleRow>();
   if (!row) return { valid: false };
   let member = false;
+  let declined = false;
   if (fid != null) {
     const existing = await db
       .prepare("SELECT fid FROM circle_members WHERE circle_id = ? AND fid = ?")
       .bind(row.id, fid)
       .first<{ fid: number }>();
     member = Boolean(existing);
+    const decline = await db
+      .prepare(
+        `SELECT fid FROM circle_invite_declines WHERE token_hash = ? AND fid = ?`
+      )
+      .bind(link.token_hash, fid)
+      .first<{ fid: number }>();
+    declined = Boolean(decline);
   }
   const inviter = await fetchSocialProfileByFid(link.creator_fid).catch(() => null);
   return {
@@ -527,7 +561,31 @@ export async function previewInvite(
     circle: circleFrom(row),
     inviterName: inviter?.displayName || inviter?.username || inviter?.fname || null,
     member,
+    declined,
   };
+}
+
+export async function declineInvite(
+  token: string,
+  fid: number
+): Promise<{ ok: true } | { ok: false }> {
+  if (!isInviteToken(token)) return { ok: false };
+  await ensureCircleSchema();
+  const db = await requireSocialDb();
+  const link = await db
+    .prepare("SELECT * FROM circle_invite_links WHERE token_hash = ?")
+    .bind(await hashInviteToken(token))
+    .first<LinkRow>();
+  if (!link || !linkIsOpen(link, Date.now())) return { ok: false };
+  await db
+    .prepare(
+      `INSERT INTO circle_invite_declines (token_hash, fid, created_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(token_hash, fid) DO NOTHING`
+    )
+    .bind(link.token_hash, fid, Date.now())
+    .run();
+  return { ok: true };
 }
 
 export async function acceptInvite(input: {
@@ -600,4 +658,139 @@ export async function acceptInvite(input: {
     .run();
 
   return { ok: true, circleId: link.circle_id, alreadyMember: false };
+}
+
+export type JoinRequestRow = {
+  id: string;
+  fid: number;
+  name: string;
+};
+
+export async function listPendingJoinRequests(
+  circleId: string,
+  fid: number
+): Promise<JoinRequestRow[] | null> {
+  await ensureCircleSchema();
+  const db = await requireSocialDb();
+  const circle = await db
+    .prepare(`SELECT creator_fid FROM circles WHERE id = ?`)
+    .bind(circleId)
+    .first<{ creator_fid: number }>();
+  if (!circle || circle.creator_fid !== fid) return null;
+  const result = await db
+    .prepare(
+      `SELECT r.id, r.fid, p.display_name, p.username, p.fname
+       FROM circle_join_requests r
+       LEFT JOIN profiles p ON p.fid = r.fid
+       WHERE r.circle_id = ? AND r.status = 'pending'
+       ORDER BY r.created_at ASC
+       LIMIT 40`
+    )
+    .bind(circleId)
+    .all<{
+      id: string;
+      fid: number;
+      display_name: string | null;
+      username: string | null;
+      fname: string | null;
+    }>();
+  return (result.results ?? []).map((row) => ({
+    id: row.id,
+    fid: row.fid,
+    name: row.display_name || row.username || row.fname || `FID ${row.fid}`,
+  }));
+}
+
+export async function resolveJoinRequest(input: {
+  circleId: string;
+  requestId: string;
+  fid: number;
+  action: "approve" | "decline";
+}): Promise<"approved" | "declined" | "missing" | "forbidden"> {
+  await ensureCircleSchema();
+  const db = await requireSocialDb();
+  const circle = await db
+    .prepare(`SELECT creator_fid, name FROM circles WHERE id = ?`)
+    .bind(input.circleId)
+    .first<{ creator_fid: number; name: string }>();
+  if (!circle) return "missing";
+  if (circle.creator_fid !== input.fid) return "forbidden";
+  const request = await db
+    .prepare(
+      `SELECT id, fid, player_id FROM circle_join_requests
+       WHERE id = ? AND circle_id = ? AND status = 'pending'`
+    )
+    .bind(input.requestId, input.circleId)
+    .first<{ id: string; fid: number; player_id: string }>();
+  if (!request) return "missing";
+  const now = Date.now();
+  if (input.action === "decline") {
+    await db
+      .prepare(
+        `UPDATE circle_join_requests
+         SET status = 'declined', resolved_at = ?
+         WHERE id = ? AND status = 'pending'`
+      )
+      .bind(now, request.id)
+      .run();
+    await notifyUser({
+      fid: request.fid,
+      kind: "join_result",
+      title: "Your request to join was declined",
+      body: circle.name,
+      href: `/circle/${input.circleId}`,
+      campKind: "circle",
+      campId: input.circleId,
+    });
+    return "declined";
+  }
+  const changes = await runChanges(
+    db
+      .prepare(
+        `UPDATE circle_join_requests
+         SET status = 'approved', resolved_at = ?
+         WHERE id = ? AND status = 'pending'`
+      )
+      .bind(now, request.id)
+  );
+  if (changes !== 1) return "missing";
+  const existing = await db
+    .prepare(`SELECT fid FROM circle_members WHERE circle_id = ? AND fid = ?`)
+    .bind(input.circleId, request.fid)
+    .first<{ fid: number }>();
+  if (!existing) {
+    await db
+      .prepare(
+        `INSERT INTO circle_members (circle_id, fid, player_id, role, joined_at)
+         VALUES (?, ?, ?, 'member', ?)`
+      )
+      .bind(input.circleId, request.fid, request.player_id, now)
+      .run();
+    await db
+      .prepare(
+        `UPDATE circles SET member_count = member_count + 1, updated_at = ? WHERE id = ?`
+      )
+      .bind(now, input.circleId)
+      .run();
+  }
+  await notifyUser({
+    fid: request.fid,
+    kind: "join_result",
+    title: "You were approved to join",
+    body: circle.name,
+    href: `/circle/${input.circleId}`,
+    campKind: "circle",
+    campId: input.circleId,
+  });
+  return "approved";
+}
+
+export async function listAllCircles(): Promise<CircleSummary[]> {
+  await ensureCircleSchema();
+  const db = await requireSocialDb();
+  const result = await db
+    .prepare(`SELECT * FROM circles ORDER BY updated_at DESC LIMIT 80`)
+    .bind()
+    .all<CircleRow>();
+  return (result.results ?? []).map(circleFrom);
 }

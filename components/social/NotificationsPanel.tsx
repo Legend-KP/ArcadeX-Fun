@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useRouter } from "next/navigation";
 import PlayerSuggestInput from "@/components/social/PlayerSuggestInput";
 import { socialIdentity, type SocialMe } from "@/components/farcaster/social-me";
 import {
@@ -73,6 +74,11 @@ function ResultComposer({
     return <p className="soc-note">Result posted on Home.</p>;
   }
 
+  const deadline = challengeDeadline(challenge);
+  if (deadline != null && Date.now() >= deadline) {
+    return <p className="soc-note">The window has ended. A result can't be posted.</p>;
+  }
+
   if (!open) {
     return (
       <button type="button" className="soc-text-btn" onClick={() => setOpen(true)}>
@@ -111,6 +117,19 @@ export default function NotificationsPanel({
   ready,
   title = "Notifications",
 }: Props) {
+  const router = useRouter();
+  const showInbox = title === "Notifications";
+  const [inbox, setInbox] = useState<
+    Array<{
+      id: string;
+      scope: "direct" | "broadcast";
+      title: string;
+      body: string;
+      href: string | null;
+      createdAt: number;
+      readAt: number | null;
+    }>
+  >([]);
   const challenges = useSyncExternalStore(
     subscribeChallenges,
     readChallengeList,
@@ -149,9 +168,54 @@ export default function NotificationsPanel({
     });
   }, [ready]);
 
+  useEffect(() => {
+    if (!ready || !showInbox) return;
+    let cancelled = false;
+    fetch("/api/social/notifications", { cache: "no-store", credentials: "same-origin" })
+      .then(async (res) => {
+        const data = (await res.json()) as { items?: typeof inbox; error?: string };
+        if (!res.ok) throw new Error(data.error || "Could not load notifications.");
+        if (!cancelled) setInbox(data.items ?? []);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load notifications.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, showInbox]);
+
+  async function openNotice(item: (typeof inbox)[number]) {
+    await fetch(`/api/social/notifications/${encodeURIComponent(item.id)}`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: item.scope }),
+    });
+    setInbox((current) =>
+      current.map((row) => (row.id === item.id ? { ...row, readAt: Date.now() } : row))
+    );
+    window.dispatchEvent(new Event("arcadex-inbox"));
+    if (item.href) router.push(item.href);
+  }
+
   return (
     <section className="soc-notes" aria-label="Notifications">
       <h1>{title}</h1>
+      {showInbox && (
+        <ul className="soc-challenge-list">
+          {inbox.length === 0 && <li className="soc-note">No notifications yet.</li>}
+          {inbox.map((item) => (
+            <li key={`${item.scope}:${item.id}`} className="soc-challenge">
+              <button type="button" className="soc-text-btn" onClick={() => void openNotice(item)}>
+                <strong>{item.title}</strong>
+                {item.readAt == null && <span> · Unread</span>}
+              </button>
+              <p>{item.body}</p>
+            </li>
+          ))}
+        </ul>
+      )}
       <p className="soc-note">
         Send a challenge by name or username. Pick them from the list. They see it here
         when they sign in.

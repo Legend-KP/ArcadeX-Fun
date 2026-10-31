@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readSessionFromCookies } from "@/lib/auth-session";
 import { createCircle, listCirclesForFid } from "@/lib/circle-invites";
+import { moderationFailure, screenText } from "@/lib/moderation";
 import { checkRateLimit, getClientIp, rateLimitResponse } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -62,12 +63,14 @@ export async function POST(request: Request) {
     const circle = await createCircle({
       fid: session.fid,
       playerId: session.playerId,
-      name,
-      description,
+      name: screenText(name).slice(0, 40),
+      description: screenText(description).slice(0, 280),
       visibility,
     });
     return NextResponse.json({ circle });
   } catch (err) {
+    const blocked = moderationFailure(err);
+    if (blocked) return NextResponse.json({ error: blocked }, { status: 400 });
     const message = err instanceof Error ? err.message : "Could not create the circle.";
     return NextResponse.json({ error: message }, { status: 503 });
   }

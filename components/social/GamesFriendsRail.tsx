@@ -89,7 +89,7 @@ export default function GamesFriendsRail({ games }: Props) {
           <h2>Friends online</h2>
         </header>
         {rail.online.length === 0 ? (
-          <p className="board-empty">No friends online right now.</p>
+          <p className="board-empty">No friends have the app open right now.</p>
         ) : (
           <ul className="games-rail__online">
             {rail.online.map((friend) => (

@@ -198,3 +198,79 @@ export async function updateAdminChainSettings(
   }
   return data;
 }
+
+export type AdminCamp = { kind: "circle" | "game"; id: string; label: string };
+
+export type AdminBroadcast = {
+  id: string;
+  title: string;
+  body: string;
+  href: string | null;
+  campKind: "circle" | "game" | null;
+  campId: string | null;
+  createdAt: number;
+};
+
+export async function fetchAdminNotifications(): Promise<{
+  broadcasts: AdminBroadcast[];
+  camps: AdminCamp[];
+}> {
+  const res = await fetch("/api/admin/notifications", {
+    headers: adminHeaders(),
+    cache: "no-store",
+  });
+  const data = await parseJson<{
+    broadcasts?: AdminBroadcast[];
+    camps?: AdminCamp[];
+    error?: string;
+  }>(res);
+  if (!res.ok) throw new Error(data.error ?? "Could not load notifications.");
+  return { broadcasts: data.broadcasts ?? [], camps: data.camps ?? [] };
+}
+
+export async function sendAdminNotification(input: {
+  title: string;
+  body: string;
+  campKind: "circle" | "game" | null;
+  campId: string | null;
+}): Promise<void> {
+  const res = await fetch("/api/admin/notifications", {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify(input),
+  });
+  const data = await parseJson<{ error?: string }>(res);
+  if (!res.ok) throw new Error(data.error ?? "Could not send the notification.");
+}
+
+export type AdminReport = {
+  id: string;
+  reporterFid: number;
+  targetKind: string;
+  targetId: string;
+  reason: string;
+  createdAt: number;
+};
+
+export async function fetchAdminReports(): Promise<AdminReport[]> {
+  const res = await fetch("/api/admin/reports", {
+    headers: adminHeaders(),
+    cache: "no-store",
+  });
+  const data = await parseJson<{ reports?: AdminReport[]; error?: string }>(res);
+  if (!res.ok) throw new Error(data.error ?? "Could not load reports.");
+  return data.reports ?? [];
+}
+
+export async function resolveAdminReport(
+  id: string,
+  action: "remove" | "dismiss"
+): Promise<void> {
+  const res = await fetch("/api/admin/reports", {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({ id, action }),
+  });
+  const data = await parseJson<{ error?: string }>(res);
+  if (!res.ok) throw new Error(data.error ?? "Could not update the report.");
+}

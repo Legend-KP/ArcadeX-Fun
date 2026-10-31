@@ -12,6 +12,7 @@ type Preview = {
   valid: boolean;
   signedIn?: boolean;
   member?: boolean;
+  declined?: boolean;
   inviterName?: string | null;
   circle?: {
     id: string;
@@ -55,6 +56,30 @@ export default function InviteLanding({ token }: { token: string }) {
 
   const signInHref = `/social?next=${encodeURIComponent(`/invite/${token}`)}`;
   const circle = preview?.valid ? preview.circle : null;
+
+  async function decline() {
+    if (!me?.fid || !ready) {
+      setDeclined(true);
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/social/invites/${encodeURIComponent(token)}`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "decline" }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "This invite is no longer valid.");
+      setDeclined(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "This invite is no longer valid.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function accept() {
     if (!me?.fid || !ready) {
@@ -128,7 +153,7 @@ export default function InviteLanding({ token }: { token: string }) {
                     You are already in this circle.{" "}
                     <Link href={`/circle/${circle.id}`}>Open it</Link>
                   </p>
-                ) : declined ? (
+                ) : declined || preview?.declined ? (
                   <p className="soc-note">
                     You declined this invite.
                     {circle.visibility === "private"
@@ -140,7 +165,7 @@ export default function InviteLanding({ token }: { token: string }) {
                     <button type="button" className="connect-btn" disabled={busy} onClick={() => void accept()}>
                       {busy ? "Joining…" : me?.fid && ready ? "Accept" : "Sign in to accept"}
                     </button>
-                    <button type="button" className="soc-decline" onClick={() => setDeclined(true)}>
+                    <button type="button" className="soc-decline" disabled={busy} onClick={() => void decline()}>
                       Decline
                     </button>
                   </div>

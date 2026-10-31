@@ -7,7 +7,7 @@ import GameCard from "@/components/GameCard";
 import LoadingScreen from "@/components/LoadingScreen";
 import GamesFriendsRail from "@/components/social/GamesFriendsRail";
 import HomeAside, { LeaderboardsPanel } from "@/components/social/HomeAside";
-import HomeFeed from "@/components/social/HomeFeed";
+import CircleActivity from "@/components/social/CircleActivity";
 import NotificationsPanel from "@/components/social/NotificationsPanel";
 import ProfileSearchResults from "@/components/social/ProfileSearchResults";
 import SocialSidebar, {
@@ -55,7 +55,6 @@ function HomePageInner() {
     sectionFromQuery(params.get("section"))
   );
   const [filter, setFilter] = useState<FilterTab>("all");
-  const [followingFids, setFollowingFids] = useState<number[] | null>(null);
 
   useEffect(() => {
     if (!socialLoading && !ready) router.replace("/social");
@@ -114,25 +113,6 @@ function HomePageInner() {
     };
   }, []);
 
-  useEffect(() => {
-    if (section !== "home" || !me?.fid) return;
-    let cancelled = false;
-    fetch("/api/farcaster/following", {
-      cache: "no-store",
-      credentials: "same-origin",
-    })
-      .then(async (res) => {
-        const data = (await res.json()) as { fids?: number[] };
-        if (!cancelled && res.ok) setFollowingFids(data.fids ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setFollowingFids(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [section, me?.fid]);
-
   const filteredGames = useMemo(() => {
     let list = [...games];
 
@@ -178,15 +158,7 @@ function HomePageInner() {
           />
           <div className="board__main">
             <ProfileSearchResults query={search} />
-            {section === "home" && (
-              <HomeFeed
-                games={games}
-                search={search}
-                posted={null}
-                viewerFid={me.fid ?? null}
-                followingFids={followingFids}
-              />
-            )}
+            {section === "home" && <CircleActivity />}
 
             {(section === "notifications" || section === "challenges") && (
               <NotificationsPanel

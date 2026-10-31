@@ -198,6 +198,7 @@ export default function SocialProfilePage() {
               <h2>Casts</h2>
               <ScoreCastFeed
                 games={games}
+                fid={identity.fid}
                 mine={{
                   names: [
                     identity.displayName,

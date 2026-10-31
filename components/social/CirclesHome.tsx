@@ -26,6 +26,7 @@ export default function CirclesHome() {
   const [visibility, setVisibility] = useState<"public" | "private">("public");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     if (!loading && !ready) router.replace("/social");
@@ -90,26 +91,12 @@ export default function CirclesHome() {
             }}
           />
           <div className="soc-main">
-            <h1>Circles</h1>
+            <h1>Your circles</h1>
+            <button type="button" className="soc-text-btn" onClick={() => setCreating((open) => !open)}>
+              {creating ? "Close" : "Create a circle"}
+            </button>
             {error && <p className="board-error">{error}</p>}
-            <ul className="soc-challenge-list">
-              {circles.map((circle) => (
-                <li key={circle.id} className="soc-challenge">
-                  <p>
-                    <Link href={`/circle/${circle.id}`}>
-                      <strong>{circle.name}</strong>
-                    </Link>
-                    <span>
-                      {" "}
-                      · {circle.visibility === "private" ? "Private" : "Public"} · {circle.memberCount}
-                    </span>
-                  </p>
-                  <p>{circle.description}</p>
-                </li>
-              ))}
-            </ul>
-            {circles.length === 0 && ready && <p className="soc-note">You have not joined a circle yet.</p>}
-            <h2>Create a circle</h2>
+            {creating && (
             <form className="soc-challenge-form" onSubmit={(event) => void create(event)}>
               <label>
                 Name
@@ -138,6 +125,24 @@ export default function CirclesHome() {
                 {busy ? "Creating…" : "Create circle"}
               </button>
             </form>
+            )}
+            <ul className="soc-challenge-list">
+              {circles.map((circle) => (
+                <li key={circle.id} className="soc-challenge">
+                  <p>
+                    <Link href={`/circle/${circle.id}`}>
+                      <strong>{circle.name}</strong>
+                    </Link>
+                    <span>
+                      {" "}
+                      · {circle.visibility === "private" ? "Private" : "Public"} · {circle.memberCount}
+                    </span>
+                  </p>
+                  <p>{circle.description}</p>
+                </li>
+              ))}
+            </ul>
+            {circles.length === 0 && ready && <p className="soc-note">You have not joined a circle yet.</p>}
           </div>
         </div>
       </div>
