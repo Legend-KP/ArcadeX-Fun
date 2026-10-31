@@ -191,7 +191,6 @@ export default function SignerApproval() {
   async function watchDeeplink(token: string, generation: number) {
     if (watching.current) return;
     watching.current = true;
-    setBusy(true);
     try {
       for (let attempt = 0; attempt < 90; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -226,7 +225,6 @@ export default function SignerApproval() {
       setError(err instanceof Error ? err.message : "Could not check the Farcaster approval.");
     } finally {
       watching.current = false;
-      setBusy(false);
     }
   }
 
@@ -258,12 +256,22 @@ export default function SignerApproval() {
     setPhoneApproval("");
     sessionStorage.removeItem("arcadex.farcaster.signerDeeplink");
     try {
-      const res = await fetch(path, { method: "POST" });
+      const res = await fetch(path, {
+        method: "POST",
+        signal: AbortSignal.timeout(20000),
+      });
       const data = (await res.json()) as PreparedApproval;
       if (!res.ok) throw new Error(data.error || "Could not prepare the signer.");
       setPrepared(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not prepare the signer.");
+      const timedOut = err instanceof DOMException && err.name === "TimeoutError";
+      setError(
+        timedOut
+          ? "Preparing the signer took too long. Refresh the page and try again."
+          : err instanceof Error
+            ? err.message
+            : "Could not prepare the signer."
+      );
     } finally {
       setBusy(false);
     }
