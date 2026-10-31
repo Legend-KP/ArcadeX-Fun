@@ -158,7 +158,7 @@ function HomePageInner() {
           />
           <div className="board__main">
             <ProfileSearchResults query={search} />
-            {section === "home" && <CircleActivity />}
+            {section === "home" && <CircleActivity me={me} search={search} />}
 
             {(section === "notifications" || section === "challenges") && (
               <NotificationsPanel
