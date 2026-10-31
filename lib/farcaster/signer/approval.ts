@@ -74,15 +74,18 @@ function appRequestSigner(): { fid: number; accountKey: `0x${string}` } | null {
   return { fid, accountKey };
 }
 
-export async function buildKeyMetadata(
+/** App-account SignedKeyRequest. The custody key never leaves the Farcaster app. */
+export async function signAppKeyRequest(
   publicKey: Hex,
   deadline: bigint
-): Promise<{ metadataType: number; metadata: Hex; appFid: number | null }> {
+): Promise<{ requestFid: number; requestSigner: Address; signature: Hex }> {
   const app = appRequestSigner();
   if (!app) {
-    return { metadataType: 0, metadata: "0x", appFid: null };
+    throw new SignerHttpError(
+      "Set FARCASTER_APP_FID and FARCASTER_APP_ACCOUNT_PRIVATE_KEY before asking the Farcaster app to approve a signer.",
+      503
+    );
   }
-
   const account = privateKeyToAccount(app.accountKey);
   const signature = await account.signTypedData({
     domain: SIGNED_KEY_REQUEST_EIP712_DOMAIN,
@@ -94,6 +97,19 @@ export async function buildKeyMetadata(
       deadline,
     },
   });
+  return { requestFid: app.fid, requestSigner: account.address, signature };
+}
+
+export async function buildKeyMetadata(
+  publicKey: Hex,
+  deadline: bigint
+): Promise<{ metadataType: number; metadata: Hex; appFid: number | null }> {
+  const app = appRequestSigner();
+  if (!app) {
+    return { metadataType: 0, metadata: "0x", appFid: null };
+  }
+
+  const signed = await signAppKeyRequest(publicKey, deadline);
 
   const metadata = encodeAbiParameters(
     [
@@ -109,9 +125,9 @@ export async function buildKeyMetadata(
     ],
     [
       {
-        requestFid: BigInt(app.fid),
-        requestSigner: account.address,
-        signature,
+        requestFid: BigInt(signed.requestFid),
+        requestSigner: signed.requestSigner,
+        signature: signed.signature,
         deadline,
       },
     ]
@@ -120,7 +136,7 @@ export async function buildKeyMetadata(
   return {
     metadataType: FARCASTER_SIGNED_KEY_REQUEST_METADATA_TYPE,
     metadata,
-    appFid: app.fid,
+    appFid: signed.requestFid,
   };
 }
 

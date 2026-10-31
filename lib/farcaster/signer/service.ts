@@ -11,6 +11,7 @@ import {
   buildKeyMetadata,
   hashManifest,
   removeTypedData,
+  signAppKeyRequest,
   verifyAddSignature,
   verifyRemoveSignature,
   type AddTypedData,
@@ -676,4 +677,144 @@ export async function signerStatus() {
     active: active ? publicSigner(active) : null,
     pending: pending ? publicSigner(pending) : null,
   };
+}
+
+const FARCASTER_CLIENT_API = "https://api.farcaster.xyz";
+
+type FarcasterSignedKeyRequest = {
+  token?: string;
+  deeplinkUrl?: string;
+  key?: string;
+  state?: string;
+  userFid?: number;
+};
+
+function isDeeplinkToken(value: string): boolean {
+  return /^0x[0-9a-fA-F]{8,80}$/.test(value);
+}
+
+async function readFarcasterSignedKeyRequest(
+  token: string
+): Promise<FarcasterSignedKeyRequest> {
+  const response = await fetch(
+    `${FARCASTER_CLIENT_API}/v2/signed-key-request?token=${encodeURIComponent(token)}`
+  );
+  const body = (await response.json().catch(() => null)) as {
+    result?: { signedKeyRequest?: FarcasterSignedKeyRequest };
+  } | null;
+  const request = body?.result?.signedKeyRequest;
+  if (!response.ok || !request) {
+    throw new SignerHttpError("Farcaster could not find that approval.", 502);
+  }
+  return request;
+}
+
+/**
+ * Ask the Farcaster app to approve a pending signer.
+ * The phone holds the custody key and submits the Optimism transaction.
+ */
+export async function createSignerDeeplink(generationInput: number) {
+  const account = await requireAccount();
+  const generation = asGeneration(generationInput);
+  const allowed = await checkRateLimit(
+    `farcaster:signer:deeplink:${account.fid}`,
+    12,
+    60 * 60 * 1000
+  );
+  if (!allowed) {
+    throw new SignerHttpError("Too many Farcaster approval links. Try again later.", 429);
+  }
+  const row = await getSigner(account.fid, generation);
+  if (!row || row.player_id !== account.playerId || row.status !== "pending_approval") {
+    throw new SignerHttpError("Review the signer before opening Farcaster.", 409);
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (row.deadline <= now) {
+    throw new SignerHttpError("This approval expired. Review it again.", 409);
+  }
+
+  const signed = await signAppKeyRequest(row.public_key as Hex, BigInt(row.deadline));
+  const response = await fetch(`${FARCASTER_CLIENT_API}/v2/signed-key-requests`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      key: row.public_key,
+      requestFid: signed.requestFid,
+      signature: signed.signature,
+      deadline: row.deadline,
+    }),
+  });
+  const body = (await response.json().catch(() => null)) as {
+    result?: { signedKeyRequest?: FarcasterSignedKeyRequest };
+    errors?: { message?: string }[];
+  } | null;
+  const request = body?.result?.signedKeyRequest;
+  if (
+    !response.ok ||
+    !request?.token ||
+    !request.deeplinkUrl ||
+    !isDeeplinkToken(request.token) ||
+    !request.deeplinkUrl.startsWith("farcaster://signed-key-request?")
+  ) {
+    throw new SignerHttpError(
+      "Farcaster did not return an approval link. Check the app fid and app account key.",
+      502
+    );
+  }
+
+  await writeSignerAudit({
+    fid: account.fid,
+    playerId: account.playerId,
+    generation,
+    action: "deeplink",
+    publicKey: row.public_key,
+    result: "ok",
+  });
+
+  return {
+    token: request.token,
+    deeplinkUrl: request.deeplinkUrl,
+    state: request.state ?? "pending",
+    generation,
+  };
+}
+
+/** Poll the Farcaster app approval. Confirms the signer once Optimism shows it. */
+export async function pollSignerDeeplink(token: string, generationInput: number) {
+  const account = await requireAccount();
+  const generation = asGeneration(generationInput);
+  if (!isDeeplinkToken(token)) {
+    throw new SignerHttpError("Approval token is invalid.", 400);
+  }
+  const row = await getSigner(account.fid, generation);
+  if (!row || row.player_id !== account.playerId) {
+    throw new SignerHttpError("No signer matches this account.", 404);
+  }
+  const remote = await readFarcasterSignedKeyRequest(token);
+  if (
+    remote.key &&
+    remote.key.toLowerCase() !== row.public_key.toLowerCase()
+  ) {
+    throw new SignerHttpError("This approval is for a different signer.", 409);
+  }
+  if (row.status === "active") {
+    return { state: "completed" as const, confirmed: true, generation };
+  }
+  if (remote.state !== "completed") {
+    return {
+      state: remote.state === "approved" ? ("approved" as const) : ("pending" as const),
+      confirmed: false,
+      generation,
+      deeplinkUrl: remote.deeplinkUrl,
+    };
+  }
+  try {
+    await confirmSigner({ generation });
+    return { state: "completed" as const, confirmed: true, generation };
+  } catch (error) {
+    if (error instanceof SignerHttpError && error.status === 409) {
+      return { state: "approved" as const, confirmed: false, generation };
+    }
+    throw error;
+  }
 }

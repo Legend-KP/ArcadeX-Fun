@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAccount, useConnect, useSignTypedData } from "wagmi";
 
 type SignerCard = {
@@ -139,6 +139,18 @@ export default function SignerApproval() {
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [deeplink, setDeeplink] = useState("");
+  const [phoneApproval, setPhoneApproval] = useState("");
+  const [narrow, setNarrow] = useState(false);
+  const watching = useRef(false);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 768px)");
+    const apply = () => setNarrow(media.matches);
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, []);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/farcaster/signer", { cache: "no-store" });
@@ -176,10 +188,75 @@ export default function SignerApproval() {
     return current;
   }
 
+  async function watchDeeplink(token: string, generation: number) {
+    if (watching.current) return;
+    watching.current = true;
+    setBusy(true);
+    try {
+      for (let attempt = 0; attempt < 90; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const statusRes = await fetch(
+          `/api/farcaster/signer/deeplink?token=${encodeURIComponent(token)}&generation=${generation}`
+        );
+        const statusBody = (await statusRes.json()) as {
+          error?: string;
+          state?: string;
+          confirmed?: boolean;
+        };
+        if (!statusRes.ok) {
+          throw new Error(statusBody.error || "Could not check the Farcaster approval.");
+        }
+        if (statusBody.confirmed) {
+          sessionStorage.removeItem("arcadex.farcaster.signerDeeplink");
+          setPrepared(null);
+          setAccepted(false);
+          setDeeplink("");
+          setPhoneApproval("");
+          await load();
+          return;
+        }
+        if (statusBody.state === "approved") {
+          setPhoneApproval("Approved in Farcaster. Waiting for Optimism.");
+        }
+      }
+      setPhoneApproval(
+        "Still waiting. Open the Farcaster link again if the app did not ask you to approve."
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not check the Farcaster approval.");
+    } finally {
+      watching.current = false;
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem("arcadex.farcaster.signerDeeplink");
+    if (!raw) return;
+    try {
+      const saved = JSON.parse(raw) as {
+        token?: string;
+        generation?: number;
+        url?: string;
+      };
+      if (!saved.token || !saved.generation || !saved.url) return;
+      setDeeplink(saved.url);
+      setPhoneApproval("Waiting for the Farcaster app.");
+      void watchDeeplink(saved.token, saved.generation);
+    } catch {
+      sessionStorage.removeItem("arcadex.farcaster.signerDeeplink");
+    }
+    // Resume once when this panel mounts after the Farcaster app returns.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function review(path: "/api/farcaster/signer/prepare" | "/api/farcaster/signer/rotate") {
     setBusy(true);
     setError("");
     setAccepted(false);
+    setDeeplink("");
+    setPhoneApproval("");
+    sessionStorage.removeItem("arcadex.farcaster.signerDeeplink");
     try {
       const res = await fetch(path, { method: "POST" });
       const data = (await res.json()) as PreparedApproval;
@@ -187,6 +264,43 @@ export default function SignerApproval() {
       setPrepared(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not prepare the signer.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approveInFarcaster() {
+    if (!prepared || !accepted) return;
+    setBusy(true);
+    setError("");
+    setPhoneApproval("");
+    try {
+      const res = await fetch("/api/farcaster/signer/deeplink", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ generation: prepared.generation }),
+      });
+      const data = (await res.json()) as {
+        error?: string;
+        deeplinkUrl?: string;
+        token?: string;
+      };
+      if (!res.ok || !data.deeplinkUrl || !data.token) {
+        throw new Error(data.error || "Could not open Farcaster.");
+      }
+      setDeeplink(data.deeplinkUrl);
+      sessionStorage.setItem(
+        "arcadex.farcaster.signerDeeplink",
+        JSON.stringify({
+          token: data.token,
+          generation: prepared.generation,
+          url: data.deeplinkUrl,
+        })
+      );
+      if (narrow) window.location.assign(data.deeplinkUrl);
+      await watchDeeplink(data.token, prepared.generation);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not open Farcaster.");
     } finally {
       setBusy(false);
     }
@@ -352,9 +466,36 @@ export default function SignerApproval() {
             />
             I have read this and I approve ArcadeX to publish casts for my fid with this signer.
           </label>
-          <button type="button" disabled={busy || !accepted} onClick={() => void approve()}>
-            {busy ? "Waiting for wallet" : "Sign and add signer"}
-          </button>
+          {narrow ? (
+            <button
+              type="button"
+              disabled={busy || !accepted}
+              onClick={() => void approveInFarcaster()}
+            >
+              {busy ? "Waiting for Farcaster" : "Approve in Farcaster"}
+            </button>
+          ) : (
+            <button type="button" disabled={busy || !accepted} onClick={() => void approve()}>
+              {busy ? "Waiting for wallet" : "Sign and add signer"}
+            </button>
+          )}
+          {!narrow && (
+            <button
+              type="button"
+              disabled={busy || !accepted}
+              onClick={() => void approveInFarcaster()}
+            >
+              Approve in the Farcaster app
+            </button>
+          )}
+          {deeplink && (
+            <p>
+              <a className="signer-approval__link" href={deeplink}>
+                Open the approval in the Farcaster app
+              </a>
+            </p>
+          )}
+          {phoneApproval && <p>{phoneApproval}</p>}
         </>
       )}
 

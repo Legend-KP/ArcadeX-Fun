@@ -5586,6 +5586,7 @@ a { color: inherit; text-decoration: none; }
 .signer-approval button {
   border: none;
   border-radius: 999px;
+  margin: 0 8px 8px 0;
   padding: 8px 14px;
   background: #6d28d9;
   color: #fff;
@@ -5597,6 +5598,13 @@ a { color: inherit; text-decoration: none; }
 .signer-approval button:disabled {
   opacity: 0.55;
   cursor: default;
+}
+
+.signer-approval__link {
+  display: inline-block;
+  margin-top: 8px;
+  color: #6d28d9;
+  font-weight: 800;
 }
 
 .signer-approval__actions {
