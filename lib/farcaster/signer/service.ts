@@ -696,9 +696,15 @@ function isDeeplinkToken(value: string): boolean {
 async function readFarcasterSignedKeyRequest(
   token: string
 ): Promise<FarcasterSignedKeyRequest> {
-  const response = await fetch(
-    `${FARCASTER_CLIENT_API}/v2/signed-key-request?token=${encodeURIComponent(token)}`
-  );
+  let response: Response;
+  try {
+    response = await fetch(
+      `${FARCASTER_CLIENT_API}/v2/signed-key-request?token=${encodeURIComponent(token)}`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+  } catch {
+    throw new SignerHttpError("Could not reach Farcaster to check the approval.", 502);
+  }
   const body = (await response.json().catch(() => null)) as {
     result?: { signedKeyRequest?: FarcasterSignedKeyRequest };
   } | null;
@@ -734,16 +740,22 @@ export async function createSignerDeeplink(generationInput: number) {
   }
 
   const signed = await signAppKeyRequest(row.public_key as Hex, BigInt(row.deadline));
-  const response = await fetch(`${FARCASTER_CLIENT_API}/v2/signed-key-requests`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      key: row.public_key,
-      requestFid: signed.requestFid,
-      signature: signed.signature,
-      deadline: row.deadline,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${FARCASTER_CLIENT_API}/v2/signed-key-requests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        key: row.public_key,
+        requestFid: signed.requestFid,
+        signature: signed.signature,
+        deadline: row.deadline,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch {
+    throw new SignerHttpError("Could not reach Farcaster to create the approval link.", 502);
+  }
   const body = (await response.json().catch(() => null)) as {
     result?: { signedKeyRequest?: FarcasterSignedKeyRequest };
     errors?: { message?: string }[];

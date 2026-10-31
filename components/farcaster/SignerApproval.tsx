@@ -192,11 +192,23 @@ export default function SignerApproval() {
     if (watching.current) return;
     watching.current = true;
     try {
+      let missedChecks = 0;
       for (let attempt = 0; attempt < 90; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
-        const statusRes = await fetch(
-          `/api/farcaster/signer/deeplink?token=${encodeURIComponent(token)}&generation=${generation}`
-        );
+        let statusRes: Response;
+        try {
+          statusRes = await fetch(
+            `/api/farcaster/signer/deeplink?token=${encodeURIComponent(token)}&generation=${generation}`
+          );
+        } catch {
+          missedChecks += 1;
+          if (missedChecks >= 3) {
+            setError(
+              "The approval link is ready. This page lost the status check. Open that link on your phone."
+            );
+          }
+          continue;
+        }
         const statusBody = (await statusRes.json()) as {
           error?: string;
           state?: string;
@@ -205,6 +217,8 @@ export default function SignerApproval() {
         if (!statusRes.ok) {
           throw new Error(statusBody.error || "Could not check the Farcaster approval.");
         }
+        missedChecks = 0;
+        setError("");
         if (statusBody.confirmed) {
           sessionStorage.removeItem("arcadex.farcaster.signerDeeplink");
           setPrepared(null);
@@ -502,7 +516,17 @@ export default function SignerApproval() {
                 where the Farcaster app is installed, then tap the button. The approval
                 screen appears only after that link opens.
               </p>
-              <a className="signer-approval__open" href={deeplink}>
+              <a
+                className="signer-approval__open"
+                href={deeplink}
+                onClick={(event) => {
+                  if (narrow) return;
+                  event.preventDefault();
+                  setPhoneApproval(
+                    "This computer cannot open the Farcaster app. Open this same page on your phone, then tap this button."
+                  );
+                }}
+              >
                 Open approval in the Farcaster app
               </a>
             </div>
