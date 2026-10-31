@@ -220,7 +220,7 @@ export default function SignerApproval() {
         }
       }
       setPhoneApproval(
-        "Still waiting. Open the Farcaster link again if the app did not ask you to approve."
+        "Still waiting. Open the link on your phone. The Farcaster app shows the approval only after that link opens."
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not check the Farcaster approval.");
@@ -297,7 +297,6 @@ export default function SignerApproval() {
           url: data.deeplinkUrl,
         })
       );
-      if (narrow) window.location.assign(data.deeplinkUrl);
       await watchDeeplink(data.token, prepared.generation);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not open Farcaster.");
@@ -489,11 +488,16 @@ export default function SignerApproval() {
             </button>
           )}
           {deeplink && (
-            <p>
-              <a className="signer-approval__link" href={deeplink}>
-                Open the approval in the Farcaster app
+            <div className="signer-approval__deeplink">
+              <p>
+                Farcaster does not send a notification. Open this page on the phone
+                where the Farcaster app is installed, then tap the button. The approval
+                screen appears only after that link opens.
+              </p>
+              <a className="signer-approval__open" href={deeplink}>
+                Open approval in the Farcaster app
               </a>
-            </p>
+            </div>
           )}
           {phoneApproval && <p>{phoneApproval}</p>}
         </>
