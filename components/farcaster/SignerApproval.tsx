@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { renderSVG } from "@/lib/vendor/uqr";
 import { useAccount, useConnect, useSignTypedData } from "wagmi";
 
 type SignerCard = {
@@ -87,6 +88,13 @@ type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
 };
 
+function isMobileBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return true;
+  return navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+}
+
 function getEthereum(): EthereumProvider | null {
   if (typeof window === "undefined") return null;
   const provider = (window as Window & { ethereum?: EthereumProvider }).ethereum;
@@ -140,17 +148,24 @@ export default function SignerApproval() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [deeplink, setDeeplink] = useState("");
+  const [approvalToken, setApprovalToken] = useState("");
+  const [qrSvg, setQrSvg] = useState("");
   const [phoneApproval, setPhoneApproval] = useState("");
-  const [narrow, setNarrow] = useState(false);
+  const [phone, setPhone] = useState(false);
   const watching = useRef(false);
 
   useEffect(() => {
-    const media = window.matchMedia("(max-width: 768px)");
-    const apply = () => setNarrow(media.matches);
-    apply();
-    media.addEventListener("change", apply);
-    return () => media.removeEventListener("change", apply);
+    setPhone(isMobileBrowser());
   }, []);
+
+  useEffect(() => {
+    if (!approvalToken || phone || !/^0x[0-9a-fA-F]{8,80}$/.test(approvalToken)) {
+      setQrSvg("");
+      return;
+    }
+    const scanUrl = `${window.location.origin}/farcaster/approve?token=${encodeURIComponent(approvalToken)}`;
+    setQrSvg(renderSVG(scanUrl, { pixelSize: 6, ecc: "M", border: 2 }));
+  }, [approvalToken, phone]);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/farcaster/signer", { cache: "no-store" });
@@ -224,6 +239,7 @@ export default function SignerApproval() {
           setPrepared(null);
           setAccepted(false);
           setDeeplink("");
+          setApprovalToken("");
           setPhoneApproval("");
           await load();
           return;
@@ -253,6 +269,7 @@ export default function SignerApproval() {
       };
       if (!saved.token || !saved.generation || !saved.url) return;
       setDeeplink(saved.url);
+      setApprovalToken(saved.token);
       setPhoneApproval("Waiting for the Farcaster app.");
       void watchDeeplink(saved.token, saved.generation);
     } catch {
@@ -267,6 +284,8 @@ export default function SignerApproval() {
     setError("");
     setAccepted(false);
     setDeeplink("");
+    setApprovalToken("");
+    setQrSvg("");
     setPhoneApproval("");
     sessionStorage.removeItem("arcadex.farcaster.signerDeeplink");
     try {
@@ -311,6 +330,7 @@ export default function SignerApproval() {
         throw new Error(data.error || "Could not open Farcaster.");
       }
       setDeeplink(data.deeplinkUrl);
+      setApprovalToken(data.token);
       sessionStorage.setItem(
         "arcadex.farcaster.signerDeeplink",
         JSON.stringify({
@@ -319,7 +339,16 @@ export default function SignerApproval() {
           url: data.deeplinkUrl,
         })
       );
-      await watchDeeplink(data.token, prepared.generation);
+      const generation = prepared.generation;
+      const token = data.token;
+      if (
+        isMobileBrowser() &&
+        data.deeplinkUrl.startsWith("farcaster://signed-key-request?")
+      ) {
+        setPhoneApproval("Opening the Farcaster app…");
+        window.location.assign(data.deeplinkUrl);
+      }
+      void watchDeeplink(token, generation);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not open Farcaster.");
     } finally {
@@ -487,20 +516,20 @@ export default function SignerApproval() {
             />
             I have read this and I approve ArcadeX to publish casts for my fid with this signer.
           </label>
-          {narrow ? (
+          {phone ? (
             <button
               type="button"
               disabled={busy || !accepted}
               onClick={() => void approveInFarcaster()}
             >
-              {busy ? "Waiting for Farcaster" : "Approve in Farcaster"}
+              {busy ? "Opening Farcaster" : "Approve in Farcaster"}
             </button>
           ) : (
             <button type="button" disabled={busy || !accepted} onClick={() => void approve()}>
               {busy ? "Waiting for wallet" : "Sign and add signer"}
             </button>
           )}
-          {!narrow && (
+          {!phone && (
             <button
               type="button"
               disabled={busy || !accepted}
@@ -509,26 +538,29 @@ export default function SignerApproval() {
               Approve in the Farcaster app
             </button>
           )}
-          {deeplink && (
+          {deeplink && phone && (
             <div className="signer-approval__deeplink">
-              <p>
-                Farcaster does not send a notification. Open this page on the phone
-                where the Farcaster app is installed, then tap the button. The approval
-                screen appears only after that link opens.
-              </p>
-              <a
-                className="signer-approval__open"
-                href={deeplink}
-                onClick={(event) => {
-                  if (narrow) return;
-                  event.preventDefault();
-                  setPhoneApproval(
-                    "This computer cannot open the Farcaster app. Open this same page on your phone, then tap this button."
-                  );
-                }}
-              >
+              <p>If the Farcaster app did not open, tap the button. The approval screen is inside the app.</p>
+              <a className="signer-approval__open" href={deeplink}>
                 Open approval in the Farcaster app
               </a>
+            </div>
+          )}
+          {deeplink && !phone && (
+            <div className="signer-approval__deeplink">
+              <p>
+                Scan this with the camera on the phone that has the Farcaster app.
+                Then tap Open approval. The approval screen opens inside the app.
+              </p>
+              {qrSvg && (
+                <img
+                  className="signer-approval__qr"
+                  alt="Scan with the phone that has the Farcaster app"
+                  width={240}
+                  height={240}
+                  src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(qrSvg)}`}
+                />
+              )}
             </div>
           )}
           {phoneApproval && <p>{phoneApproval}</p>}

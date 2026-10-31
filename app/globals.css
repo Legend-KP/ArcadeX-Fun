@@ -5618,6 +5618,47 @@ a { color: inherit; text-decoration: none; }
   text-decoration: none;
 }
 
+.signer-approval__qr {
+  width: 240px;
+  height: 240px;
+  background: #fff;
+  border-radius: 12px;
+}
+
+.farcaster-approve {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  text-align: center;
+}
+
+.farcaster-approve h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.farcaster-approve p {
+  max-width: 28rem;
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.farcaster-approve__open {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 14px 22px;
+  background: #6d28d9;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 .signer-approval__actions {
   display: flex;
   gap: 8px;
