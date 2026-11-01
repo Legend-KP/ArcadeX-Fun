@@ -29,25 +29,27 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
-  const metric = startMetric("/api/games", "GET");
-  setFirebaseLogRoute("/api/games");
+function hasAdminCredential(request: Request): boolean {
+  const auth = request.headers.get("authorization");
+  if (auth?.startsWith("Bearer ") && auth.slice(7).trim()) return true;
+  return Boolean(request.headers.get("x-admin-password")?.trim());
+}
 
-  const isAdmin = verifyAdminRequest(request);
+export async function GET(request: Request) {
+  const isAdmin = hasAdminCredential(request) && verifyAdminRequest(request);
   if (!isAdmin) {
+    const cached = await matchPublicGetCache(publicCatalogCacheKey(request));
+    if (cached) return cached;
+
     const ip = getClientIp(request);
     if (!(await checkRateLimit(`games:ip:${ip}`, 120, 60_000))) {
-      metric.emit(429);
       return rateLimitResponse();
     }
-
-    const cached = await matchPublicGetCache(publicCatalogCacheKey(request));
-    if (cached) {
-      metric.cacheHit("edge");
-      return metric.finish(cached);
-    }
-    metric.cacheMiss("edge");
   }
+
+  const metric = startMetric("/api/games", "GET");
+  setFirebaseLogRoute("/api/games");
+  if (!isAdmin) metric.cacheMiss("edge");
 
   try {
     const statsBefore = getGameCacheStats();
@@ -90,7 +92,7 @@ export async function GET(request: Request) {
       // Edge-cacheable public catalog. Play counts are approximate (90s in-memory).
       headers.set(
         "Cache-Control",
-        "public, s-maxage=60, stale-while-revalidate=300"
+        "public, max-age=60, s-maxage=60, stale-while-revalidate=300"
       );
       headers.set("CDN-Cache-Control", "public, s-maxage=60");
       headers.set("Vary", "Authorization");

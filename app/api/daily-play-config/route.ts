@@ -4,22 +4,20 @@ import {
   getDailyPlayMode,
 } from "@/lib/daily-play-mode";
 import {
-  checkRateLimit,
-  getClientIp,
-  rateLimitResponse,
-} from "@/lib/rate-limit";
+  matchPublicGetCache,
+  publicCatalogCacheKey,
+  schedulePublicGetCache,
+} from "@/lib/edge-cache";
 
 export const dynamic = "force-dynamic";
 
 /** Runtime daily-play config — works with Cloudflare vars without rebuild. */
 export async function GET(request: Request) {
-  const ip = getClientIp(request);
-  if (!(await checkRateLimit(`daily-play-config:ip:${ip}`, 120, 60_000))) {
-    return rateLimitResponse();
-  }
+  const cached = await matchPublicGetCache(publicCatalogCacheKey(request));
+  if (cached) return cached;
 
   const mode = getDailyPlayMode();
-  return NextResponse.json(
+  const response = NextResponse.json(
     {
       mode,
       campaignId: getDailyCampaignId(),
@@ -27,8 +25,10 @@ export async function GET(request: Request) {
     },
     {
       headers: {
-        "Cache-Control": "no-store",
+        "Cache-Control": "public, max-age=300, s-maxage=300",
       },
     }
   );
+  schedulePublicGetCache(publicCatalogCacheKey(request), response);
+  return response;
 }

@@ -54,7 +54,7 @@ export default function ChainSettingsProvider({
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch("/api/chains", { cache: "no-store" });
+      const res = await fetch("/api/chains");
       if (!res.ok) return;
       const data = (await res.json()) as ChainSettingsResponse;
       setSettings(mergeChainSettings(data.settings));

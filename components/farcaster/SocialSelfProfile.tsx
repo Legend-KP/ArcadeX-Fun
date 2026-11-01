@@ -69,7 +69,7 @@ export default function SocialSelfProfile() {
     async function loadPlayed() {
       setPlayedError("");
       try {
-        const res = await fetch("/api/games", { cache: "no-store" });
+        const res = await fetch("/api/games");
         const data = (await res.json()) as {
           games?: Game[];
           playCounts?: Record<string, number>;

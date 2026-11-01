@@ -38,7 +38,7 @@ export default function GamePageClient() {
 
     async function loadGame() {
       try {
-        const res = await fetch(`/api/games/${id}`, { cache: "no-store" });
+        const res = await fetch(`/api/games/${id}`);
         const data = (await res.json()) as { game?: Game; error?: string };
 
         if (!res.ok) {

@@ -121,7 +121,7 @@ export default function PublicFarcasterProfile({ kind, value }: Props) {
     let cancelled = false;
 
     async function load() {
-      const res = await fetch("/api/games", { cache: "no-store" });
+      const res = await fetch("/api/games");
       const body = (await res.json()) as {
         games?: Game[];
         playCounts?: Record<string, number>;

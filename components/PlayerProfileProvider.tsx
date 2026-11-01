@@ -549,9 +549,29 @@ export default function PlayerProfileProvider({
   }, [loadProfileForSession]);
 
   // Farcaster sign-in replaces the cookie without remounting this provider.
-  // Pick up that session before Start Game compares player ids.
+  // Game-to-game moves do not. Recheck only when entering from a social route
+  // or when nobody is signed in yet.
+  const pathnameRef = useRef(pathname);
   useEffect(() => {
+    const previous = pathnameRef.current;
+    pathnameRef.current = pathname;
     if (!isReady) return;
+
+    const fromSocial =
+      !previous ||
+      previous.startsWith("/social") ||
+      previous.startsWith("/farcaster") ||
+      previous.startsWith("/profile") ||
+      previous.startsWith("/circles") ||
+      previous.startsWith("/circle") ||
+      previous.startsWith("/invite") ||
+      previous.startsWith("/fid/") ||
+      previous.startsWith("/u/") ||
+      previous.startsWith("/post/");
+    const browsingGames =
+      pathname === "/" || (pathname?.startsWith("/game/") ?? false);
+    if (playerIdRef.current && browsingGames && !fromSocial) return;
+
     let cancelled = false;
 
     void (async () => {

@@ -1,12 +1,14 @@
-import CircleDetail from "@/components/social/CircleDetail";
+"use client";
 
-export const dynamic = "force-dynamic";
+import dynamic from "next/dynamic";
+import { useParams } from "next/navigation";
 
-export default async function CirclePage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
+const CircleDetail = dynamic(() => import("@/components/social/CircleDetail"), {
+  ssr: false,
+});
+
+export default function CirclePage() {
+  const { id } = useParams<{ id: string }>();
+  if (!id) return null;
   return <CircleDetail circleId={id} />;
 }

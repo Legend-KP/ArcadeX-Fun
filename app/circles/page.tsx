@@ -1,6 +1,10 @@
-import CirclesHome from "@/components/social/CirclesHome";
+"use client";
 
-export const dynamic = "force-dynamic";
+import dynamic from "next/dynamic";
+
+const CirclesHome = dynamic(() => import("@/components/social/CirclesHome"), {
+  ssr: false,
+});
 
 export default function CirclesPage() {
   return <CirclesHome />;

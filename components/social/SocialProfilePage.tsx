@@ -42,7 +42,7 @@ export default function SocialProfilePage() {
     let cancelled = false;
 
     async function load() {
-      const res = await fetch("/api/games", { cache: "no-store" });
+      const res = await fetch("/api/games");
       const data = (await res.json()) as {
         games?: Game[];
         playCounts?: Record<string, number>;

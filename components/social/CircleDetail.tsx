@@ -126,7 +126,7 @@ export default function CircleDetail({ circleId }: { circleId: string }) {
       load(`/api/social/circles/${encodeURIComponent(circleId)}/posts`),
       load(`/api/social/circles/${encodeURIComponent(circleId)}/challenges`),
       load(`/api/social/circles/${encodeURIComponent(circleId)}/members`),
-      fetch("/api/games", { cache: "no-store" }).then((res) => res.json()),
+      fetch("/api/games").then((res) => res.json()),
     ])
       .then(([postData, challengeData, memberData, gameData]) => {
         if (cancelled) return;

@@ -36,7 +36,10 @@ export async function fetchDailyPlayConfig(
 
   inflight = (async () => {
     try {
-      const res = await fetch("/api/daily-play-config", { cache: "no-store" });
+      const res = await fetch(
+        "/api/daily-play-config",
+        opts?.fresh ? { cache: "no-store" } : undefined
+      );
       if (!res.ok) throw new Error("config fetch failed");
       const data = (await res.json()) as DailyPlayConfig;
       if (data.mode !== "shuffle" && data.mode !== "streak") {

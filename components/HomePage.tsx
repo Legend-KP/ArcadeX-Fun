@@ -68,7 +68,7 @@ function HomePageInner() {
       setError("");
 
       try {
-        const res = await fetch("/api/games", { cache: "no-store" });
+        const res = await fetch("/api/games");
         const text = await res.text();
         let data: {
           games?: Game[];

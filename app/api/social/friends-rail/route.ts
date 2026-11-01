@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readSessionFromCookies } from "@/lib/auth-session";
 import { loadFriendsRail } from "@/lib/friends-rail";
+import { ttlMemo } from "@/lib/ttl-memo";
 import {
   checkRateLimit,
   getClientIp,
@@ -9,6 +10,8 @@ import {
 
 export const dynamic = "force-dynamic";
 
+const cachedRail = ttlMemo<Awaited<ReturnType<typeof loadFriendsRail>>>(30_000);
+
 export async function GET(request: Request) {
   const ip = getClientIp(request);
   if (!(await checkRateLimit(`friends-rail:${ip}`, 40, 60_000))) {
@@ -16,12 +19,13 @@ export async function GET(request: Request) {
   }
 
   const session = await readSessionFromCookies();
-  if (!session?.fid) {
+  const fid = session?.fid;
+  if (!fid) {
     return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   }
 
   try {
-    const rail = await loadFriendsRail(session.fid);
+    const rail = await cachedRail(String(fid), () => loadFriendsRail(fid));
     return NextResponse.json(rail, {
       headers: { "Cache-Control": "private, no-store" },
     });

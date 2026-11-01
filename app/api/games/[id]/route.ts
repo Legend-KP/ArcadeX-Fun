@@ -15,13 +15,21 @@ import {
 import { isContestChainKey } from "@/lib/contest-chains";
 import { Game } from "@/types";
 import { startMetric } from "@/lib/api-metrics";
+import {
+  matchPublicGetCache,
+  publicCatalogCacheKey,
+  schedulePublicGetCache,
+} from "@/lib/edge-cache";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const cached = await matchPublicGetCache(publicCatalogCacheKey(request));
+  if (cached) return cached;
+
   const metric = startMetric("/api/games/[id]", "GET");
 
   try {
@@ -33,7 +41,17 @@ export async function GET(
       return NextResponse.json({ error: "Game not found." }, { status: 404 });
     }
 
-    return metric.finish(NextResponse.json({ game: toPublicGame(game) }));
+    const response = NextResponse.json(
+      { game: toPublicGame(game) },
+      {
+        headers: {
+          "Cache-Control":
+            "public, max-age=60, s-maxage=120, stale-while-revalidate=300",
+        },
+      }
+    );
+    schedulePublicGetCache(publicCatalogCacheKey(request), response);
+    return metric.finish(response);
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load game.";

@@ -10,6 +10,7 @@ import {
   getOptimismPublicClient,
   listOptimismRpcUrls,
 } from "@/lib/farcaster/optimism-client";
+import { ttlMemo } from "@/lib/ttl-memo";
 
 function isTransientRpcError(error: unknown): boolean {
   const message =
@@ -60,24 +61,31 @@ export async function idOf(owner: Address | string): Promise<number> {
   return Number(fid);
 }
 
+const custodyMemo = ttlMemo<Address | null>(5 * 60_000);
+const recoveryMemo = ttlMemo<Address | null>(5 * 60_000);
+
 /** Custody address that currently owns `fid`. */
 export async function custodyOf(fid: number): Promise<Address | null> {
   if (!Number.isFinite(fid) || fid <= 0) return null;
-  const owner = await readIdRegistry<Address>("custodyOf", [BigInt(fid)]);
-  if (!owner || owner === "0x0000000000000000000000000000000000000000") {
-    return null;
-  }
-  return getAddress(owner);
+  return custodyMemo(String(fid), async () => {
+    const owner = await readIdRegistry<Address>("custodyOf", [BigInt(fid)]);
+    if (!owner || owner === "0x0000000000000000000000000000000000000000") {
+      return null;
+    }
+    return getAddress(owner);
+  });
 }
 
 /** Recovery address for `fid`. */
 export async function recoveryOf(fid: number): Promise<Address | null> {
   if (!Number.isFinite(fid) || fid <= 0) return null;
-  const recovery = await readIdRegistry<Address>("recoveryOf", [BigInt(fid)]);
-  if (!recovery || recovery === "0x0000000000000000000000000000000000000000") {
-    return null;
-  }
-  return getAddress(recovery);
+  return recoveryMemo(String(fid), async () => {
+    const recovery = await readIdRegistry<Address>("recoveryOf", [BigInt(fid)]);
+    if (!recovery || recovery === "0x0000000000000000000000000000000000000000") {
+      return null;
+    }
+    return getAddress(recovery);
+  });
 }
 
 export function defaultRecoveryAddress(): Hex {

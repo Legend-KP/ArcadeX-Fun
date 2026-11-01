@@ -27,7 +27,7 @@ export default function SocialHome({ me }: Props) {
     setGamesLoading(true);
     setGamesError("");
 
-    fetch("/api/games", { cache: "no-store" })
+    fetch("/api/games")
       .then(async (res) => {
         const data = (await res.json()) as {
           games?: Game[];

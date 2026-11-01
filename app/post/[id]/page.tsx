@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import CastPermalink from "@/components/social/CastPermalink";
+import CastPermalinkLoader from "@/components/social/CastPermalinkLoader";
 import { absoluteUrl } from "@/lib/public-url";
 import { getTextPost } from "@/lib/social-board";
 
@@ -29,5 +29,5 @@ export default async function PostPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <CastPermalink id={id} />;
+  return <CastPermalinkLoader id={id} />;
 }

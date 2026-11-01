@@ -86,7 +86,9 @@ export function startMetric(endpoint: string, method = "GET"): ApiMetric {
         const n = Number(len);
         if (Number.isFinite(n)) record.responseBytes = n;
       }
-      console.log(JSON.stringify(record));
+      const quietHit =
+        record.cacheHit === true && (record.statusCode ?? 200) < 400;
+      if (!quietHit) console.log(JSON.stringify(record));
       setFirebaseLogRoute(undefined);
       return response;
     },

@@ -1,12 +1,15 @@
-import InviteLanding from "@/components/social/InviteLanding";
+"use client";
 
-export const dynamic = "force-dynamic";
+import dynamic from "next/dynamic";
+import { useParams } from "next/navigation";
 
-export default async function InvitePage({
-  params,
-}: {
-  params: Promise<{ token: string }>;
-}) {
-  const { token } = await params;
+const InviteLanding = dynamic(
+  () => import("@/components/social/InviteLanding"),
+  { ssr: false }
+);
+
+export default function InvitePage() {
+  const { token } = useParams<{ token: string }>();
+  if (!token) return null;
   return <InviteLanding token={token} />;
 }

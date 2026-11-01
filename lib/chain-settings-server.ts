@@ -80,6 +80,13 @@ function encodeFields(
   return fields;
 }
 
+const SETTINGS_TTL_MS = 60_000;
+let settingsCache: {
+  at: number;
+  value: Record<ChainKey, ChainFeatures>;
+} | null = null;
+let settingsInflight: Promise<Record<ChainKey, ChainFeatures>> | null = null;
+
 async function fetchSettingsDocument(): Promise<FirestoreDocument | null> {
   const res = await firestoreFetch(SETTINGS_DOC_PATH);
   if (res.status === 404) return null;
@@ -93,8 +100,21 @@ async function fetchSettingsDocument(): Promise<FirestoreDocument | null> {
 export async function fetchChainSettingsFromServer(): Promise<
   Record<ChainKey, ChainFeatures>
 > {
-  const doc = await fetchSettingsDocument();
-  return mergeChainSettings(settingsFromDocument(doc));
+  if (settingsCache && Date.now() - settingsCache.at < SETTINGS_TTL_MS) {
+    return settingsCache.value;
+  }
+  if (settingsInflight) return settingsInflight;
+
+  settingsInflight = (async () => {
+    const doc = await fetchSettingsDocument();
+    const value = mergeChainSettings(settingsFromDocument(doc));
+    settingsCache = { at: Date.now(), value };
+    return value;
+  })().finally(() => {
+    settingsInflight = null;
+  });
+
+  return settingsInflight;
 }
 
 export async function updateChainSettingsOnServer(
@@ -124,6 +144,7 @@ export async function updateChainSettingsOnServer(
     throw new Error(`Firestore update failed (${res.status}): ${text}`);
   }
 
+  settingsCache = { at: Date.now(), value: next };
   return next;
 }
 

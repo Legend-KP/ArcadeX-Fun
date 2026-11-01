@@ -68,6 +68,7 @@ export function sanitizeFirebasePath(path: string): string {
 }
 
 let currentRoute: string | undefined;
+let successSample = 0;
 
 /** Bind the active API route for nested Firebase logs (request-scoped best effort). */
 export function setFirebaseLogRoute(route: string | undefined): void {
@@ -79,6 +80,16 @@ export function logFirebaseRequest(
     route?: string;
   }
 ): void {
+  const failed =
+    partial.status === "error" ||
+    (typeof partial.status === "number" && partial.status >= 400);
+  // Successful Firebase logs were one observability event per read.
+  // Keep every failure; sample the rest so CPU is not spent on log JSON.
+  if (!failed) {
+    successSample = (successSample + 1) % 20;
+    if (successSample !== 0) return;
+  }
+
   const record: FirebaseRequestLog = {
     type: "arcadex_firebase",
     env: getDeployEnv(),

@@ -87,16 +87,13 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const ip = getClientIp(request);
-    if (
-      !(await checkRateLimit(`leaderboard:ip:${ip}`, 90, 60_000)) ||
-      !(await checkRateLimit(`leaderboard:game:${id}:${ip}`, 45, 60_000))
-    ) {
-      return rateLimitResponse();
+    if (!id || id.length > 128 || /[.#$[\]/]/.test(id)) {
+      return corsJsonResponse(
+        request,
+        { error: "Invalid game id." },
+        { status: 400 }
+      );
     }
-
-    const { error, game } = await assertLeaderboardEnabled(request, id);
-    if (error || !game) return error;
 
     const { searchParams } = new URL(request.url);
     const wallet = searchParams.get("wallet") ?? undefined;
@@ -104,6 +101,7 @@ export async function GET(
     const playerId =
       resolvePlayerId(searchParams.get("playerId") ?? "") ??
       resolvePlayerId(wallet ?? "");
+    const hasPersonal = Boolean(playerId || wallet || name);
     const session = await readSessionFromCookies();
     const chainIdParam = searchParams.get("chainId");
     const chainIdFromQuery =
@@ -119,28 +117,70 @@ export async function GET(
       chainId,
       ecosystem: session?.ecosystem,
     };
+    const publicKey = publicLeaderboardCacheKey({
+      request,
+      gameId: id,
+      chainId,
+      ecosystem: session?.ecosystem,
+    });
+    const cachedPublic = await matchPublicGetCache(publicKey);
+    if (cachedPublic) {
+      if (!hasPersonal) return withCorsHeaders(request, cachedPublic);
+
+      const ip = getClientIp(request);
+      if (!(await checkRateLimit(`leaderboard:ip:${ip}`, 90, 60_000))) {
+        return rateLimitResponse();
+      }
+      const board = (await cachedPublic.json()) as LeaderboardResponse;
+      const [personalBest, submittedBest] = await Promise.all([
+        playerId
+          ? fetchPersonalBestFromServer(playerId, id, scope)
+          : Promise.resolve(undefined as number | undefined),
+        wallet || name
+          ? fetchUserSubmittedBestFromServer(id, {
+              walletAddress: wallet,
+              playerName: name,
+              chainId,
+              ecosystem: session?.ecosystem,
+            })
+          : Promise.resolve(undefined as number | undefined),
+      ]);
+      const canSubmit =
+        typeof personalBest === "number" &&
+        personalBest > 0 &&
+        personalBest > (submittedBest ?? 0);
+      return corsJsonResponse(
+        request,
+        {
+          ...board,
+          ...(personalBest !== undefined && personalBest > 0
+            ? { personalBest }
+            : {}),
+          ...(submittedBest !== undefined && submittedBest > 0
+            ? { submittedBest }
+            : {}),
+          ...(canSubmit ? { canSubmit: true } : {}),
+        },
+        { headers: { "Cache-Control": "private, no-store" } }
+      );
+    }
+
+    const ip = getClientIp(request);
+    if (
+      !(await checkRateLimit(`leaderboard:ip:${ip}`, 90, 60_000)) ||
+      !(await checkRateLimit(`leaderboard:game:${id}:${ip}`, 45, 60_000))
+    ) {
+      return rateLimitResponse();
+    }
+
+    const { error, game } = await assertLeaderboardEnabled(request, id);
+    if (error || !game) return error;
+
     const contestChainKey = resolveContestChainKey({
       chainId,
       ecosystem: session?.ecosystem,
     });
     const chainGame = applyContestForChain(game, contestChainKey);
-
-    const hasPersonal = Boolean(playerId || wallet || name);
-    const cacheKey = !hasPersonal
-      ? publicLeaderboardCacheKey({
-          request,
-          gameId: id,
-          chainId,
-          ecosystem: session?.ecosystem,
-        })
-      : null;
-
-    if (cacheKey) {
-      const cached = await matchPublicGetCache(cacheKey);
-      if (cached) {
-        return withCorsHeaders(request, cached);
-      }
-    }
 
     const [entries, personalBest, submittedBest, contestEntries] =
       await Promise.all([
@@ -208,18 +248,20 @@ export async function GET(
       contest,
     };
 
-    // Public top board is cacheable; personalized fields must not share CDN cache.
-    const cacheControl = hasPersonal
-      ? "private, no-store"
-      : "public, s-maxage=15, stale-while-revalidate=60";
-
-    const json = corsJsonResponse(request, response, {
-      headers: { "Cache-Control": cacheControl },
+    // Store the shared board even when this request also asked for a personal best.
+    const publicBody: LeaderboardResponse = { entries, contest };
+    const publicJson = corsJsonResponse(request, publicBody, {
+      headers: {
+        "Cache-Control":
+          "public, max-age=15, s-maxage=15, stale-while-revalidate=60",
+      },
     });
-    if (cacheKey) {
-      schedulePublicGetCache(cacheKey, json);
-    }
-    return json;
+    schedulePublicGetCache(publicKey, publicJson);
+    if (!hasPersonal) return publicJson;
+
+    return corsJsonResponse(request, response, {
+      headers: { "Cache-Control": "private, no-store" },
+    });
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load leaderboard.";

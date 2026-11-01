@@ -1,4 +1,5 @@
 import { NEYNAR_API_BASE } from "@/lib/farcaster/constants";
+import { ttlMemo } from "@/lib/ttl-memo";
 
 export type NeynarUser = {
   fid: number;
@@ -76,17 +77,21 @@ async function neynarFetch<T>(
   return json as T;
 }
 
+const followingMemo = ttlMemo<number[]>(60_000);
+
 export async function fetchNeynarFollowingFids(fid: number): Promise<number[]> {
   if (!Number.isFinite(fid) || fid <= 0) return [];
-  const data = await neynarFetch<{
-    users?: Array<{ fid?: number; user?: { fid?: number } }>;
-  }>(`/farcaster/following?fid=${fid}&limit=100`);
-  const ids = new Set<number>();
-  for (const row of data.users ?? []) {
-    const id = row.user?.fid ?? row.fid;
-    if (typeof id === "number" && id > 0) ids.add(id);
-  }
-  return [...ids];
+  return followingMemo(String(fid), async () => {
+    const data = await neynarFetch<{
+      users?: Array<{ fid?: number; user?: { fid?: number } }>;
+    }>(`/farcaster/following?fid=${fid}&limit=100`);
+    const ids = new Set<number>();
+    for (const row of data.users ?? []) {
+      const id = row.user?.fid ?? row.fid;
+      if (typeof id === "number" && id > 0) ids.add(id);
+    }
+    return [...ids];
+  });
 }
 
 export async function fetchNeynarUsersByFids(
@@ -110,14 +115,18 @@ export async function searchNeynarUsers(query: string): Promise<NeynarUser[]> {
   return data.result?.users ?? data.users ?? [];
 }
 
+const userByFidMemo = ttlMemo<NeynarUser | null>(5 * 60_000);
+
 export async function fetchNeynarUserByFid(
   fid: number
 ): Promise<NeynarUser | null> {
   if (!Number.isFinite(fid) || fid <= 0) return null;
-  const data = await neynarFetch<{ users?: NeynarUser[] }>(
-    `/farcaster/user/bulk?fids=${fid}`
-  );
-  return data.users?.[0] ?? null;
+  return userByFidMemo(String(fid), async () => {
+    const data = await neynarFetch<{ users?: NeynarUser[] }>(
+      `/farcaster/user/bulk?fids=${fid}`
+    );
+    return data.users?.[0] ?? null;
+  });
 }
 
 export async function fetchNeynarUserByCustodyAddress(

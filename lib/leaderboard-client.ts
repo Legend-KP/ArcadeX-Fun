@@ -21,9 +21,12 @@ export async function fetchLeaderboardData(
   }
   const qs = params.toString();
 
+  const personalized = Boolean(
+    opts?.walletAddress || opts?.playerName || opts?.playerId
+  );
   const res = await fetch(
     `/api/games/${gameId}/leaderboard${qs ? `?${qs}` : ""}`,
-    { cache: "no-store" }
+    personalized ? { cache: "no-store" } : undefined
   );
   const data = (await res.json()) as LeaderboardResponse & { error?: string };
 

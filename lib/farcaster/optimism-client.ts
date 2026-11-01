@@ -29,12 +29,18 @@ function getOptimismRpcUrls(): string[] {
   return Array.from(new Set(urls));
 }
 
+const clients = new Map<string, ReturnType<typeof createPublicClient>>();
+
 export function getOptimismPublicClient(rpcUrl?: string) {
   const url = rpcUrl ?? getOptimismRpcUrls()[0]!;
-  return createPublicClient({
+  const existing = clients.get(url);
+  if (existing) return existing;
+  const client = createPublicClient({
     chain: optimism,
     transport: http(url, { timeout: 12_000 }),
   });
+  clients.set(url, client);
+  return client;
 }
 
 export function listOptimismRpcUrls(): string[] {

@@ -15,9 +15,13 @@ import {
   listTextPosts,
   listTextPostsByFid,
   setPostHubHash,
+  type TextPost,
 } from "@/lib/social-board";
+import { ttlMemo } from "@/lib/ttl-memo";
 
 export const dynamic = "force-dynamic";
+
+const cachedPostList = ttlMemo<TextPost[]>(15_000);
 
 export async function GET(request: Request) {
   const ip = getClientIp(request);
@@ -34,7 +38,9 @@ export async function GET(request: Request) {
   const fid = fidParam && /^\d+$/.test(fidParam) ? Number(fidParam) : null;
 
   try {
-    const posts = fid ? await listTextPostsByFid(fid) : await listTextPosts();
+    const posts = await cachedPostList(fid ? `fid:${fid}` : "all", () =>
+      fid ? listTextPostsByFid(fid) : listTextPosts()
+    );
     return NextResponse.json({ posts });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not load posts.";

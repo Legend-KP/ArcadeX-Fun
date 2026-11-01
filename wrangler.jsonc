@@ -9,7 +9,29 @@
   ],
   "assets": {
     "directory": ".open-next/assets",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // Hashed JS/CSS/images are served without invoking the Worker.
+    // HTML and /api still enter the Worker so middleware and SSR run.
+    "run_worker_first": [
+      "/",
+      "/admin",
+      "/admin/*",
+      "/game/*",
+      "/social",
+      "/social/*",
+      "/profile",
+      "/circles",
+      "/circle/*",
+      "/invite/*",
+      "/fid/*",
+      "/u/*",
+      "/post/*",
+      "/farcaster/*",
+      "/api/*"
+    ]
+  },
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA"
   },
   "keep_vars": true,
   "services": [
@@ -19,7 +41,8 @@
     }
   ],
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "head_sampling_rate": 0.1
   },
   // WAF + Bot Fight Mode on /api/* are dashboard-only (zone security).
   // They are not Worker bindings; enable them in Cloudflare Security after deploy.
